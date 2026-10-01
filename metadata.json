@@ -1,0 +1,8 @@
+{
+  "name": "Matabishi ERP",
+  "description": "Suite de gestion commerciale, stock, production et finance pour agences et siège.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "permissions": []
+}
