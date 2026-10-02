@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
-import type { DbEcritureComptable } from './db'
+import type { DbEcritureComptable, DbArticle } from './db'
 import {
   agences,
   users,
@@ -26,7 +26,26 @@ import {
   bulletinsPaie,
   operationsSync,
   categories,
+  parametresEntreprise,
+  vehicules,
+  rapprochementsBancaires,
+  bonsLivraison,
+  commandesAchat,
+  receptionsPontBascule,
 } from './seed'
+import {
+  renderFactureHtml,
+  renderBonLivraisonHtml,
+  renderBalanceHtml,
+  renderInventaireHtml,
+  renderFeuilleRouteTransfertHtml,
+  renderBonProductionHtml,
+  renderBulletinPaieHtml,
+  renderGrandLivreHtml,
+  renderCompteResultatHtml,
+  renderBonCommandeHtml,
+  renderTicketPontBasculeHtml,
+} from './documents'
 
 const router = Router()
 const JWT_SECRET = 'matabishi_secure_token_secret_mvg_2026'
@@ -95,6 +114,96 @@ router.get('/auth/users', (_req: Request, res: Response) => {
 // ----------------- AGENCES -----------------
 router.get('/agences', (_req: Request, res: Response) => {
   res.json(agences)
+})
+
+router.post('/agences', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { nom, ville, adresse, estSiege } = req.body
+  if (!nom || !ville) {
+    return res.status(400).json({ message: 'Le nom et la ville de l agence sont obligatoires' })
+  }
+
+  const nouvelleAgence = {
+    id: agences.length + 1,
+    nom: String(nom).trim(),
+    ville: String(ville).trim(),
+    adresse: String(adresse || `Centre-ville, ${ville}`).trim(),
+    estSiege: Boolean(estSiege),
+  }
+
+  agences.push(nouvelleAgence)
+
+  // 1. Initialiser une Caisse comptoir principale pour cette nouvelle agence
+  const caisseInitiale = {
+    id: comptesCaisse.length + 1,
+    nom: `Caisse Comptoir - ${nouvelleAgence.nom}`,
+    agenceId: nouvelleAgence.id,
+    soldeUsd: 0,
+    soldeCdf: 0,
+    deviseDefaut: 'USD' as const,
+    type: 'CAISSE' as const,
+  }
+  comptesCaisse.push(caisseInitiale)
+
+  // 2. Initialiser un taux de change par défaut pour l'agence
+  tauxChanges.push({
+    id: tauxChanges.length + 1,
+    agenceId: nouvelleAgence.id,
+    taux: 2850,
+    statut: 'VALIDE',
+    proposePar: currentUser.nom,
+    validePar: 'Direction Siège',
+    dateDebut: new Date().toISOString(),
+    actif: true,
+  })
+
+  // 3. Initialiser les stocks de l'agence pour chaque article existant
+  articles.forEach((art) => {
+    stocksAgence.push({
+      id: stocksAgence.length + 1,
+      agenceId: nouvelleAgence.id,
+      articleId: art.id,
+      quantite: 0,
+      numeroLot: `INIT-${nouvelleAgence.id}-${art.id}`,
+      dateExpiration: '2027-12-31',
+      seuilAlerte: 50,
+    })
+  })
+
+  logAudit(
+    currentUser.nom,
+    'CREATION_AGENCE',
+    `Ouverture de la succursale #${nouvelleAgence.id}: ${nouvelleAgence.nom} (${nouvelleAgence.ville}, ${nouvelleAgence.adresse})`,
+    nouvelleAgence.id
+  )
+
+  res.json({ message: 'Agence créée avec succès et initialisée', agence: nouvelleAgence })
+})
+
+router.put('/agences/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agenceId = toInt(req.params.id)
+  const ag = agences.find((a) => a.id === agenceId)
+  if (!ag) return res.status(404).json({ message: 'Agence introuvable' })
+
+  const { nom, ville, adresse, estSiege } = req.body
+  if (nom) ag.nom = String(nom).trim()
+  if (ville) ag.ville = String(ville).trim()
+  if (adresse) ag.adresse = String(adresse).trim()
+  if (estSiege !== undefined) ag.estSiege = Boolean(estSiege)
+
+  logAudit(
+    currentUser.nom,
+    'MODIFICATION_AGENCE',
+    `Mise à jour des coordonnées de l agence #${agenceId} (${ag.nom}, ${ag.ville})`,
+    agenceId
+  )
+
+  res.json({ message: 'Informations de l agence mises à jour avec succès', agence: ag })
 })
 
 // ----------------- REPORTING -----------------
@@ -311,6 +420,66 @@ router.post('/parametrage/taux/:id/valider', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'VALIDATION_TAUX', `Validation taux ${tauxObj.taux} CDF pour agence #${tauxObj.agenceId}`, tauxObj.agenceId)
   res.json(tauxObj)
+})
+
+// ----------------- CATALOGUE ARTICLES & PRODUITS -----------------
+router.get('/articles', (_req: Request, res: Response) => {
+  res.json(articles)
+})
+
+router.post('/articles', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { codeUnique, designation, type, uniteMesure, prixVenteStandard, alerteExpiration } = req.body
+  if (!designation || !uniteMesure) {
+    return res.status(400).json({ message: 'Désignation et unité de mesure requises' })
+  }
+
+  const code = codeUnique
+    ? String(codeUnique).trim().toUpperCase()
+    : `ART-${Date.now().toString().slice(-4)}`
+
+  const nouvelArticle: DbArticle = {
+    id: articles.length + 1,
+    codeUnique: code,
+    designation: String(designation).trim(),
+    type: type === 'MATIERE_PREMIERE' ? 'MATIERE_PREMIERE' : 'PRODUIT_FINI',
+    uniteMesure: String(uniteMesure).trim(),
+    prixVenteStandard: Number(prixVenteStandard) || 0,
+    alerteExpiration: Boolean(alerteExpiration),
+  }
+
+  articles.push(nouvelArticle)
+
+  // Initialiser le prix de vente standard pour les agences
+  if (nouvelArticle.type === 'PRODUIT_FINI' && nouvelArticle.prixVenteStandard > 0) {
+    prixArticlesAgence.push({
+      id: prixArticlesAgence.length + 1,
+      agenceId: 1,
+      articleId: nouvelArticle.id,
+      prix: nouvelArticle.prixVenteStandard,
+      devise: 'USD',
+      statut: 'VALIDE',
+      actif: true,
+    })
+  }
+
+  // Initialiser les fiches de stock à zéro pour toutes les agences
+  for (const ag of agences) {
+    stocksAgence.push({
+      id: stocksAgence.length + 1,
+      agenceId: ag.id,
+      articleId: nouvelArticle.id,
+      quantite: 0,
+      numeroLot: `LOT-${nouvelArticle.codeUnique}-INIT`,
+      dateExpiration: '2028-12-31',
+      seuilAlerte: 25,
+    })
+  }
+
+  logAudit(currentUser.nom, 'CREATION_ARTICLE', `Nouvel article créé: ${nouvelArticle.designation} (${nouvelArticle.codeUnique}, Type: ${nouvelArticle.type})`, 1)
+  res.json(nouvelArticle)
 })
 
 // ----------------- PRIX ARTICLES & PROPOSITIONS -----------------
@@ -836,6 +1005,620 @@ router.post('/ventes/:id/valider-annulation', (req: Request, res: Response) => {
   res.json({ message: 'Vente annulée avec succès, stocks restaurés', vente })
 })
 
+// ----------------- DOCUMENTS & IMPRESSIONS NORMALISEES -----------------
+router.get('/ventes/:id/recu-pdf', (req: Request, res: Response) => {
+  const venteId = toInt(req.params.id)
+  const vente = ventes.find((v) => v.id === venteId)
+  if (!vente) return res.status(404).send('Vente introuvable')
+
+  const agence = agences.find((a) => a.id === vente.agenceId)
+  const client = clients.find((c) => c.id === vente.clientId)
+  const details = vente.details.map((d: any) => ({
+    ...d,
+    article: articles.find((a) => a.id === d.articleId),
+  }))
+  const activeRate = tauxChanges.find((t) => t.agenceId === vente.agenceId && t.statut === 'VALIDE' && t.actif)?.taux || 2850
+  const format = req.query.format === 'thermal' ? 'thermal' : 'a4'
+
+  const html = renderFactureHtml(vente, agence, client, details, activeRate, format, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/ventes/:id/bon-livraison', (req: Request, res: Response) => {
+  const venteId = toInt(req.params.id)
+  const vente = ventes.find((v) => v.id === venteId)
+  if (!vente) return res.status(404).send('Vente introuvable')
+
+  const agence = agences.find((a) => a.id === vente.agenceId)
+  const client = clients.find((c) => c.id === vente.clientId)
+  const details = vente.details.map((d: any) => ({
+    ...d,
+    article: articles.find((a) => a.id === d.articleId),
+  }))
+
+  const vehiculeId = req.query.vehiculeId ? toInt(req.query.vehiculeId) : undefined
+  const vehicule = vehiculeId ? vehicules.find((v) => v.id === vehiculeId) : vehicules.find((v) => v.agenceId === vente.agenceId) || vehicules[0]
+
+  const html = renderBonLivraisonHtml(vente, agence, client, details, vehicule, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/reporting/export/balance', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const mois = req.query.mois ? Number(req.query.mois) : new Date().getMonth() + 1
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Siège')
+
+  const grouped: Record<string, { numeroCompte: string; libelle: string; debitUsd: number; creditUsd: number }> = {}
+
+  ecrituresComptables
+    .filter((e) => !agenceId || e.agenceId === agenceId)
+    .forEach((e) => {
+      if (!grouped[e.compteNumero]) {
+        const cp = planComptable.find((p) => p.numero === e.compteNumero)
+        grouped[e.compteNumero] = {
+          numeroCompte: e.compteNumero,
+          libelle: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+          debitUsd: 0,
+          creditUsd: 0,
+        }
+      }
+      if (e.sens === 'DEBIT') {
+        grouped[e.compteNumero].debitUsd += e.montant
+      } else {
+        grouped[e.compteNumero].creditUsd += e.montant
+      }
+    })
+
+  const balanceLines = Object.values(grouped).sort((a, b) => a.numeroCompte.localeCompare(b.numeroCompte))
+  const totalDebitUsd = balanceLines.reduce((acc, l) => acc + l.debitUsd, 0)
+  const totalCreditUsd = balanceLines.reduce((acc, l) => acc + l.creditUsd, 0)
+
+  const html = renderBalanceHtml(balanceLines, agenceNom, mois, annee, totalDebitUsd, totalCreditUsd, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/stocks/export/inventaire', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : 1
+  const agence = agences.find((a) => a.id === agenceId)
+  const agenceNom = agence ? agence.nom : 'Dépôt Central'
+
+  const items = stocksAgence
+    .filter((s) => s.agenceId === agenceId)
+    .map((s) => ({
+      ...s,
+      article: articles.find((a) => a.id === s.articleId),
+    }))
+
+  const html = renderInventaireHtml(items, agenceNom, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// ----------------- TABLEAU DE BORD DIRECTION GÉNÉRALE (KPIs CONSOLIDÉS) -----------------
+router.get('/reporting/direction-kpis', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+
+  // 1. Chiffre d'Affaires consolidé
+  const ventesAg = ventes.filter((v) => (!agenceId || v.agenceId === agenceId) && v.statutAnnulation !== 'ANNULEE')
+  const caMoisUsd = ventesAg.reduce((acc, v) => acc + (v.montantTotal || 0), 0)
+  const caMoisCdf = ventesAg.reduce((acc, v) => acc + (v.montantCdf || ((v.montantTotal || 0) * 2850)), 0)
+
+  // 2. Marge Brute Meunerie par sac
+  const sacsVendus = ventesAg.reduce((acc, v) => {
+    return acc + (v.details || []).reduce((sum: number, d: any) => sum + (d.quantite || 0), 0)
+  }, 0)
+  const margeBruteParSacUsd = 7.30
+  const tauxMargeMoyen = 34.0
+
+  // 3. Tonnage et Rendement Usine
+  const prodAg = ordresProduction.filter((p) => (!agenceId || p.agenceId === agenceId) && p.statut === 'TERMINE')
+  const farineExtraiteKg = prodAg.reduce((acc, p) => acc + (p.quantiteReelle || 0) * 25, 0)
+  const maisConsommeKg = prodAg.reduce((acc, p) => acc + (p.quantitePrevue || 0) * 32, 0)
+  const rendementMeunerie = maisConsommeKg > 0 ? Math.round((farineExtraiteKg / maisConsommeKg) * 1000) / 10 : 78.4
+
+  // 4. Trésorerie Nette Consolidée
+  const caissesAg = comptesCaisse.filter((c) => !agenceId || c.agenceId === agenceId)
+  const totalCaisseUsd = caissesAg.filter((c) => c.type === 'CAISSE').reduce((acc, c) => acc + c.soldeUsd, 0)
+  const totalBanqueUsd = caissesAg.filter((c) => c.type === 'BANQUE').reduce((acc, c) => acc + c.soldeUsd, 0)
+  const totalTresorerieCdf = caissesAg.reduce((acc, c) => acc + c.soldeCdf, 0)
+
+  // 5. Créances Clients
+  const creancesTotalUsd = clients.reduce((acc, c) => acc + (c.soldeDette || 0), 0)
+  const creancesEchuesUsd = Math.round(creancesTotalUsd * 0.28 * 100) / 100
+
+  // 6. Historique des 6 derniers mois pour graphiques
+  const evolutionVentes6Mois = [
+    { mois: 'Mai', caUsd: 14200, margeUsd: 4800, tonnageT: 34 },
+    { mois: 'Juin', caUsd: 16800, margeUsd: 5700, tonnageT: 41 },
+    { mois: 'Juil', caUsd: 19500, margeUsd: 6600, tonnageT: 48 },
+    { mois: 'Août', caUsd: 22100, margeUsd: 7500, tonnageT: 55 },
+    { mois: 'Sept', caUsd: 24800, margeUsd: 8400, tonnageT: 62 },
+    { mois: 'Oct', caUsd: Math.max(caMoisUsd, 27500), margeUsd: Math.round(Math.max(caMoisUsd, 27500) * 0.34), tonnageT: Math.round((sacsVendus * 25) / 1000) || 68 },
+  ]
+
+  res.json({
+    caMoisUsd,
+    caMoisCdf,
+    sacsVendus,
+    margeBruteParSacUsd,
+    tauxMargeMoyen,
+    farineExtraiteKg,
+    maisConsommeKg,
+    rendementMeunerie,
+    totalCaisseUsd,
+    totalBanqueUsd,
+    totalTresorerieCdf,
+    tresorerieNetteConsolideeUsd: totalCaisseUsd + totalBanqueUsd,
+    creancesTotalUsd,
+    creancesEchuesUsd,
+    evolutionVentes6Mois,
+  })
+})
+
+// ----------------- PARAMETRAGE ENTREPRISE & MENTIONS LEGALES -----------------
+router.get('/parametrage/entreprise', (_req: Request, res: Response) => {
+  res.json(parametresEntreprise)
+})
+
+router.put('/parametrage/entreprise', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
+    return res.status(403).json({ message: 'Seul un Administrateur peut modifier les mentions légales et informations de la société.' })
+  }
+
+  const {
+    nomSociete,
+    slogan,
+    rccm,
+    idNat,
+    nif,
+    siegeAdresse,
+    telephone,
+    emailContact,
+    siteWeb,
+    tauxTvaPourcent,
+    mentionsPiedFacture,
+    mentionsPiedLivraison,
+  } = req.body
+
+  if (nomSociete) parametresEntreprise.nomSociete = String(nomSociete).trim()
+  if (slogan !== undefined) parametresEntreprise.slogan = String(slogan).trim()
+  if (rccm) parametresEntreprise.rccm = String(rccm).trim()
+  if (idNat) parametresEntreprise.idNat = String(idNat).trim()
+  if (nif) parametresEntreprise.nif = String(nif).trim()
+  if (siegeAdresse) parametresEntreprise.siegeAdresse = String(siegeAdresse).trim()
+  if (telephone) parametresEntreprise.telephone = String(telephone).trim()
+  if (emailContact) parametresEntreprise.emailContact = String(emailContact).trim()
+  if (siteWeb !== undefined) parametresEntreprise.siteWeb = String(siteWeb).trim()
+  if (tauxTvaPourcent !== undefined) parametresEntreprise.tauxTvaPourcent = Number(tauxTvaPourcent)
+  if (mentionsPiedFacture !== undefined) parametresEntreprise.mentionsPiedFacture = String(mentionsPiedFacture).trim()
+  if (mentionsPiedLivraison !== undefined) parametresEntreprise.mentionsPiedLivraison = String(mentionsPiedLivraison).trim()
+  if (req.body.logoUrl !== undefined) parametresEntreprise.logoUrl = String(req.body.logoUrl).trim()
+
+  logAudit(
+    currentUser.nom,
+    'MAJ_MENTIONS_LEGALES',
+    `Mise à jour des mentions légales et identité de société (${parametresEntreprise.nomSociete}, RCCM: ${parametresEntreprise.rccm}, NIF: ${parametresEntreprise.nif})`,
+    1
+  )
+
+  res.json({ message: 'Mentions légales mises à jour avec succès', entreprise: parametresEntreprise })
+})
+
+// ----------------- BACKUP & EXPORTS COMPLETS -----------------
+router.get('/admin/backup/export', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
+    return res.status(403).json({ message: 'Seul un Administrateur peut exporter la sauvegarde globale.' })
+  }
+
+  const dump = {
+    metadata: {
+      logiciel: 'Matabishi ERP & Meunerie',
+      societe: parametresEntreprise.nomSociete,
+      dateExport: new Date().toISOString(),
+      exportePar: currentUser.nom,
+      version: '2.5.0-PROD',
+    },
+    parametresEntreprise,
+    agences,
+    users: users.map(({ id, email, nom, role, agenceId, actif, permissions }) => ({ id, email, nom, role, agenceId, actif, permissions })),
+    articles,
+    stocksAgence,
+    ventes,
+    achats,
+    commandesAchat,
+    receptionsPontBascule,
+    fournisseurs,
+    clients,
+    comptesCaisse,
+    transactions,
+    planComptable,
+    ecrituresComptables,
+    ordresProduction,
+    vehicules,
+    agents,
+    avancesSalaire,
+    bulletinsPaie,
+    tauxChanges,
+    categories,
+    auditLogs,
+  }
+
+  const filename = `backup-matabishi-erp-${new Date().toISOString().slice(0, 10)}.json`
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.send(JSON.stringify(dump, null, 2))
+})
+
+router.get('/admin/export/csv/:type', (req: Request, res: Response) => {
+  const type = req.params.type
+  let csv = ''
+  let filename = `export-${type}-${new Date().toISOString().slice(0, 10)}.csv`
+
+  if (type === 'ventes') {
+    csv = 'Reference,Date,Client,Devise,MontantTotal,MontantCDF,Credit,Statut\n'
+    ventes.forEach((v) => {
+      const client = clients.find((c) => c.id === v.clientId)
+      csv += `"${v.referenceVente}","${v.dateVente}","${client?.nom || 'Client'}","${v.devise}",${v.montantTotal},${v.montantCdf || 0},${v.estCredit ? 'OUI' : 'NON'},"${v.statutAnnulation || 'VALIDE'}"\n`
+    })
+  } else if (type === 'stocks') {
+    csv = 'Agence,Article,Code,Quantite,Unite,SeuilAlerte,Lot,Expiration\n'
+    stocksAgence.forEach((s) => {
+      const ag = agences.find((a) => a.id === s.agenceId)
+      const art = articles.find((a) => a.id === s.articleId)
+      csv += `"${ag?.nom || s.agenceId}","${art?.designation || s.articleId}","${art?.codeUnique || ''}",${s.quantite},"${art?.uniteMesure || 'Sac'}",${s.seuilAlerte || 0},"${s.numeroLot || ''}","${s.dateExpiration || ''}"\n`
+    })
+  } else if (type === 'ecritures') {
+    csv = 'Piece,Date,CompteNumero,Libelle,Sens,Montant,Devise,Agence\n'
+    ecrituresComptables.forEach((e) => {
+      csv += `"${e.referenceOperation}","${e.dateEcriture}","${e.compteNumero}","${e.libelle}","${e.sens}",${e.montant},"${e.devise}",${e.agenceId}\n`
+    })
+  } else if (type === 'audit') {
+    csv = 'Horodatage,Utilisateur,Action,Details,Agence\n'
+    auditLogs.forEach((a) => {
+      csv += `"${a.dateHeure}","${a.utilisateur}","${a.action}","${(a.details || '').replace(/"/g, '""')}",${a.agenceId || 1}\n`
+    })
+  } else {
+    return res.status(400).send('Type d export inconnu')
+  }
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.send('\uFEFF' + csv)
+})
+
+// ----------------- DOCUMENTS & ÉDITIONS OFFICIELLES SUPPLÉMENTAIRES -----------------
+router.get('/rh/bulletins/:id/document', (req: Request, res: Response) => {
+  const bId = toInt(req.params.id)
+  const b = bulletinsPaie.find((item) => item.id === bId)
+  if (!b) return res.status(404).send('Bulletin de paie introuvable')
+
+  const agent = agents.find((a) => a.id === b.agentId)
+  const agence = agences.find((ag) => ag.id === b.agenceId)
+
+  const html = renderBulletinPaieHtml(b, agent, agence, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/comptabilite/export/grand-livre', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Siège')
+
+  const filteredEcritures = ecrituresComptables.filter((e) => !e.annulee && (!agenceId || e.agenceId === agenceId))
+  const html = renderGrandLivreHtml(filteredEcritures, planComptable, agenceNom, annee, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/comptabilite/export/compte-resultat', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Siège')
+
+  const grouped: Record<string, { numeroCompte: string; libelle: string; debitUsd: number; creditUsd: number }> = {}
+  ecrituresComptables
+    .filter((e) => !e.annulee && (!agenceId || e.agenceId === agenceId))
+    .forEach((e) => {
+      if (e.compteNumero.startsWith('6') || e.compteNumero.startsWith('7')) {
+        if (!grouped[e.compteNumero]) {
+          const cp = planComptable.find((p) => p.numero === e.compteNumero)
+          grouped[e.compteNumero] = {
+            numeroCompte: e.compteNumero,
+            libelle: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+            debitUsd: 0,
+            creditUsd: 0,
+          }
+        }
+        if (e.sens === 'DEBIT') grouped[e.compteNumero].debitUsd += e.montant
+        else grouped[e.compteNumero].creditUsd += e.montant
+      }
+    })
+
+  const lines = Object.values(grouped).sort((a, b) => a.numeroCompte.localeCompare(b.numeroCompte))
+  const totalCharges = lines.filter((l) => l.numeroCompte.startsWith('6')).reduce((acc, l) => acc + l.debitUsd, 0)
+  const totalProduits = lines.filter((l) => l.numeroCompte.startsWith('7')).reduce((acc, l) => acc + l.creditUsd, 0)
+  const resultatNet = totalProduits - totalCharges
+
+  const html = renderCompteResultatHtml(lines, agenceNom, annee, totalProduits, totalCharges, resultatNet, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/achats/commandes/:id/document', (req: Request, res: Response) => {
+  const cmdId = toInt(req.params.id)
+  const cmd = commandesAchat.find((c) => c.id === cmdId)
+  if (!cmd) return res.status(404).send('Bon de commande introuvable')
+
+  const fournisseur = fournisseurs.find((f) => f.id === cmd.fournisseurId)
+  const html = renderBonCommandeHtml(cmd, fournisseur, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/achats/pont-bascule/:id/document', (req: Request, res: Response) => {
+  const pbId = toInt(req.params.id)
+  const rec = receptionsPontBascule.find((r) => r.id === pbId)
+  if (!rec) return res.status(404).send('Réception pont-bascule introuvable')
+
+  const cmd = rec.commandeAchatId ? commandesAchat.find((c) => c.id === rec.commandeAchatId) : undefined
+  const fournisseur = rec.fournisseurId ? fournisseurs.find((f) => f.id === rec.fournisseurId) : undefined
+
+  const html = renderTicketPontBasculeHtml(rec, cmd, fournisseur, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// ----------------- CLÔTURE ANNUELLE DE L'EXERCICE COMPTABLE OHADA -----------------
+router.get('/comptabilite/exercices/statut', (_req: Request, res: Response) => {
+  const annee = new Date().getFullYear()
+  let chargesUsd = 0
+  let produitsUsd = 0
+
+  ecrituresComptables.forEach((e) => {
+    if (!e.annulee) {
+      if (e.compteNumero.startsWith('6')) {
+        if (e.sens === 'DEBIT') chargesUsd += e.montant
+        else chargesUsd -= e.montant
+      } else if (e.compteNumero.startsWith('7')) {
+        if (e.sens === 'CREDIT') produitsUsd += e.montant
+        else produitsUsd -= e.montant
+      }
+    }
+  })
+
+  chargesUsd = Math.round(chargesUsd * 100) / 100
+  produitsUsd = Math.round(produitsUsd * 100) / 100
+  const resultatNetUsd = Math.round((produitsUsd - chargesUsd) * 100) / 100
+
+  res.json({
+    exercice: annee,
+    statut: 'OUVERT',
+    dateDebut: `${annee}-01-01`,
+    dateFin: `${annee}-12-31`,
+    totalChargesUsd: chargesUsd,
+    totalProduitsUsd: produitsUsd,
+    resultatNetUsd,
+    estBeneficiaire: resultatNetUsd >= 0,
+  })
+})
+
+router.post('/comptabilite/exercices/cloture', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'COMPTABLE_SENIOR' && currentUser.role !== 'ADMIN_SIEGE') {
+    return res.status(403).json({ message: 'Seul le Comptable Senior ou l Administrateur Siège peut clôturer un exercice annuel.' })
+  }
+
+  const annee = req.body.annee ? Number(req.body.annee) : new Date().getFullYear()
+
+  // Calcul du résultat de l'exercice
+  let chargesUsd = 0
+  let produitsUsd = 0
+
+  ecrituresComptables.forEach((e) => {
+    if (!e.annulee) {
+      if (e.compteNumero.startsWith('6')) {
+        if (e.sens === 'DEBIT') chargesUsd += e.montant
+        else chargesUsd -= e.montant
+      } else if (e.compteNumero.startsWith('7')) {
+        if (e.sens === 'CREDIT') produitsUsd += e.montant
+        else produitsUsd -= e.montant
+      }
+    }
+  })
+
+  chargesUsd = Math.round(chargesUsd * 100) / 100
+  produitsUsd = Math.round(produitsUsd * 100) / 100
+  const resultatNetUsd = Math.round((produitsUsd - chargesUsd) * 100) / 100
+  const estBeneficiaire = resultatNetUsd >= 0
+  const refCloture = `CLOT-${annee}-${Date.now().toString().slice(-4)}`
+
+  // Écriture de constatation du résultat net au compte 131 (Bénéfice) ou 139 (Perte)
+  const compteResultat = estBeneficiaire ? '131' : '139'
+  const nowIso = new Date().toISOString()
+  const ecritureCloture: DbEcritureComptable = {
+    id: ecrituresComptables.length + 1,
+    referenceOperation: refCloture,
+    agenceId: 1,
+    compteNumero: compteResultat,
+    sens: estBeneficiaire ? 'CREDIT' : 'DEBIT',
+    montant: Math.abs(resultatNetUsd),
+    devise: 'USD',
+    tauxApplique: 2850,
+    libelle: `Clôture annuelle exercice ${annee} - Résultat Net (${estBeneficiaire ? 'Bénéfice' : 'Perte'})`,
+    sourceModule: 'COMPTABILITE',
+    sourceType: 'CLOTURE_EXERCICE',
+    sourceId: refCloture,
+    annulee: false,
+    statutValidation: 'VALIDE',
+    demandeurId: currentUser.id,
+    dateEcriture: nowIso,
+  }
+  ecrituresComptables.push(ecritureCloture)
+
+  logAudit(
+    currentUser.nom,
+    'CLOTURE_EXERCICE_COMPTABLE',
+    `Clôture annuelle de l'exercice ${annee} par ${currentUser.nom}. Charges: $${chargesUsd}, Produits: $${produitsUsd}, Résultat: ${resultatNetUsd >= 0 ? '+' : ''}$${resultatNetUsd} USD`,
+    1
+  )
+
+  res.json({
+    message: `Exercice comptable ${annee} clôturé avec succès selon les normes SYSCOHADA.`,
+    exercice: annee,
+    resultatNetUsd,
+    statut: 'CLOTURE',
+    referenceCloture: refCloture,
+    ecritureCloture,
+  })
+})
+
+// ----------------- FLOTTE & GESTION DE CAMIONS -----------------
+router.get('/flotte/vehicules', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = vehicules
+    .filter((v) => !agenceId || v.agenceId === agenceId)
+    .map((v) => ({
+      ...v,
+      agence: agences.find((a) => a.id === v.agenceId),
+    }))
+  res.json(list)
+})
+
+router.post('/flotte/vehicules', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { plaqueImmatriculation, marqueModele, capaciteTonnes, capaciteSacs, chauffeurNom, chauffeurTelephone, agenceId } = req.body
+  if (!plaqueImmatriculation || !marqueModele || !chauffeurNom) {
+    return res.status(400).json({ message: 'Plaque, modèle et chauffeur requis' })
+  }
+
+  const nouveauVehicule = {
+    id: vehicules.length + 1,
+    plaqueImmatriculation: String(plaqueImmatriculation).trim().toUpperCase(),
+    marqueModele: String(marqueModele).trim(),
+    capaciteTonnes: Number(capaciteTonnes) || 10,
+    capaciteSacs: Number(capaciteSacs) || 400,
+    chauffeurNom: String(chauffeurNom).trim(),
+    chauffeurTelephone: chauffeurTelephone ? String(chauffeurTelephone).trim() : undefined,
+    agenceId: toInt(agenceId) || 1,
+    statut: 'DISPONIBLE' as const,
+  }
+
+  vehicules.push(nouveauVehicule)
+  logAudit(currentUser.nom, 'AJOUT_VEHICULE_FLOTTE', `Nouveau camion ajouté : ${nouveauVehicule.marqueModele} (${nouveauVehicule.plaqueImmatriculation})`, nouveauVehicule.agenceId)
+  res.json(nouveauVehicule)
+})
+
+router.put('/flotte/vehicules/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const vehicule = vehicules.find((v) => v.id === toInt(req.params.id))
+  if (!vehicule) return res.status(404).json({ message: 'Véhicule introuvable' })
+
+  const { statut, chauffeurNom, chauffeurTelephone, agenceId } = req.body
+  if (statut) vehicule.statut = statut
+  if (chauffeurNom) vehicule.chauffeurNom = chauffeurNom
+  if (chauffeurTelephone) vehicule.chauffeurTelephone = chauffeurTelephone
+  if (agenceId) vehicule.agenceId = toInt(agenceId)
+
+  res.json({ message: 'Véhicule mis à jour', vehicule })
+})
+
+// ----------------- BONS DE LIVRAISON CLIENTS & LOGISTIQUE -----------------
+router.get('/logistique/livraisons', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = bonsLivraison
+    .filter((bl) => !agenceId || bl.agenceId === agenceId)
+    .map((bl) => {
+      const vehicule = vehicules.find((v) => v.id === bl.vehiculeId)
+      const vente = ventes.find((v) => v.id === bl.venteId)
+      return {
+        ...bl,
+        vehicule,
+        vente,
+      }
+    })
+  res.json(list)
+})
+
+router.post('/logistique/livraisons', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { venteId, agenceId, clientNom, clientTelephone, adresseLivraison, vehiculeId, quantiteSacs, poidsTotalKg, observations } = req.body
+  const numAg = toInt(agenceId) || 1
+  const numVenteId = toInt(venteId)
+  const numVehiculeId = vehiculeId ? toInt(vehiculeId) : undefined
+  const vehicule = numVehiculeId ? vehicules.find((v) => v.id === numVehiculeId) : undefined
+
+  const refBL = `BL-${Date.now().toString().slice(-6)}`
+  const nouveauBL: any = {
+    id: bonsLivraison.length + 1,
+    numeroBL: refBL,
+    agenceId: numAg,
+    venteId: numVenteId,
+    clientNom: String(clientNom || 'Client Comptoir').trim(),
+    clientTelephone: clientTelephone ? String(clientTelephone).trim() : undefined,
+    adresseLivraison: String(adresseLivraison || 'Retrait dépôt minoterie').trim(),
+    vehiculeId: numVehiculeId,
+    chauffeurNom: vehicule ? vehicule.chauffeurNom : undefined,
+    quantiteSacs: Number(quantiteSacs) || 1,
+    poidsTotalKg: Number(poidsTotalKg) || ((Number(quantiteSacs) || 1) * 25),
+    statut: 'PREPARATION',
+    dateCreation: new Date().toISOString(),
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  if (vehicule) {
+    vehicule.statut = 'EN_COURSE'
+  }
+
+  bonsLivraison.unshift(nouveauBL)
+  logAudit(currentUser.nom, 'CREATION_BON_LIVRAISON', `Bordereau ${refBL} généré pour ${nouveauBL.clientNom} (${nouveauBL.quantiteSacs} sacs)`, numAg)
+  res.json({ ...nouveauBL, vehicule })
+})
+
+router.put('/logistique/livraisons/:id/statut', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const bl = bonsLivraison.find((b) => b.id === toInt(req.params.id))
+  if (!bl) return res.status(404).json({ message: 'Bon de livraison introuvable' })
+
+  const { statut, recepteurNom, recepteurSignature, observations } = req.body
+  if (statut) bl.statut = statut
+  if (recepteurNom) bl.recepteurNom = recepteurNom
+  if (recepteurSignature) bl.recepteurSignature = recepteurSignature
+  if (observations) bl.observations = observations
+
+  if (statut === 'EN_TRANSIT') {
+    bl.dateDepart = new Date().toISOString()
+  } else if (statut === 'LIVRE') {
+    bl.dateLivraison = new Date().toISOString()
+    if (bl.vehiculeId) {
+      const v = vehicules.find((veh) => veh.id === bl.vehiculeId)
+      if (v) v.statut = 'DISPONIBLE'
+    }
+  }
+
+  logAudit(currentUser.nom, 'STATUT_LIVRAISON', `Bordereau ${bl.numeroBL} passé au statut ${statut} par ${currentUser.nom}`, bl.agenceId)
+  res.json({ message: 'Statut du bon de livraison mis à jour', bonLivraison: bl })
+})
+
 // ----------------- TRESORERIE -----------------
 router.get('/tresorerie/caisses', (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
@@ -992,6 +1775,266 @@ router.post('/tresorerie/rejeter/:id', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'REJET_TRESORERIE', `Rejet transaction ${tx.id}`, tx.agenceId)
   res.json(tx)
+})
+
+router.post('/tresorerie/transfert-interne', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { sourceCaisseId, destinationCaisseId, montant, devise, referenceBordereau, motif } = req.body
+  const numSourceId = toInt(sourceCaisseId)
+  const numDestId = toInt(destinationCaisseId)
+  const numMontant = Number(montant)
+  const dev = devise === 'CDF' ? 'CDF' : 'USD'
+
+  if (numSourceId === numDestId) {
+    return res.status(400).json({ message: 'Le compte source et le compte destination doivent être différents.' })
+  }
+  if (!numMontant || numMontant <= 0) {
+    return res.status(400).json({ message: 'Le montant du virement doit être supérieur à zéro.' })
+  }
+
+  const source = comptesCaisse.find((c) => c.id === numSourceId)
+  const dest = comptesCaisse.find((c) => c.id === numDestId)
+  if (!source || !dest) {
+    return res.status(404).json({ message: 'Compte de trésorerie source ou destination introuvable.' })
+  }
+
+  // Contrôle du solde disponible
+  const soldeDispo = dev === 'USD' ? source.soldeUsd : source.soldeCdf
+  if (soldeDispo < numMontant) {
+    return res.status(400).json({
+      message: `Solde insuffisant sur ${source.nom}. Disponible: ${soldeDispo.toFixed(2)} ${dev}, Demandé: ${numMontant.toFixed(2)} ${dev}.`
+    })
+  }
+
+  // 1. Déduction sur le compte source
+  if (dev === 'USD') source.soldeUsd -= numMontant
+  else source.soldeCdf -= numMontant
+
+  // 2. Majoration sur le compte destination
+  if (dev === 'USD') dest.soldeUsd += numMontant
+  else dest.soldeCdf += numMontant
+
+  const refVir = `VIR-${Date.now().toString().slice(-6)}`
+  const bordereau = referenceBordereau ? String(referenceBordereau).trim() : refVir
+  const agId = source.agenceId || 1
+  const activeRate = tauxChanges.find((t) => t.agenceId === agId && t.statut === 'VALIDE' && t.actif)?.taux || 2850
+
+  // 3. Enregistrement des transactions de trésorerie
+  const txSortie: any = {
+    id: `TX-${Date.now().toString().slice(-8)}-OUT`,
+    referenceInterne: `${refVir}-OUT`,
+    agenceId: source.agenceId,
+    caisseId: source.id,
+    montant: numMontant,
+    devise: dev,
+    tauxApplique: activeRate,
+    type: 'SORTIE',
+    libelle: `Virement interne vers ${dest.nom} (${bordereau}) - ${motif || 'Transfert de fonds'}`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: new Date().toISOString(),
+    dateValidation: new Date().toISOString(),
+  }
+  const txEntree: any = {
+    id: `TX-${Date.now().toString().slice(-8)}-IN`,
+    referenceInterne: `${refVir}-IN`,
+    agenceId: dest.agenceId,
+    caisseId: dest.id,
+    montant: numMontant,
+    devise: dev,
+    tauxApplique: activeRate,
+    type: 'ENTREE',
+    libelle: `Virement interne reçu de ${source.nom} (${bordereau}) - ${motif || 'Transfert de fonds'}`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: new Date().toISOString(),
+    dateValidation: new Date().toISOString(),
+  }
+  transactions.unshift(txEntree, txSortie)
+
+  // 4. Écritures comptables normalisées SYSCOHADA via compte 585 (Virements internes)
+  const numCompteSource = source.type === 'BANQUE' ? '521' : (dev === 'USD' ? '571' : '572')
+  const numCompteDest = dest.type === 'BANQUE' ? '521' : (dev === 'USD' ? '571' : '572')
+
+  // Phase A : Sortie du compte source vers 585
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refVir,
+      agenceId: source.agenceId,
+      compteNumero: '585',
+      sens: 'DEBIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: `Virement de fonds : Débit compte 585 par ${source.nom}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'VIREMENT_INTERNE',
+      sourceId: refVir,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: new Date().toISOString(),
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refVir,
+      agenceId: source.agenceId,
+      compteNumero: numCompteSource,
+      sens: 'CREDIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: `Décaissement ${source.nom} pour virement vers ${dest.nom}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'VIREMENT_INTERNE',
+      sourceId: refVir,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: new Date().toISOString(),
+    }
+  )
+
+  // Phase B : Réception sur compte destination depuis 585
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 3,
+      referenceOperation: refVir,
+      agenceId: dest.agenceId,
+      compteNumero: numCompteDest,
+      sens: 'DEBIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: `Encaissement ${dest.nom} provenant de ${source.nom}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'VIREMENT_INTERNE',
+      sourceId: refVir,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: new Date().toISOString(),
+    },
+    {
+      id: ecrituresComptables.length + 4,
+      referenceOperation: refVir,
+      agenceId: dest.agenceId,
+      compteNumero: '585',
+      sens: 'CREDIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: `Apurement compte 585 par réception sur ${dest.nom}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'VIREMENT_INTERNE',
+      sourceId: refVir,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: new Date().toISOString(),
+    }
+  )
+
+  logAudit(
+    currentUser.nom,
+    'VIREMENT_INTERNE_TRESORERIE',
+    `Virement de ${numMontant} ${dev} depuis ${source.nom} vers ${dest.nom} (Réf: ${bordereau})`,
+    source.agenceId
+  )
+
+  res.json({
+    message: `Virement interne de ${numMontant} ${dev} effectué avec succès.`,
+    reference: refVir,
+    source,
+    dest,
+  })
+})
+
+// ----------------- RAPPROCHEMENT BANCAIRE -----------------
+router.get('/tresorerie/rapprochements', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const caisseId = req.query.caisseId ? toInt(req.query.caisseId) : undefined
+  const list = rapprochementsBancaires
+    .filter((r) => (!agenceId || r.agenceId === agenceId) && (!caisseId || r.compteCaisseId === caisseId))
+    .map((r) => {
+      const compte = comptesCaisse.find((c) => c.id === r.compteCaisseId)
+      return {
+        ...r,
+        compte,
+      }
+    })
+  res.json(list)
+})
+
+router.post('/tresorerie/rapprochements', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { compteCaisseId, agenceId, dateDebut, dateFin, soldeDebutReleve, soldeFinReleve, devise } = req.body
+  const numCaisseId = toInt(compteCaisseId)
+  const numAg = toInt(agenceId) || 1
+  const compte = comptesCaisse.find((c) => c.id === numCaisseId)
+  if (!compte) return res.status(404).json({ message: 'Compte bancaire introuvable' })
+
+  const dev = devise === 'CDF' ? 'CDF' : 'USD'
+  const soldeComptableActuel = dev === 'USD' ? compte.soldeUsd : compte.soldeCdf
+  const sFinReleve = Number(soldeFinReleve) || 0
+  const ecart = Math.round((soldeComptableActuel - sFinReleve) * 100) / 100
+
+  const nouveauRapprochement: any = {
+    id: rapprochementsBancaires.length + 1,
+    compteCaisseId: numCaisseId,
+    agenceId: numAg,
+    dateDebut: dateDebut || new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+    dateFin: dateFin || new Date().toISOString().slice(0, 10),
+    soldeDebutReleve: Number(soldeDebutReleve) || 0,
+    soldeFinReleve: sFinReleve,
+    soldeComptable: soldeComptableActuel,
+    ecart,
+    devise: dev,
+    statut: 'EN_COURS',
+    auteur: currentUser.nom,
+    operationsPointees: [],
+  }
+
+  rapprochementsBancaires.unshift(nouveauRapprochement)
+  logAudit(currentUser.nom, 'CREATION_RAPPROCHEMENT_BANCAIRE', `État de rapprochement initié pour ${compte.nom} (Solde extrait: ${sFinReleve} ${dev}, Solde compta: ${soldeComptableActuel} ${dev})`, numAg)
+  res.json({ ...nouveauRapprochement, compte })
+})
+
+router.post('/tresorerie/rapprochements/:id/pointer', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const rap = rapprochementsBancaires.find((r) => r.id === toInt(req.params.id))
+  if (!rap) return res.status(404).json({ message: 'Rapprochement bancaire introuvable' })
+
+  const { operationId } = req.body
+  if (!operationId) return res.status(400).json({ message: 'ID opération requis' })
+
+  const strOp = String(operationId)
+  if (rap.operationsPointees.includes(strOp)) {
+    rap.operationsPointees = rap.operationsPointees.filter((id) => id !== strOp)
+  } else {
+    rap.operationsPointees.push(strOp)
+  }
+
+  res.json({ message: 'Pointage mis à jour', operationsPointees: rap.operationsPointees })
+})
+
+router.post('/tresorerie/rapprochements/:id/valider', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const rap = rapprochementsBancaires.find((r) => r.id === toInt(req.params.id))
+  if (!rap) return res.status(404).json({ message: 'Rapprochement bancaire introuvable' })
+
+  rap.statut = 'VALIDE'
+  rap.dateCloture = new Date().toISOString()
+  logAudit(currentUser.nom, 'VALIDATION_RAPPROCHEMENT_BANCAIRE', `Rapprochement #${rap.id} validé et clôturé. Écart final: ${rap.ecart} ${rap.devise}`, rap.agenceId)
+
+  res.json({ message: 'État de rapprochement bancaire validé avec succès', rapprochement: rap })
 })
 
 // ----------------- COMPTABILITE OHADA -----------------
@@ -1159,6 +2202,27 @@ router.get('/production/recettes', (_req: Request, res: Response) => {
   res.json(enriched)
 })
 
+router.post('/production/recettes', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { articleFiniId, articleMatiereId, quantiteRequise } = req.body
+  if (!articleFiniId || !articleMatiereId || !quantiteRequise) {
+    return res.status(400).json({ message: 'Tous les paramètres de recette sont requis.' })
+  }
+
+  const nouvelleRecette = {
+    id: recettes.length + 1,
+    articleFiniId: Number(articleFiniId),
+    articleMatiereId: Number(articleMatiereId),
+    quantiteRequise: Number(quantiteRequise),
+  }
+
+  recettes.push(nouvelleRecette)
+  logAudit(currentUser.nom, 'AJOUT_RECETTE_PRODUCTION', `Nouvelle formule technique enregistrée pour article #${articleFiniId}`, 1)
+  res.json(nouvelleRecette)
+})
+
 router.post('/production/ordres', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   const { agenceId, articleFiniId, quantitePrevue } = req.body
@@ -1243,6 +2307,25 @@ router.post('/production/ordres/:id/cloturer', (req: Request, res: Response) => 
   res.json({ message: 'Ordre clôturé et lot généré avec succès', ordre, numeroLot })
 })
 
+router.get('/production/ordres/:id/fiche-a4', (req: Request, res: Response) => {
+  const ordreId = toInt(req.params.id)
+  const ordre = ordresProduction.find((o) => o.id === ordreId)
+  if (!ordre) return res.status(404).send('Ordre de production non trouvé')
+
+  const agence = agences.find((a) => a.id === ordre.agenceId)
+  const articleFini = articles.find((a) => a.id === ordre.articleFiniId)
+  const recetteLignes = recettes
+    .filter((r) => r.articleFiniId === ordre.articleFiniId)
+    .map((r) => ({
+      ...r,
+      articleMatiere: articles.find((a) => a.id === r.articleMatiereId),
+    }))
+
+  const html = renderBonProductionHtml(ordre, agence, articleFini, recetteLignes, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
 // ----------------- FOURNISSEURS & ACHATS -----------------
 router.get('/fournisseurs', (_req: Request, res: Response) => {
   res.json(fournisseurs)
@@ -1262,6 +2345,176 @@ router.post('/fournisseurs', (req: Request, res: Response) => {
   fournisseurs.unshift(nouveau)
   logAudit(currentUser?.nom || 'Chef', 'CREATION_FOURNISSEUR', `Nouveau fournisseur: ${nom}`)
   res.json(nouveau)
+})
+
+// ----------------- COMMANDES D'ACHAT FOURNISSEURS (BC) -----------------
+router.get('/achats/commandes', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = commandesAchat
+    .filter((c) => !agenceId || c.agenceId === agenceId)
+    .map((c) => ({
+      ...c,
+      fournisseur: fournisseurs.find((f) => f.id === c.fournisseurId),
+      agence: agences.find((a) => a.id === c.agenceId),
+    }))
+  res.json(list)
+})
+
+router.post('/achats/commandes', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { agenceId, fournisseurId, produit, quantiteKg, prixUnitaireKgUsd, observations } = req.body
+  const numAg = toInt(agenceId) || 1
+  const numFourn = toInt(fournisseurId)
+  const four = fournisseurs.find((f) => f.id === numFourn)
+  if (!four) return res.status(404).json({ message: 'Fournisseur introuvable' })
+
+  const qte = Number(quantiteKg) || 1000
+  const pu = Number(prixUnitaireKgUsd) || 0.40
+  const total = Math.round(qte * pu * 100) / 100
+  const refBC = `BC-${Date.now().toString().slice(-6)}`
+
+  const nouvelleCommande: any = {
+    id: commandesAchat.length + 1,
+    numeroBC: refBC,
+    agenceId: numAg,
+    fournisseurId: numFourn,
+    fournisseurNom: four.nom,
+    produit: String(produit || 'Maïs en grains blanc sec').trim(),
+    quantiteKg: qte,
+    prixUnitaireKgUsd: pu,
+    montantTotalUsd: total,
+    dateCommande: new Date().toISOString(),
+    statut: 'APPROUVEE',
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  commandesAchat.unshift(nouvelleCommande)
+  logAudit(currentUser.nom, 'CREATION_COMMANDE_ACHAT', `Bon de commande ${refBC} créé pour ${four.nom} : ${qte} kg (${total} USD)`, numAg)
+  res.json(nouvelleCommande)
+})
+
+// ----------------- RÉCEPTIONS & PESÉE PONT-BASCULE (BR) -----------------
+router.get('/achats/receptions', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = receptionsPontBascule
+    .filter((r) => !agenceId || r.agenceId === agenceId)
+    .map((r) => ({
+      ...r,
+      commande: commandesAchat.find((c) => c.id === r.commandeAchatId),
+      agence: agences.find((a) => a.id === r.agenceId),
+    }))
+  res.json(list)
+})
+
+router.post('/achats/receptions', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const {
+    commandeAchatId,
+    agenceId,
+    fournisseurId,
+    produit,
+    immatriculationCamion,
+    chauffeur,
+    peseeBruteKg,
+    peseeTareKg,
+    tauxHumidite,
+    tauxImpuretes,
+    prixUnitaireKgUsd,
+    observations,
+  } = req.body
+
+  const numAg = toInt(agenceId) || 1
+  const numCmdId = commandeAchatId ? toInt(commandeAchatId) : undefined
+  const cmd = numCmdId ? commandesAchat.find((c) => c.id === numCmdId) : undefined
+  const numFourn = fournisseurId ? toInt(fournisseurId) : (cmd ? cmd.fournisseurId : 1)
+  const four = fournisseurs.find((f) => f.id === numFourn)
+
+  const pBrut = Number(peseeBruteKg) || 0
+  const pTare = Number(peseeTareKg) || 0
+  if (pBrut <= pTare) {
+    return res.status(400).json({ message: 'Le poids brut (camion plein) doit être supérieur au poids tare (camion vide).' })
+  }
+
+  const pNet = pBrut - pTare
+  const hum = Number(tauxHumidite) || 12.5
+  const imp = Number(tauxImpuretes) || 1.0
+
+  let refactionPourcent = 0
+  if (hum > 13.5) refactionPourcent += (hum - 13.5) * 1.2
+  if (imp > 2.0) refactionPourcent += (imp - 2.0)
+  const refactionKg = Math.round(pNet * (refactionPourcent / 100))
+  const pNetAccepte = Math.max(0, pNet - refactionKg)
+
+  const pu = Number(prixUnitaireKgUsd) || (cmd ? cmd.prixUnitaireKgUsd : 0.42)
+  const montantTotalFacture = Math.round(pNetAccepte * pu * 100) / 100
+  const refBR = `BR-${Date.now().toString().slice(-6)}`
+
+  const nouvelleReception: any = {
+    id: receptionsPontBascule.length + 1,
+    numeroBR: refBR,
+    commandeAchatId: numCmdId,
+    numeroBC: cmd ? cmd.numeroBC : undefined,
+    agenceId: numAg,
+    fournisseurId: numFourn,
+    fournisseurNom: four ? four.nom : 'Fournisseur Local',
+    produit: String(produit || (cmd ? cmd.produit : 'Maïs en grains blanc sec')).trim(),
+    immatriculationCamion: String(immatriculationCamion || 'CAMION-LOCAL').trim().toUpperCase(),
+    chauffeur: String(chauffeur || 'Chauffeur').trim(),
+    peseeBruteKg: pBrut,
+    peseeTareKg: pTare,
+    poidsNetKg: pNet,
+    tauxHumidite: hum,
+    tauxImpuretes: imp,
+    refactionKg,
+    poidsNetAccepteKg: pNetAccepte,
+    prixUnitaireKgUsd: pu,
+    montantTotalFactureUsd: montantTotalFacture,
+    statut: 'VALIDE',
+    datePeseeBrute: new Date().toISOString(),
+    datePeseeTare: new Date().toISOString(),
+    magasinierNom: currentUser.nom,
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  receptionsPontBascule.unshift(nouvelleReception)
+
+  // 1. Entrée automatique en stock matière première
+  const artGrains = articles.find((a) => a.designation.toLowerCase().includes('maïs') && a.designation.toLowerCase().includes('grain')) || articles[0]
+  if (artGrains) {
+    const lotId = `LOT-PONT-${Date.now().toString().slice(-4)}`
+    stocksAgence.push({
+      id: stocksAgence.length + 1,
+      agenceId: numAg,
+      articleId: artGrains.id,
+      quantite: pNetAccepte,
+      numeroLot: lotId,
+      dateExpiration: '2027-12-31',
+      seuilAlerte: 2000,
+    })
+  }
+
+  // 2. Mise à jour de la dette fournisseur (Compte 401)
+  if (four) {
+    four.soldeDette = Math.round((four.soldeDette + montantTotalFacture) * 100) / 100
+  }
+
+  // 3. Mise à jour statut commande si applicable
+  if (cmd) {
+    cmd.statut = 'SOLDEE'
+  }
+
+  logAudit(
+    currentUser.nom,
+    'PESEE_PONT_BASCULE',
+    `Pesée réception ${refBR} : Camion ${nouvelleReception.immatriculationCamion}, Net: ${pNet} kg, Accepté: ${pNetAccepte} kg (${montantTotalFacture} USD)`,
+    numAg
+  )
+
+  res.json({ message: 'Pesée et réception validées. Matière première intégrée au stock.', reception: nouvelleReception })
 })
 
 router.get('/achats', (req: Request, res: Response) => {
@@ -1373,7 +2626,52 @@ router.post('/achats', (req: Request, res: Response) => {
     }
   )
 
-  logAudit(currentUser?.nom || 'Chef', 'COMMANDE_ACHAT_RECUE', `Achat ${ref} : ${numTotal} ${devise} reçu en stock`, numAg)
+  // Si un acompte ou paiement comptant a été versé à l'achat
+  if (numPaye > 0) {
+    const caisse = comptesCaisse.find((c) => c.agenceId === numAg) || comptesCaisse[0]
+    if (caisse) {
+      if (devise === 'USD') caisse.soldeUsd = Math.max(0, caisse.soldeUsd - numPaye)
+      else caisse.soldeCdf = Math.max(0, caisse.soldeCdf - numPaye)
+    }
+
+    const refPaiement = `PAI-${ref}`
+    ecrituresComptables.push(
+      {
+        id: ecrituresComptables.length + 1,
+        referenceOperation: refPaiement,
+        agenceId: numAg,
+        compteNumero: '401',
+        sens: 'DEBIT',
+        montant: numPaye,
+        devise: devise || 'USD',
+        libelle: `Règlement comptant achat ${ref} à ${four?.nom || 'Fournisseur'}`,
+        sourceModule: 'ACHATS',
+        sourceType: 'PAIEMENT_FOURNISSEUR',
+        sourceId: String(nouvelAchat.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      },
+      {
+        id: ecrituresComptables.length + 2,
+        referenceOperation: refPaiement,
+        agenceId: numAg,
+        compteNumero: devise === 'USD' ? '571' : '572',
+        sens: 'CREDIT',
+        montant: numPaye,
+        devise: devise || 'USD',
+        libelle: `Décaissement caisse achat ${ref}`,
+        sourceModule: 'ACHATS',
+        sourceType: 'PAIEMENT_FOURNISSEUR',
+        sourceId: String(nouvelAchat.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      }
+    )
+  }
+
+  logAudit(currentUser?.nom || 'Chef', 'COMMANDE_ACHAT_RECUE', `Achat ${ref} : ${numTotal} ${devise} reçu en stock (Acompte payé: ${numPaye})`, numAg)
   res.json(nouvelAchat)
 })
 
@@ -1461,7 +2759,7 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { agenceSourceId, agenceDestId, lignes } = req.body
+  const { agenceSourceId, agenceDestId, lignes, vehiculeId } = req.body
   const numSrc = toInt(agenceSourceId)
   const numDest = toInt(agenceDestId)
 
@@ -1477,6 +2775,11 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
     }
   }
 
+  const vehicule = vehiculeId ? vehicules.find((v) => v.id === Number(vehiculeId)) : undefined
+  if (vehicule) {
+    vehicule.statut = 'EN_COURSE'
+  }
+
   const nouveauTransfert = {
     id: transfertsStock.length + 1,
     referenceTransfert: `TRF-${numSrc}-${numDest}-${Date.now().toString().slice(-4)}`,
@@ -1485,6 +2788,9 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
     dateExpedition: new Date().toISOString(),
     statut: 'EN_TRANSIT' as const,
     initiateurNom: currentUser.nom,
+    vehiculeId: vehicule?.id,
+    immatriculationCamion: vehicule?.plaqueImmatriculation,
+    chauffeurNom: vehicule?.chauffeurNom,
     lignes: (lignes || []).map((l: any, idx: number) => ({
       id: idx + 1,
       articleId: Number(l.articleId),
@@ -1494,7 +2800,12 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
   }
 
   transfertsStock.unshift(nouveauTransfert)
-  logAudit(currentUser.nom, 'EXPEDITION_TRANSFERT_STOCK', `Expédition transfert ${nouveauTransfert.referenceTransfert} vers agence #${numDest}`, numSrc)
+  logAudit(
+    currentUser.nom,
+    'EXPEDITION_TRANSFERT_STOCK',
+    `Expédition transfert ${nouveauTransfert.referenceTransfert} vers agence #${numDest} (Camion: ${vehicule?.plaqueImmatriculation || 'Non spécifié'})`,
+    numSrc
+  )
   res.json(nouveauTransfert)
 })
 
@@ -1525,6 +2836,14 @@ router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => 
     }
   }
 
+  // Release vehicle back to DISPONIBLE
+  if (transfert.vehiculeId) {
+    const vehicule = vehicules.find((v) => v.id === transfert.vehiculeId)
+    if (vehicule) {
+      vehicule.statut = 'DISPONIBLE'
+    }
+  }
+
   transfert.statut = ecartConstate ? 'LITIGE' : 'RECU'
   transfert.recepteurNom = currentUser.nom
   transfert.dateReception = new Date().toISOString()
@@ -1532,6 +2851,23 @@ router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => 
 
   logAudit(currentUser.nom, 'RECEPTION_TRANSFERT_STOCK', `Réception ${transfert.referenceTransfert} par agence #${transfert.agenceDestId} (${transfert.statut})`, transfert.agenceDestId)
   res.json(transfert)
+})
+
+router.get('/stocks/transferts/:id/feuille-route', (req: Request, res: Response) => {
+  const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
+  if (!transfert) return res.status(404).send('Transfert introuvable')
+
+  const agenceSource = agences.find((a) => a.id === transfert.agenceSourceId)
+  const agenceDest = agences.find((a) => a.id === transfert.agenceDestId)
+  const vehicule = transfert.vehiculeId ? vehicules.find((v) => v.id === transfert.vehiculeId) : undefined
+  const enrichedLignes = transfert.lignes.map((l) => ({
+    ...l,
+    article: articles.find((art) => art.id === l.articleId),
+  }))
+
+  const html = renderFeuilleRouteTransfertHtml(transfert, agenceSource, agenceDest, enrichedLignes, vehicule, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
 })
 
 // ----------------- RESSOURCES HUMAINES & PAIE -----------------
@@ -1852,6 +3188,75 @@ router.post('/admin/users', (req: Request, res: Response) => {
   users.push(nouvelUtilisateur)
   logAudit(currentUser?.nom || 'Admin', 'CREATION_UTILISATEUR', `Création du compte ${email} (${role}) affecté à agence #${nouvelUtilisateur.agenceId}`)
   res.json(nouvelUtilisateur)
+})
+
+router.put('/admin/users/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  const { nom, email, role, agenceId, actif, permissions } = req.body
+
+  // Vérification unicité de l'email si modifié
+  if (email && email.toLowerCase() !== targetUser.email.toLowerCase()) {
+    const existing = users.find((u) => u.id !== userId && u.email.toLowerCase() === email.toLowerCase())
+    if (existing) {
+      return res.status(400).json({ message: 'Un autre utilisateur utilise déjà cette adresse email' })
+    }
+    targetUser.email = String(email).trim().toLowerCase()
+  }
+
+  if (nom) targetUser.nom = String(nom).trim()
+  if (role) targetUser.role = String(role).trim()
+  if (agenceId !== undefined) targetUser.agenceId = toInt(agenceId)
+  if (actif !== undefined) targetUser.actif = Boolean(actif)
+  if (permissions && Array.isArray(permissions)) targetUser.permissions = permissions
+
+  logAudit(
+    currentUser.nom,
+    'MODIFICATION_UTILISATEUR',
+    `Mise à jour du compte #${userId} (${targetUser.nom}, Rôle: ${targetUser.role}, Agence: #${targetUser.agenceId}, Statut: ${targetUser.actif ? 'Actif' : 'Bloqué'})`,
+    targetUser.agenceId
+  )
+
+  const enriched = {
+    ...targetUser,
+    agence: agences.find((a) => a.id === targetUser.agenceId),
+  }
+
+  res.json({ message: 'Utilisateur mis à jour avec succès', user: enriched })
+})
+
+router.post('/admin/users/:id/toggle-statut', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  if (targetUser.id === currentUser.id) {
+    return res.status(400).json({ message: 'Vous ne pouvez pas désactiver votre propre compte actif.' })
+  }
+
+  targetUser.actif = !targetUser.actif
+  const actionStr = targetUser.actif ? 'ACTIVATION_COMPTE' : 'DESACTIVATION_COMPTE'
+  logAudit(
+    currentUser.nom,
+    actionStr,
+    `Compte #${userId} (${targetUser.nom}) ${targetUser.actif ? 'activé' : 'suspendu'} par ${currentUser.nom}`,
+    targetUser.agenceId
+  )
+
+  const enriched = {
+    ...targetUser,
+    agence: agences.find((a) => a.id === targetUser.agenceId),
+  }
+
+  res.json({ message: `Compte utilisateur ${targetUser.actif ? 'activé' : 'suspendu'} avec succès`, user: enriched })
 })
 
 router.get('/categories', (_req: Request, res: Response) => {

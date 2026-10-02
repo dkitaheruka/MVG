@@ -43,6 +43,10 @@ import {
   MagnifyingGlass,
   Wallet,
   Truck,
+  Tag,
+  PencilSimple,
+  DownloadSimple,
+  FloppyDisk,
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -78,6 +82,9 @@ import type {
   TauxChangeAgence,
   Transaction,
   Vente,
+  RapprochementBancaire,
+  BonLivraison,
+  DirectionKpis,
 } from './types'
 
 type NavItem = {
@@ -491,7 +498,7 @@ function SalesPage() {
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const session = useAppStore((state) => state.session)
 
-  const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'credits' | 'clients'>('pos')
+  const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'credits' | 'clients' | 'livraisons'>('pos')
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [paymentMode, setPaymentMode] = useState<'CASH_USD' | 'CASH_CDF' | 'CREDIT'>('CASH_USD')
@@ -508,6 +515,24 @@ function SalesPage() {
   const [repaymentDevise, setRepaymentDevise] = useState<'USD' | 'CDF'>('USD')
   const [repaymentCaisseId, setRepaymentCaisseId] = useState<number | ''>(1)
   const [repaymentError, setRepaymentError] = useState<string | null>(null)
+  const [selectedVehiculeId, setSelectedVehiculeId] = useState<number | ''>('')
+
+  // Formulaire Bon de Livraison
+  const [showNewBLModal, setShowNewBLModal] = useState(false)
+  const [blVenteId, setBlVenteId] = useState<number | ''>('')
+  const [blClientNom, setBlClientNom] = useState('')
+  const [blClientTel, setBlClientTel] = useState('')
+  const [blAdresse, setBlAdresse] = useState('')
+  const [blVehiculeId, setBlVehiculeId] = useState<number | ''>('')
+  const [blSacs, setBlSacs] = useState('50')
+  const [blPoidsKg, setBlPoidsKg] = useState('1250')
+  const [blObservations, setBlObservations] = useState('')
+
+  const flotteQuery = useQuery({
+    queryKey: ['flotte-vehicules'],
+    queryFn: () => apiRequest<any[]>('/api/flotte/vehicules', { token }),
+    enabled: Boolean(token),
+  })
 
   // 1. Données du stock de l'agence
   const stockQuery = useQuery({
@@ -551,6 +576,57 @@ function SalesPage() {
     queryKey: ['ventes-credits-attente', agenceId],
     queryFn: () => apiRequest<Vente[]>(`/api/ventes?agenceId=${agenceId}&statutCredit=EN_ATTENTE`, { token }),
     enabled: Boolean(token) && activeTab === 'credits',
+  })
+
+  // 6. Bons de livraison
+  const livraisonsQuery = useQuery({
+    queryKey: ['livraisons', agenceId],
+    queryFn: () => apiRequest<BonLivraison[]>(`/api/logistique/livraisons?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const createBLMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/logistique/livraisons', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agenceId,
+          venteId: blVenteId || undefined,
+          clientNom: blClientNom,
+          clientTelephone: blClientTel,
+          adresseLivraison: blAdresse,
+          vehiculeId: blVehiculeId || undefined,
+          quantiteSacs: Number(blSacs),
+          poidsTotalKg: Number(blPoidsKg),
+          observations: blObservations,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['livraisons'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+      setShowNewBLModal(false)
+      setBlClientNom('')
+      setBlAdresse('')
+      setBlObservations('')
+    },
+  })
+
+  const updateBLStatutMutation = useMutation({
+    mutationFn: ({ id, statut, recepteurNom }: { id: number; statut: string; recepteurNom?: string }) =>
+      apiRequest(`/api/logistique/livraisons/${id}/statut`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({
+          statut,
+          recepteurNom,
+          recepteurSignature: statut === 'LIVRE' ? 'SIGNATURE_CERTIFIEE_DECHARGE' : undefined,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['livraisons'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+    },
   })
 
   // Mutateurs
@@ -896,6 +972,13 @@ function SalesPage() {
         >
           <UsersThree size={19} />
           Clients & Dettes
+        </button>
+        <button
+          className={clsx('pos-tab-btn', activeTab === 'livraisons' && 'active')}
+          onClick={() => setActiveTab('livraisons')}
+        >
+          <Truck size={19} />
+          Bons de Livraison (BL) ({livraisonsQuery.data?.length ?? 0})
         </button>
       </div>
 
@@ -1306,6 +1389,237 @@ function SalesPage() {
         </div>
       )}
 
+      {/* ONGLET 5 : BONS DE LIVRAISON CLIENTS & LOGISTIQUE */}
+      {activeTab === 'livraisons' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Suivi des Livraisons & Bons de Livraison (BL)</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Affectation des camions de la minoterie, suivi en temps réel du trajet et décharges clients signées.
+              </p>
+            </div>
+            <button className="primary-action" onClick={() => setShowNewBLModal(true)}>
+              <Plus size={17} /> Nouveau Bon de Livraison (BL)
+            </button>
+          </div>
+
+          <DataTable
+            columns={['N° BL', 'Date', 'Client & Téléphone', 'Destination / Adresse', 'Camion & Chauffeur', 'Chargement (Sacs / Poids)', 'Statut Trajet', 'Actions']}
+            loading={livraisonsQuery.isLoading}
+            rows={(livraisonsQuery.data ?? []).map((bl) => [
+              <strong key={'nbl-' + bl.id}>{bl.numeroBL}</strong>,
+              new Date(bl.dateCreation).toLocaleDateString('fr-FR'),
+              <div key={'cl-' + bl.id}>
+                <strong>{bl.clientNom}</strong>
+                {bl.clientTelephone && <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{bl.clientTelephone}</div>}
+              </div>,
+              bl.adresseLivraison,
+              <div key={'vh-' + bl.id}>
+                <strong>{bl.vehicule?.plaqueImmatriculation ?? 'Camion non assigné'}</strong>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>Chauffeur : {bl.chauffeurNom ?? bl.vehicule?.chauffeurNom ?? 'À assigner'}</div>
+              </div>,
+              <div key={'ch-' + bl.id}>
+                <strong>{bl.quantiteSacs} sacs</strong>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{bl.poidsTotalKg.toLocaleString('fr-FR')} kg ({((bl.poidsTotalKg)/1000).toFixed(2)} T)</div>
+              </div>,
+              <span
+                key={'st-' + bl.id}
+                className={clsx(
+                  'badge',
+                  bl.statut === 'LIVRE' && 'badge-success',
+                  bl.statut === 'EN_TRANSIT' && 'badge-warning',
+                  bl.statut === 'PREPARATION' && 'badge-neutral',
+                  bl.statut === 'ANNULE' && 'badge-danger'
+                )}
+              >
+                {bl.statut === 'LIVRE' ? 'Livré (Déchargé)' : bl.statut === 'EN_TRANSIT' ? 'En transit (Sur route)' : 'En préparation'}
+              </span>,
+              <div key={'act-' + bl.id} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {bl.statut === 'PREPARATION' && (
+                  <button
+                    className="primary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+                    onClick={() => updateBLStatutMutation.mutate({ id: bl.id, statut: 'EN_TRANSIT' })}
+                    title="Départ du camion minoterie"
+                  >
+                    Départ camion
+                  </button>
+                )}
+                {bl.statut === 'EN_TRANSIT' && (
+                  <button
+                    className="primary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.75rem', background: '#16a34a' }}
+                    onClick={() => {
+                      const nom = prompt('Nom de la personne ayant réceptionné et signé la décharge :') || 'Client / Dépôt'
+                      updateBLStatutMutation.mutate({ id: bl.id, statut: 'LIVRE', recepteurNom: nom })
+                    }}
+                    title="Confirmer la livraison et la décharge"
+                  >
+                    Valider Décharge
+                  </button>
+                )}
+                {bl.venteId && (
+                  <a
+                    className="secondary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    href={downloadUrl(`/api/ventes/${bl.venteId}/bon-livraison${bl.vehiculeId ? `?vehiculeId=${bl.vehiculeId}` : ''}`)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <FilePdf size={14} /> Imprimer BL
+                  </a>
+                )}
+              </div>,
+            ])}
+            emptyText="Aucun bon de livraison enregistré pour cette agence."
+          />
+        </div>
+      )}
+
+      {/* MODAL : NOUVEAU BON DE LIVRAISON */}
+      {showNewBLModal && (
+        <div className="modal-overlay" onClick={() => setShowNewBLModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Générer un Bon de Livraison (BL)</h3>
+              <button className="icon-button" onClick={() => setShowNewBLModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ margin: '6px 0 12px', color: 'var(--muted)', fontSize: '0.85rem' }}>
+              Émission du bordereau de livraison officiel conforme aux mentions légales de l'entreprise.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createBLMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <label>
+                Vente liée (Optionnelle)
+                <select
+                  value={blVenteId}
+                  onChange={(e) => {
+                    const vId = e.target.value ? Number(e.target.value) : ''
+                    setBlVenteId(vId)
+                    const v = (salesQuery.data ?? []).find((s) => s.id === vId)
+                    if (v) {
+                      setBlClientNom(v.client?.nom ?? 'Client')
+                      setBlClientTel(v.client?.telephone ?? '')
+                      setBlAdresse(v.client?.adresse ?? 'Dépôt client')
+                      const totalSacs = (v.details || []).reduce((sum, d) => sum + (d.quantite || 0), 0)
+                      if (totalSacs > 0) {
+                        setBlSacs(totalSacs.toString())
+                        setBlPoidsKg((totalSacs * 25).toString())
+                      }
+                    }
+                  }}
+                >
+                  <option value="">Livraison hors-vente directe (ou choisir une vente récente...)</option>
+                  {(salesQuery.data ?? []).slice(0, 10).map((v) => (
+                    <option key={'v-' + v.id} value={v.id}>
+                      {v.referenceVente} - {v.client?.nom} ({money(v.montantTotal, 'USD')})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Nom du Client Destinataire
+                  <input
+                    required
+                    value={blClientNom}
+                    onChange={(e) => setBlClientNom(e.target.value)}
+                    placeholder="ex: Boulangerie Moderne"
+                  />
+                </label>
+                <label>
+                  Téléphone Contact
+                  <input
+                    value={blClientTel}
+                    onChange={(e) => setBlClientTel(e.target.value)}
+                    placeholder="ex: +243 997 000 111"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Adresse complète de Livraison
+                <input
+                  required
+                  value={blAdresse}
+                  onChange={(e) => setBlAdresse(e.target.value)}
+                  placeholder="ex: Quartier Katindo, Avenue Principale N° 12, Goma"
+                />
+              </label>
+
+              <label>
+                Camion & Chauffeur Affecté
+                <select
+                  value={blVehiculeId}
+                  onChange={(e) => setBlVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                  {(flotteQuery.data ?? []).map((v: any) => (
+                    <option key={'cam-' + v.id} value={v.id}>
+                      {v.plaqueImmatriculation} - {v.marqueModele} (Chauffeur: {v.chauffeurNom}) - {v.statut}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Quantité de Sacs
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    value={blSacs}
+                    onChange={(e) => {
+                      setBlSacs(e.target.value)
+                      setBlPoidsKg((Number(e.target.value) * 25).toString())
+                    }}
+                  />
+                </label>
+                <label>
+                  Poids Total Estimé (kg)
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    value={blPoidsKg}
+                    onChange={(e) => setBlPoidsKg(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <label>
+                Instructions / Observations
+                <input
+                  value={blObservations}
+                  onChange={(e) => setBlObservations(e.target.value)}
+                  placeholder="ex: Livraison matinale prioritaire avant 10h"
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewBLModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={createBLMutation.isPending}>
+                  {createBLMutation.isPending ? 'Génération...' : 'Émettre le Bon de Livraison'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL : ENCAISSEMENT / REMBOURSEMENT DE DETTE */}
       {repaymentClient && (
         <div className="modal-overlay" onClick={() => setRepaymentClient(null)}>
@@ -1501,19 +1815,46 @@ function SalesPage() {
               </div>
             </div>
 
-            <div className="receipt-modal-actions">
+            <div style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '0.84rem' }}>
+              <Truck size={18} style={{ color: 'var(--accent-strong)' }} />
+              <span>Camion de livraison :</span>
+              <select
+                value={selectedVehiculeId}
+                onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                style={{ padding: '3px 8px', fontSize: '0.8rem', borderRadius: 4, flex: 1, minWidth: 200 }}
+              >
+                <option value="">Sélectionner un véhicule de la flotte...</option>
+                {(flotteQuery.data ?? []).map((v: any) => (
+                  <option key={v.id} value={v.id}>
+                    {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="receipt-modal-actions" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {activeReceipt.id && !String(activeReceipt.id).startsWith('OFF-') && (
-                <a
-                  className="secondary-action"
-                  href={downloadUrl(`/api/ventes/${activeReceipt.id}/recu-pdf`)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <FilePdf size={17} /> Télécharger PDF
-                </a>
+                <>
+                  <a
+                    className="secondary-action"
+                    href={downloadUrl(`/api/ventes/${activeReceipt.id}/recu-pdf`)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <FilePdf size={17} /> Facture A4 (Officielle)
+                  </a>
+                  <a
+                    className="secondary-action"
+                    href={downloadUrl(`/api/ventes/${activeReceipt.id}/bon-livraison${selectedVehiculeId ? `?vehiculeId=${selectedVehiculeId}` : ''}`)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Truck size={17} /> Bordereau Livraison (BL)
+                  </a>
+                </>
               )}
               <button className="primary-action" onClick={() => window.print()}>
-                <Printer size={17} /> Imprimer Ticket
+                <Printer size={17} /> Imprimer Ticket 80mm
               </button>
               <button className="secondary-action" onClick={() => setActiveReceipt(null)}>
                 Fermer
@@ -1530,12 +1871,21 @@ function StockPage() {
   const token = useToken()
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
-  const [activeTab, setActiveTab] = useState<'inventory' | 'corrections'>('inventory')
+  const [activeTab, setActiveTab] = useState<'inventory' | 'corrections' | 'catalogue'>('inventory')
   const [showModal, setShowModal] = useState(false)
+  const [showNewArticleModal, setShowNewArticleModal] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedStockId, setSelectedStockId] = useState<number | ''>('')
   const [quantiteNouvelle, setQuantiteNouvelle] = useState('')
   const [motif, setMotif] = useState('')
+
+  // Formulaire nouvel article
+  const [newArtCode, setNewArtCode] = useState('')
+  const [newArtDesignation, setNewArtDesignation] = useState('')
+  const [newArtType, setNewArtType] = useState<'PRODUIT_FINI' | 'MATIERE_PREMIERE'>('PRODUIT_FINI')
+  const [newArtUnite, setNewArtUnite] = useState('Sac 25kg')
+  const [newArtPrix, setNewArtPrix] = useState('20.0')
+  const [newArtAlerte, setNewArtAlerte] = useState(true)
 
   const { data: stockData, isLoading: stockLoading } = useQuery({
     queryKey: ['stock', agenceId],
@@ -1547,6 +1897,39 @@ function StockPage() {
     queryKey: ['stock-corrections', agenceId],
     queryFn: () => apiRequest<any[]>(`/api/stocks/corrections?agenceId=${agenceId}`, { token }),
     enabled: Boolean(token),
+  })
+
+  const { data: articlesData, isLoading: articlesLoading } = useQuery({
+    queryKey: ['articles'],
+    queryFn: () => apiRequest<any[]>('/api/articles', { token }),
+    enabled: Boolean(token),
+  })
+
+  const createArticleMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/articles', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          codeUnique: newArtCode,
+          designation: newArtDesignation,
+          type: newArtType,
+          uniteMesure: newArtUnite,
+          prixVenteStandard: Number(newArtPrix) || 0,
+          alerteExpiration: newArtAlerte,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] })
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
+      setShowNewArticleModal(false)
+      setNewArtCode('')
+      setNewArtDesignation('')
+      setNewArtPrix('20.0')
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors de la création de l article'),
   })
 
   const createCorrectionMutation = useMutation({
@@ -1607,9 +1990,23 @@ function StockPage() {
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader title="Gestion des stocks et lots" text="Suivi en temps réel des stocks, numéros de lots, DLUO et circuit de correction validé." icon={Package} />
-        <button className="primary-action" onClick={() => setShowModal(true)}>
-          <Plus size={18} /> Demander un ajustement
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <a
+            className="secondary-action"
+            href={downloadUrl(`/api/stocks/export/inventaire?agenceId=${agenceId}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+          >
+            <FilePdf size={18} /> État des Stocks PMP
+          </a>
+          <button className="secondary-action" onClick={() => setShowNewArticleModal(true)}>
+            <Plus size={18} /> Nouvel Article / Matière
+          </button>
+          <button className="primary-action" onClick={() => setShowModal(true)}>
+            <Plus size={18} /> Demander un ajustement
+          </button>
+        </div>
       </div>
 
       {actionError && (
@@ -1623,10 +2020,38 @@ function StockPage() {
         <button className={clsx('tab-button', activeTab === 'inventory' && 'active')} onClick={() => setActiveTab('inventory')}>
           <Package size={17} /> Inventaire et lots ({stockData?.length ?? 0})
         </button>
+        <button className={clsx('tab-button', activeTab === 'catalogue' && 'active')} onClick={() => setActiveTab('catalogue')}>
+          <Tag size={17} /> Catalogue Général ({articlesData?.length ?? 0})
+        </button>
         <button className={clsx('tab-button', activeTab === 'corrections' && 'active')} onClick={() => setActiveTab('corrections')}>
           <ArrowsClockwise size={17} /> Demandes d ajustement ({correctionsData?.filter((c) => c.statut === 'EN_ATTENTE').length ?? 0} en attente)
         </button>
       </div>
+
+      {activeTab === 'catalogue' && (
+        <DataTable
+          columns={['Code', 'Désignation Produit / Matière', 'Type', 'Conditionnement', 'Prix Vente Standard', 'DLUO']}
+          loading={articlesLoading}
+          rows={(articlesData ?? []).map((art: any) => [
+            <strong key={'c-code-' + art.id}>{art.codeUnique}</strong>,
+            art.designation,
+            <span
+              key={'c-type-' + art.id}
+              className={clsx('badge', art.type === 'PRODUIT_FINI' ? 'badge-success' : 'badge-warning')}
+            >
+              {art.type === 'PRODUIT_FINI' ? 'Produit Fini (Vente)' : 'Matière Première (Usine)'}
+            </span>,
+            art.uniteMesure,
+            art.type === 'PRODUIT_FINI' ? `$${Number(art.prixVenteStandard || 0).toFixed(2)} USD` : 'Coût PMP d achat',
+            art.alerteExpiration ? (
+              <span key={'c-dl-' + art.id} className="badge badge-info">Péremption surveillée</span>
+            ) : (
+              <span key={'c-dl-' + art.id} style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>Non périssable</span>
+            ),
+          ])}
+          emptyText="Aucun article enregistré."
+        />
+      )}
 
       {activeTab === 'inventory' && (
         <DataTable
@@ -1723,6 +2148,92 @@ function StockPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL NOUVEL ARTICLE / MATIERE */}
+      {showNewArticleModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Ajouter un article ou une matière première</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Créez n importe quel produit fini (farine de manioc, pain, provende, huile...) ou matière première agricole / emballage.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); createArticleMutation.mutate(); }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                <label>
+                  Code Unique (Réf)
+                  <input
+                    value={newArtCode}
+                    onChange={(e) => setNewArtCode(e.target.value)}
+                    placeholder="ex: MAN-001, SOJ-RAW"
+                    required
+                  />
+                </label>
+                <label>
+                  Désignation du produit ou matière
+                  <input
+                    value={newArtDesignation}
+                    onChange={(e) => setNewArtDesignation(e.target.value)}
+                    placeholder="ex: Farine de Manioc Panifiable Extra 25kg"
+                    required
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Classification / Rôle
+                  <select
+                    value={newArtType}
+                    onChange={(e) => setNewArtType(e.target.value as 'PRODUIT_FINI' | 'MATIERE_PREMIERE')}
+                  >
+                    <option value="PRODUIT_FINI">Produit Fini (Destiné à la vente / POS)</option>
+                    <option value="MATIERE_PREMIERE">Matière Première (Pour mouture / transformation usine)</option>
+                  </select>
+                </label>
+                <label>
+                  Unité de mesure & conditionnement
+                  <input
+                    value={newArtUnite}
+                    onChange={(e) => setNewArtUnite(e.target.value)}
+                    placeholder="ex: Sac 25kg, Sac 50kg, Tonne, Litre, Carton..."
+                    required
+                  />
+                </label>
+              </div>
+
+              {newArtType === 'PRODUIT_FINI' && (
+                <label style={{ marginTop: 12 }}>
+                  Prix de vente standard ($ USD)
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newArtPrix}
+                    onChange={(e) => setNewArtPrix(e.target.value)}
+                    required
+                  />
+                </label>
+              )}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={newArtAlerte}
+                  onChange={(e) => setNewArtAlerte(e.target.checked)}
+                />
+                <span>Activer la surveillance DLUO (Date limite de consommation / FEFO)</span>
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewArticleModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createArticleMutation.isPending}>
+                  {createArticleMutation.isPending ? 'Création...' : 'Créer l article'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -1733,10 +2244,15 @@ function ProductionPage() {
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const [activeTab, setActiveTab] = useState<'ordres' | 'recettes'>('ordres')
   const [showNewOrdreModal, setShowNewOrdreModal] = useState(false)
+  const [showNewRecetteModal, setShowNewRecetteModal] = useState(false)
+  const [newRecetteFiniId, setNewRecetteFiniId] = useState<number | ''>(7)
+  const [newRecetteMatiereId, setNewRecetteMatiereId] = useState<number | ''>(9)
+  const [newRecetteQte, setNewRecetteQte] = useState('0.032')
+
   const [clotureOrdre, setClotureOrdre] = useState<any | null>(null)
   const [quantiteReelle, setQuantiteReelle] = useState('')
   const [pertes, setPertes] = useState('')
-  const [articleFiniId, setArticleFiniId] = useState<number | ''>(1)
+  const [articleFiniId, setArticleFiniId] = useState<number | ''>(7)
   const [quantitePrevue, setQuantitePrevue] = useState('50')
   const [generatedLotInfo, setGeneratedLotInfo] = useState<{ ordre: any; numeroLot: string } | null>(null)
   const [bonProductionOrdre, setBonProductionOrdre] = useState<any | null>(null)
@@ -1750,6 +2266,12 @@ function ProductionPage() {
   const { data: recettesList, isLoading: recettesLoading } = useQuery({
     queryKey: ['production-recettes'],
     queryFn: () => apiRequest<any[]>('/api/production/recettes', { token }),
+    enabled: Boolean(token),
+  })
+
+  const { data: articlesList } = useQuery({
+    queryKey: ['articles'],
+    queryFn: () => apiRequest<any[]>('/api/articles', { token }),
     enabled: Boolean(token),
   })
 
@@ -1767,6 +2289,23 @@ function ProductionPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['production-ordres'] })
       setShowNewOrdreModal(false)
+    },
+  })
+
+  const createRecetteMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/production/recettes', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          articleFiniId: Number(newRecetteFiniId),
+          articleMatiereId: Number(newRecetteMatiereId),
+          quantiteRequise: Number(newRecetteQte),
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-recettes'] })
+      setShowNewRecetteModal(false)
     },
   })
 
@@ -1794,9 +2333,14 @@ function ProductionPage() {
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader title="Production et traçabilité des lots" text="Gestion des ordres de fabrication, composition matières et étiquetage sécurisé." icon={Barcode} />
-        <button className="primary-action" onClick={() => setShowNewOrdreModal(true)}>
-          <Plus size={18} /> Nouvel ordre de fabrication
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="secondary-action" onClick={() => setShowNewRecetteModal(true)}>
+            <Plus size={17} /> Nouvelle Recette
+          </button>
+          <button className="primary-action" onClick={() => setShowNewOrdreModal(true)}>
+            <Plus size={18} /> Nouvel ordre de fabrication
+          </button>
+        </div>
       </div>
 
       <div className="tab-bar">
@@ -1813,17 +2357,18 @@ function ProductionPage() {
           columns={['Réf. Ordre', 'Produit fabriqué', 'Quantité prévue', 'Quantité réelle', 'Statut', 'Lot généré', 'Date', 'Action']}
           loading={ordresLoading}
           rows={(ordres ?? []).map((op: any) => [
-            <strong>{op.codeOrdre}</strong>,
+            <strong key={'ref-' + op.id}>{op.codeOrdre}</strong>,
             op.articleFini?.designation ?? 'Produit fini',
             `${op.quantitePrevue} ${op.articleFini?.uniteMesure ?? ''}`,
             op.quantiteReelle ? `${op.quantiteReelle} ${op.articleFini?.uniteMesure ?? ''}` : '-',
-            <span className={clsx('badge', op.statut === 'TERMINE' ? 'badge-success' : 'badge-warning')}>
+            <span key={'st-' + op.id} className={clsx('badge', op.statut === 'TERMINE' ? 'badge-success' : 'badge-warning')}>
               {op.statut === 'TERMINE' ? 'Terminé' : 'En cours'}
             </span>,
-            op.lotCree ? <code style={{ fontSize: '0.85rem' }}>{op.lotCree}</code> : '-',
+            op.lotCree ? <code key={'lt-' + op.id} style={{ fontSize: '0.85rem' }}>{op.lotCree}</code> : '-',
             op.dateCreation ? new Date(op.dateCreation).toLocaleDateString() : '-',
             op.statut === 'EN_COURS' ? (
               <button
+                key={'btn-clot-' + op.id}
                 className="primary-action"
                 style={{ padding: '4px 10px', fontSize: '0.82rem' }}
                 onClick={() => {
@@ -1835,7 +2380,16 @@ function ProductionPage() {
                 Clôturer
               </button>
             ) : (
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div key={'actions-' + op.id} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <a
+                  className="secondary-action"
+                  style={{ padding: '4px 8px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+                  href={downloadUrl(`/api/production/ordres/${op.id}/fiche-a4`)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <FilePdf size={15} /> Fiche A4
+                </a>
                 <button
                   className="secondary-action"
                   style={{ padding: '4px 8px', fontSize: '0.8rem' }}
@@ -1848,7 +2402,7 @@ function ProductionPage() {
                   style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                   onClick={() => setBonProductionOrdre(op)}
                 >
-                  <Printer size={15} /> Bon Production
+                  <Printer size={15} /> Aperçu
                 </button>
               </div>
             ),
@@ -1858,16 +2412,18 @@ function ProductionPage() {
       )}
 
       {activeTab === 'recettes' && (
-        <DataTable
-          columns={['Produit fini', 'Matière première requise', 'Quantité nécessaire par unité']}
-          loading={recettesLoading}
-          rows={(recettesList ?? []).map((rec: any) => [
-            <strong>{rec.articleFini?.designation}</strong>,
-            rec.articleMatiere?.designation,
-            `${rec.quantiteRequise} ${rec.articleMatiere?.uniteMesure ?? ''} / ${rec.articleFini?.uniteMesure ?? ''}`,
-          ])}
-          emptyText="Aucune recette enregistrée."
-        />
+        <div className="page-grid">
+          <DataTable
+            columns={['Produit fini', 'Matière première requise', 'Quantité nécessaire par unité']}
+            loading={recettesLoading}
+            rows={(recettesList ?? []).map((rec: any) => [
+              <strong key={'rec-art-' + rec.id}>{rec.articleFini?.designation}</strong>,
+              rec.articleMatiere?.designation,
+              `${rec.quantiteRequise} ${rec.articleMatiere?.uniteMesure ?? ''} / ${rec.articleFini?.uniteMesure ?? ''}`,
+            ])}
+            emptyText="Aucune recette enregistrée."
+          />
+        </div>
       )}
 
       {showNewOrdreModal && (
@@ -1881,19 +2437,75 @@ function ProductionPage() {
               <label>
                 Produit fini à fabriquer
                 <select value={articleFiniId} onChange={(e) => setArticleFiniId(Number(e.target.value))} required>
-                  <option value="1">Farine de Froment MVG Extra 25kg</option>
-                  <option value="3">Pain Toast Familial 500g</option>
-                  <option value="4">Biscuits Croquants MVG 100g</option>
+                  {(articlesList ?? [])
+                    .filter((a: any) => a.type === 'PRODUIT_FINI')
+                    .map((a: any) => (
+                      <option key={a.id} value={a.id}>
+                        {a.designation} ({a.uniteMesure})
+                      </option>
+                    ))}
                 </select>
               </label>
               <label style={{ marginTop: 12 }}>
-                Quantité prévue
+                Quantité prévue (en unités / sacs)
                 <input type="number" min="1" value={quantitePrevue} onChange={(e) => setQuantitePrevue(e.target.value)} required />
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
                 <button type="button" className="secondary-action" onClick={() => setShowNewOrdreModal(false)}>Annuler</button>
                 <button type="submit" className="primary-action" disabled={createOrdreMutation.isPending}>
                   {createOrdreMutation.isPending ? 'Lancement...' : 'Créer l ordre'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOUVELLE RECETTE TECHNIQUE */}
+      {showNewRecetteModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Ajouter une recette / formule de fabrication</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Définit le ratio de matière première (maïs grain brut, blé brut) requis par unité de produit fini.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); createRecetteMutation.mutate(); }}>
+              <label>
+                Produit fini
+                <select value={newRecetteFiniId} onChange={(e) => setNewRecetteFiniId(Number(e.target.value))} required>
+                  {(articlesList ?? [])
+                    .filter((a: any) => a.type === 'PRODUIT_FINI')
+                    .map((a: any) => (
+                      <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
+                    ))}
+                </select>
+              </label>
+              <label style={{ marginTop: 12 }}>
+                Matière première requise
+                <select value={newRecetteMatiereId} onChange={(e) => setNewRecetteMatiereId(Number(e.target.value))} required>
+                  {(articlesList ?? [])
+                    .filter((a: any) => a.type === 'MATIERE_PREMIERE')
+                    .map((a: any) => (
+                      <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
+                    ))}
+                </select>
+              </label>
+              <label style={{ marginTop: 12 }}>
+                Quantité matière nécessaire par sac / unité produit
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0.0001"
+                  value={newRecetteQte}
+                  onChange={(e) => setNewRecetteQte(e.target.value)}
+                  placeholder="ex: 0.032 (32 kg par sac de 25kg)"
+                  required
+                />
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewRecetteModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createRecetteMutation.isPending}>
+                  {createRecetteMutation.isPending ? 'Enregistrement...' : 'Enregistrer la formule'}
                 </button>
               </div>
             </form>
@@ -2002,13 +2614,32 @@ function TreasuryPage() {
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const can = useAppStore((state) => state.can)
 
-  const [activeTab, setActiveTab] = useState<'caisses' | 'demandes' | 'historique'>('caisses')
+  const [activeTab, setActiveTab] = useState<'caisses' | 'demandes' | 'historique' | 'rapprochement'>('caisses')
   const [showNewDemandeModal, setShowNewDemandeModal] = useState(false)
   const [showNewCaisseModal, setShowNewCaisseModal] = useState(false)
+  const [showVirementModal, setShowVirementModal] = useState(false)
+  const [showNewRapprochementModal, setShowNewRapprochementModal] = useState(false)
+  const [selectedRapprochement, setSelectedRapprochement] = useState<RapprochementBancaire | null>(null)
   const [activeVoucher, setActiveVoucher] = useState<Transaction | null>(null)
   const [rejectionModalTx, setRejectionModalTx] = useState<Transaction | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Formulaire Rapprochement bancaire
+  const [rapCompteCaisseId, setRapCompteCaisseId] = useState<number | ''>('')
+  const [rapDateDebut, setRapDateDebut] = useState('2026-09-01')
+  const [rapDateFin, setRapDateFin] = useState('2026-09-30')
+  const [rapSoldeDebut, setRapSoldeDebut] = useState('')
+  const [rapSoldeFin, setRapSoldeFin] = useState('')
+  const [rapDevise, setRapDevise] = useState<'USD' | 'CDF'>('USD')
+
+  // Formulaire virement interne Caisse <-> Banque
+  const [virementSourceId, setVirementSourceId] = useState<number | ''>('')
+  const [virementDestId, setVirementDestId] = useState<number | ''>('')
+  const [virementMontant, setVirementMontant] = useState('')
+  const [virementDevise, setVirementDevise] = useState<'USD' | 'CDF'>('USD')
+  const [virementBordereau, setVirementBordereau] = useState('')
+  const [virementMotif, setVirementMotif] = useState('')
 
   // Formulaire nouvelle demande
   const [mouvementType, setMouvementType] = useState<'SORTIE' | 'ENTREE'>('SORTIE')
@@ -2047,6 +2678,93 @@ function TreasuryPage() {
     queryKey: ['plan-comptable'],
     queryFn: () => apiRequest<PlanComptable[]>('/api/comptabilite/plan', { token }),
     enabled: Boolean(token),
+  })
+
+  const rapprochementsQuery = useQuery({
+    queryKey: ['rapprochements', agenceId],
+    queryFn: () => apiRequest<RapprochementBancaire[]>(`/api/tresorerie/rapprochements?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const createRapprochementMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/tresorerie/rapprochements', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agenceId,
+          compteCaisseId: Number(rapCompteCaisseId),
+          dateDebut: rapDateDebut,
+          dateFin: rapDateFin,
+          soldeDebutReleve: Number(rapSoldeDebut) || 0,
+          soldeFinReleve: Number(rapSoldeFin) || 0,
+          devise: rapDevise,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rapprochements'] })
+      setShowNewRapprochementModal(false)
+      setRapSoldeDebut('')
+      setRapSoldeFin('')
+      setActionError(null)
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Erreur lors de la création de l état de rapprochement')
+    },
+  })
+
+  const pointerMutation = useMutation({
+    mutationFn: ({ rapId, operationId }: { rapId: number; operationId: string }) =>
+      apiRequest(`/api/tresorerie/rapprochements/${rapId}/pointer`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ operationId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rapprochements'] })
+    },
+  })
+
+  const validerRapprochementMutation = useMutation({
+    mutationFn: (rapId: number) =>
+      apiRequest(`/api/tresorerie/rapprochements/${rapId}/valider`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rapprochements'] })
+      setSelectedRapprochement(null)
+    },
+  })
+
+  // Mutations
+  const virementMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/tresorerie/transfert-interne', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          sourceCaisseId: Number(virementSourceId),
+          destinationCaisseId: Number(virementDestId),
+          montant: Number(virementMontant),
+          devise: virementDevise,
+          referenceBordereau: virementBordereau,
+          motif: virementMotif,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      setShowVirementModal(false)
+      setVirementMontant('')
+      setVirementBordereau('')
+      setVirementMotif('')
+      setActionError(null)
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Erreur lors du virement interne')
+    },
   })
 
   // Mutations
@@ -2153,9 +2871,15 @@ function TreasuryPage() {
           text="Gestion bidevise USD/CDF, circuit d'approbation et contrôle anti-solde négatif."
           icon={Bank}
         />
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="secondary-action" onClick={() => setShowNewCaisseModal(true)}>
-            <Plus size={17} /> Nouvelle Caisse
+            <Plus size={17} /> Nouveau Compte
+          </button>
+          <button className="secondary-action" onClick={() => setShowVirementModal(true)}>
+            <ArrowsClockwise size={17} /> Virement Caisse ↔ Banque
+          </button>
+          <button className="secondary-action" onClick={() => setShowNewRapprochementModal(true)}>
+            <CheckCircle size={17} /> Rapprochement Bancaire
           </button>
           <button className="primary-action" onClick={() => setShowNewDemandeModal(true)}>
             <Plus size={17} /> Nouvelle Demande
@@ -2217,6 +2941,12 @@ function TreasuryPage() {
           onClick={() => setActiveTab('historique')}
         >
           <ClipboardText size={17} /> Tous les Mouvements ({allTx.length})
+        </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'rapprochement' && 'active')}
+          onClick={() => setActiveTab('rapprochement')}
+        >
+          <CheckCircle size={17} /> Rapprochements Bancaires ({rapprochementsQuery.data?.length ?? 0})
         </button>
       </div>
 
@@ -2353,6 +3083,274 @@ function TreasuryPage() {
           ])}
           emptyText="Aucun mouvement de caisse enregistré."
         />
+      )}
+
+      {/* TAB 4 : RAPPROCHEMENT BANCAIRE */}
+      {activeTab === 'rapprochement' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>États de Rapprochement Bancaire (Rawbank & Equity BCDC)</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Concordance mensuelle entre le solde comptable de l'ERP et les extraits de compte bancaires réels.
+              </p>
+            </div>
+            <button className="primary-action" onClick={() => setShowNewRapprochementModal(true)}>
+              <Plus size={17} /> Nouvel État de Rapprochement
+            </button>
+          </div>
+
+          <DataTable
+            columns={['Compte Bancaire', 'Période Extrait', 'Solde Relevé', 'Solde Comptable ERP', 'Écart Constaté', 'Statut', 'Auteur & Clôture', 'Action']}
+            loading={rapprochementsQuery.isLoading}
+            rows={(rapprochementsQuery.data ?? []).map((r) => [
+              <strong key={'cp-' + r.id}>{r.compte?.nom ?? `Compte #${r.compteCaisseId}`}</strong>,
+              `${new Date(r.dateDebut).toLocaleDateString('fr-FR')} au ${new Date(r.dateFin).toLocaleDateString('fr-FR')}`,
+              <strong key={'sfr-' + r.id}>{money(r.soldeFinReleve, r.devise)}</strong>,
+              money(r.soldeComptable, r.devise),
+              <strong
+                key={'ec-' + r.id}
+                style={{ color: Math.abs(r.ecart) < 0.01 ? '#16a34a' : '#dc2626' }}
+              >
+                {money(r.ecart, r.devise)} {Math.abs(r.ecart) < 0.01 ? '✓ Justifié' : '⚠ Écart'}
+              </strong>,
+              <span
+                key={'st-' + r.id}
+                className={clsx('badge', r.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}
+              >
+                {r.statut === 'VALIDE' ? 'Clôturé & Validé' : 'En cours de pointage'}
+              </span>,
+              `${r.auteur} ${r.dateCloture ? 'le ' + new Date(r.dateCloture).toLocaleDateString('fr-FR') : ''}`,
+              <button
+                key={'btn-' + r.id}
+                className="secondary-action"
+                style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                onClick={() => setSelectedRapprochement(r)}
+              >
+                Pointer / Fiche
+              </button>,
+            ])}
+            emptyText="Aucun état de rapprochement bancaire créé."
+          />
+        </div>
+      )}
+
+      {/* MODAL : NOUVEAU RAPPROCHEMENT BANCAIRE */}
+      {showNewRapprochementModal && (
+        <div className="modal-overlay" onClick={() => setShowNewRapprochementModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Initier un Rapprochement Bancaire</h3>
+              <button className="icon-button" onClick={() => setShowNewRapprochementModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', margin: '6px 0 14px' }}>
+              Saisissez les informations de l'extrait de compte bancaire officiel pour conciliation.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createRapprochementMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <label>
+                Compte Bancaire
+                <select
+                  required
+                  value={rapCompteCaisseId}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : ''
+                    setRapCompteCaisseId(id)
+                    const found = caisses.find((c) => c.id === id)
+                    if (found) {
+                      setRapSoldeDebut(found.soldeUsd.toString())
+                      setRapSoldeFin(found.soldeUsd.toString())
+                    }
+                  }}
+                >
+                  <option value="">Sélectionner un compte bancaire...</option>
+                  {caisses.map((c) => (
+                    <option key={'bnk-' + c.id} value={c.id}>
+                      {c.nom} {c.numeroCompteBancaire ? `(${c.numeroCompteBancaire})` : ''} - Solde: {money(c.soldeUsd, 'USD')} / {money(c.soldeCdf, 'CDF')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Date début relevé
+                  <input
+                    type="date"
+                    required
+                    value={rapDateDebut}
+                    onChange={(e) => setRapDateDebut(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Date fin relevé
+                  <input
+                    type="date"
+                    required
+                    value={rapDateFin}
+                    onChange={(e) => setRapDateFin(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Devise
+                  <select
+                    value={rapDevise}
+                    onChange={(e) => setRapDevise(e.target.value as 'USD' | 'CDF')}
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CDF">CDF (FC)</option>
+                  </select>
+                </label>
+                <label>
+                  Solde début extrait
+                  <input
+                    type="number"
+                    step="any"
+                    value={rapSoldeDebut}
+                    onChange={(e) => setRapSoldeDebut(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Solde de clôture sur l'extrait bancaire (Relevé papier / PDF)
+                <input
+                  required
+                  type="number"
+                  step="any"
+                  value={rapSoldeFin}
+                  onChange={(e) => setRapSoldeFin(e.target.value)}
+                  placeholder="ex: 28400.00"
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewRapprochementModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={createRapprochementMutation.isPending}>
+                  {createRapprochementMutation.isPending ? 'Initialisation...' : 'Créer l État de Rapprochement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : FICHE DE POINTAGE & RAPPROCHEMENT DÉTAILLÉE */}
+      {selectedRapprochement && (
+        <div className="modal-overlay" onClick={() => setSelectedRapprochement(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Fiche de Rapprochement Bancaire #{selectedRapprochement.id}</h3>
+                <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  Compte : {selectedRapprochement.compte?.nom ?? `Compte #${selectedRapprochement.compteCaisseId}`} | Période : {selectedRapprochement.dateDebut} au {selectedRapprochement.dateFin}
+                </span>
+              </div>
+              <button className="icon-button" onClick={() => setSelectedRapprochement(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="metric-grid" style={{ marginTop: 12, marginBottom: 12 }}>
+              <article className="metric-card">
+                <span>Solde Relevé Bancaire</span>
+                <strong>{money(selectedRapprochement.soldeFinReleve, selectedRapprochement.devise)}</strong>
+              </article>
+              <article className="metric-card">
+                <span>Solde Comptable ERP</span>
+                <strong>{money(selectedRapprochement.soldeComptable, selectedRapprochement.devise)}</strong>
+              </article>
+              <article className="metric-card">
+                <span>Écart Rapprochement</span>
+                <strong style={{ color: Math.abs(selectedRapprochement.ecart) < 0.01 ? '#16a34a' : '#dc2626' }}>
+                  {money(selectedRapprochement.ecart, selectedRapprochement.devise)}
+                </strong>
+              </article>
+            </div>
+
+            <div style={{ margin: '8px 0', fontSize: '0.85rem', fontWeight: 600 }}>
+              Pointage des opérations de trésorerie bancaire :
+            </div>
+
+            <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: 8 }}>
+              {allTx.filter((t) => t.caisseId === selectedRapprochement.compteCaisseId || t.caisse?.type === 'BANQUE').length === 0 ? (
+                <div style={{ padding: 12, textAlign: 'center', color: 'var(--muted)' }}>Aucun mouvement bancaire à pointer.</div>
+              ) : (
+                allTx
+                  .filter((t) => t.caisseId === selectedRapprochement.compteCaisseId || t.caisse?.type === 'BANQUE')
+                  .map((t) => {
+                    const isPointe = selectedRapprochement.operationsPointees.includes(String(t.id))
+                    return (
+                      <div
+                        key={'pt-' + t.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '6px 8px',
+                          borderBottom: '1px solid var(--border)',
+                          background: isPointe ? 'rgba(34, 197, 94, 0.08)' : 'transparent',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={isPointe}
+                            onChange={() => pointerMutation.mutate({ rapId: selectedRapprochement.id, operationId: String(t.id) })}
+                          />
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{t.referenceInterne}</span>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{t.libelle}</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <strong style={{ color: t.type === 'ENTREE' ? '#16a34a' : '#dc2626', fontSize: '0.85rem' }}>
+                            {t.type === 'ENTREE' ? '+' : '-'} {money(t.montant, t.devise)}
+                          </strong>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{new Date(t.dateCreation ?? '').toLocaleDateString('fr-FR')}</div>
+                        </div>
+                      </div>
+                    )
+                  })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
+              <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                {selectedRapprochement.operationsPointees.length} opération(s) pointée(s).
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="secondary-action" onClick={() => setSelectedRapprochement(null)}>
+                  Fermer
+                </button>
+                {selectedRapprochement.statut !== 'VALIDE' && (
+                  <button
+                    type="button"
+                    className="primary-action"
+                    onClick={() => validerRapprochementMutation.mutate(selectedRapprochement.id)}
+                    disabled={validerRapprochementMutation.isPending}
+                  >
+                    <CheckCircle size={17} /> Valider & Clôturer l État
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL : NOUVELLE DEMANDE DE CAISSE */}
@@ -2589,6 +3587,123 @@ function TreasuryPage() {
         </div>
       )}
 
+      {/* MODAL : VIREMENT INTERNE CAISSE <-> BANQUE */}
+      {showVirementModal && (
+        <div className="modal-overlay" onClick={() => setShowVirementModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Virement Interne de Fonds (Caisse ↔ Banque)</h3>
+              <button className="icon-button" onClick={() => setShowVirementModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', margin: '6px 0 14px' }}>
+              Dépôt des recettes d espèces en banque, retrait bancaire pour approvisionnement de caisse, ou transfert entre caisses.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                virementMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <label>
+                Compte émetteur (Source débitée)
+                <select
+                  required
+                  value={virementSourceId}
+                  onChange={(e) => setVirementSourceId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">Sélectionner le compte source...</option>
+                  {caisses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nom} — Dispo: ${c.soldeUsd?.toFixed(2)} USD / {c.soldeCdf?.toLocaleString()} CDF
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Compte bénéficiaire (Destination créditée)
+                <select
+                  required
+                  value={virementDestId}
+                  onChange={(e) => setVirementDestId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">Sélectionner le compte destination...</option>
+                  {caisses
+                    .filter((c) => c.id !== Number(virementSourceId))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom} — Actuel: ${c.soldeUsd?.toFixed(2)} USD / {c.soldeCdf?.toLocaleString()} CDF
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                <label>
+                  Devise
+                  <select
+                    value={virementDevise}
+                    onChange={(e) => setVirementDevise(e.target.value as 'USD' | 'CDF')}
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CDF">CDF (FC)</option>
+                  </select>
+                </label>
+
+                <label>
+                  Montant à virer
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    min="1"
+                    value={virementMontant}
+                    onChange={(e) => setVirementMontant(e.target.value)}
+                    placeholder="ex: 1500"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Réf. Bordereau de Versement / Chèque
+                <input
+                  required
+                  value={virementBordereau}
+                  onChange={(e) => setVirementBordereau(e.target.value)}
+                  placeholder="ex: Bordereau Rawbank #048291, Chèque Equity #108"
+                />
+              </label>
+
+              <label>
+                Motif / Justification du transfert
+                <input
+                  value={virementMotif}
+                  onChange={(e) => setVirementMotif(e.target.value)}
+                  placeholder="ex: Versement recettes de ventes comptoir du jour"
+                />
+              </label>
+
+              <div className="notice info" style={{ fontSize: '0.82rem', padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                <strong>Schéma SYSCOHADA :</strong> L opération débite et crédite automatiquement le compte <code>585 (Virements internes de fonds)</code>. Le solde du compte source diminue et celui du compte récepteur augmente instantanément.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowVirementModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={virementMutation.isPending}>
+                  {virementMutation.isPending ? 'Exécution...' : 'Exécuter le virement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL : BON DE CAISSE IMPRIMABLE */}
       {activeVoucher && (
         <div className="modal-overlay" onClick={() => setActiveVoucher(null)}>
@@ -2668,7 +3783,7 @@ function AccountingPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
 
-  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan'>('journal')
+  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture'>('journal')
   const [mois, setMois] = useState(new Date().getMonth() + 1)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [planSearch, setPlanSearch] = useState('')
@@ -2676,6 +3791,19 @@ function AccountingPage() {
   const [nouveauNumero, setNouveauNumero] = useState('')
   const [nouveauLibelle, setNouveauLibelle] = useState('')
   const [compteParent, setCompteParent] = useState('')
+  const [clotureNotice, setClotureNotice] = useState<string | null>(null)
+
+  // Saisie manuelle d'écriture (OD)
+  const [showManualEntryModal, setShowManualEntryModal] = useState(false)
+  const [compteDebit, setCompteDebit] = useState('')
+  const [compteCredit, setCompteCredit] = useState('')
+  const [montantManuel, setMontantManuel] = useState('')
+  const [deviseManuelle, setDeviseManuelle] = useState<'USD' | 'CDF'>('USD')
+  const [libelleManuel, setLibelleManuel] = useState('')
+  const [pieceJustificative, setPieceJustificative] = useState('')
+  const [motifOD, setMotifOD] = useState('AMORTISSEMENT')
+  const [filtreModule, setFiltreModule] = useState('TOUS')
+  const [manualEntryError, setManualEntryError] = useState<string | null>(null)
 
   // Requêtes
   const ecrituresQuery = useQuery({
@@ -2710,6 +3838,30 @@ function AccountingPage() {
     enabled: Boolean(token),
   })
 
+  const clotureQuery = useQuery({
+    queryKey: ['comptabilite-cloture-statut'],
+    queryFn: () => apiRequest<any>('/api/comptabilite/exercices/statut', { token }),
+    enabled: Boolean(token),
+  })
+
+  const cloturerExerciceMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<any>('/api/comptabilite/exercices/cloture', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ annee }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['comptabilite-cloture-statut'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      setClotureNotice(data.message || `Exercice ${annee} clôturé avec succès.`)
+    },
+    onError: (err: any) => {
+      setClotureNotice(err.message || 'Erreur lors de la clôture de l exercice')
+    },
+  })
+
   // Mutation ajout compte
   const addCompteMutation = useMutation({
     mutationFn: () =>
@@ -2730,6 +3882,38 @@ function AccountingPage() {
       setNouveauNumero('')
       setNouveauLibelle('')
       setCompteParent('')
+    },
+  })
+
+  // Mutation saisie écriture manuelle (OD)
+  const addManualEcritureMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/comptabilite/ecritures/manuelle', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agenceId,
+          compteDebit,
+          compteCredit,
+          montant: Number(montantManuel),
+          devise: deviseManuelle,
+          libelle: `${pieceJustificative ? `[${pieceJustificative}] ` : ''}${libelleManuel}`,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['performance-services'] })
+      setShowManualEntryModal(false)
+      setCompteDebit('')
+      setCompteCredit('')
+      setMontantManuel('')
+      setLibelleManuel('')
+      setPieceJustificative('')
+      setManualEntryError(null)
+    },
+    onError: (err: any) => {
+      setManualEntryError(err.message || 'Erreur lors de l enregistrement de l écriture manuelle')
     },
   })
 
@@ -2769,16 +3953,41 @@ function AccountingPage() {
           text="Journal en partie double, balance générale bidevise et résultats par centre de coûts."
           icon={Books}
         />
-        {activeTab === 'balance' && (
-          <a className="primary-action" href={balancePdfUrl} target="_blank" rel="noreferrer">
-            <FilePdf size={17} /> Télécharger Balance PDF
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <a
+            className="secondary-action"
+            href={`/api/comptabilite/export/grand-livre?agenceId=${agenceId}&annee=${annee}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Imprimer le Grand Livre général des comptes"
+          >
+            <Printer size={17} /> Grand Livre
           </a>
-        )}
-        {activeTab === 'plan' && (
-          <button className="primary-action" onClick={() => setShowNewCompteModal(true)}>
-            <Plus size={17} /> Nouveau Compte
-          </button>
-        )}
+          <a
+            className="secondary-action"
+            href={`/api/comptabilite/export/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Imprimer le Compte de Résultat analytique"
+          >
+            <Printer size={17} /> Compte Résultat
+          </a>
+          {activeTab === 'journal' && (
+            <button className="primary-action" onClick={() => setShowManualEntryModal(true)}>
+              <Plus size={17} /> Saisie Écriture Manuelle (OD)
+            </button>
+          )}
+          {activeTab === 'balance' && (
+            <a className="primary-action" href={balancePdfUrl} target="_blank" rel="noreferrer">
+              <FilePdf size={17} /> Télécharger Balance PDF
+            </a>
+          )}
+          {activeTab === 'plan' && (
+            <button className="primary-action" onClick={() => setShowNewCompteModal(true)}>
+              <Plus size={17} /> Nouveau Compte
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Navigation sous-onglets */}
@@ -2807,33 +4016,64 @@ function AccountingPage() {
         >
           <Books size={17} /> Plan Comptable ({planComptable.length})
         </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'cloture' && 'active')}
+          onClick={() => setActiveTab('cloture')}
+        >
+          <ShieldCheck size={17} /> Clôture Annuelle OHADA
+        </button>
       </div>
 
       {/* TAB 1 : JOURNAL DES ECRITURES */}
       {activeTab === 'journal' && (
-        <DataTable
-          columns={['Date', 'Réf. Opération', 'N° Compte', 'Libellé Compte', 'Sens', 'Montant', 'Module Source']}
-          loading={ecrituresQuery.isLoading}
-          rows={ecritures.map((e) => [
-            e.dateEcriture ? new Date(e.dateEcriture).toLocaleDateString('fr-FR') : '-',
-            e.referenceOperation ? e.referenceOperation.substring(0, 8) + '...' : '-',
-            <strong>{e.compte?.numero ?? '-'}</strong>,
-            e.libelle ?? e.compte?.libelle ?? '-',
-            <span
-              key={e.id + '-sens'}
-              className={clsx('badge', e.sens === 'DEBIT' ? 'badge-danger' : 'badge-success')}
-            >
-              {e.sens}
-            </span>,
-            <strong key={e.id + '-mnt'}>
-              {money(e.montant, e.devise)}
-            </strong>,
-            <span key={e.id + '-mod'} className="badge badge-neutral">
-              {e.sourceModule ?? 'COMPTABILITE'}
-            </span>,
-          ])}
-          emptyText="Aucune écriture comptable enregistrée."
-        />
+        <div>
+          <div className="filter-bar" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Filtrer par module :</span>
+              <select
+                value={filtreModule}
+                onChange={(e) => setFiltreModule(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+              >
+                <option value="TOUS">Tous les flux ({ecritures.length})</option>
+                <option value="COMPTABILITE">Opérations Diverses (OD / Manuelles)</option>
+                <option value="VENTES">Ventes & Recouvrements</option>
+                <option value="ACHATS">Achats & Fournisseurs</option>
+                <option value="TRESORERIE">Trésorerie & Virements Internes</option>
+                <option value="RH">Paie & Avances sur Salaire</option>
+              </select>
+            </div>
+            <button className="secondary-action" onClick={() => setShowManualEntryModal(true)}>
+              <Plus size={15} /> Nouvelle OD Manuelle
+            </button>
+          </div>
+
+          <DataTable
+            columns={['Date', 'Réf. Opération', 'N° Compte', 'Libellé Compte', 'Sens', 'Montant', 'Module Source']}
+            loading={ecrituresQuery.isLoading}
+            rows={ecritures
+              .filter((e) => filtreModule === 'TOUS' || (e.sourceModule ?? 'COMPTABILITE') === filtreModule)
+              .map((e) => [
+                e.dateEcriture ? new Date(e.dateEcriture).toLocaleDateString('fr-FR') : '-',
+                e.referenceOperation ? e.referenceOperation.substring(0, 14) : '-',
+                <strong>{e.compte?.numero ?? '-'}</strong>,
+                e.libelle ?? e.compte?.libelle ?? '-',
+                <span
+                  key={e.id + '-sens'}
+                  className={clsx('badge', e.sens === 'DEBIT' ? 'badge-danger' : 'badge-success')}
+                >
+                  {e.sens}
+                </span>,
+                <strong key={e.id + '-mnt'}>
+                  {money(e.montant, e.devise)}
+                </strong>,
+                <span key={e.id + '-mod'} className={clsx('badge', e.sourceModule === 'COMPTABILITE' ? 'badge-warning' : 'badge-neutral')}>
+                  {e.sourceModule === 'COMPTABILITE' ? 'OD MANUELLE' : (e.sourceModule ?? 'COMPTABILITE')}
+                </span>,
+              ])}
+            emptyText="Aucune écriture comptable enregistrée."
+          />
+        </div>
       )}
 
       {/* TAB 2 : BALANCE GENERALE OHADA */}
@@ -3039,6 +4279,81 @@ function AccountingPage() {
         </div>
       )}
 
+      {/* TAB 5 : CLÔTURE ANNUELLE OHADA */}
+      {activeTab === 'cloture' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {clotureNotice && (
+            <div className="notice" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: 12, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{clotureNotice}</span>
+              <button className="icon-button" onClick={() => setClotureNotice(null)}><X size={16} /></button>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+            <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Exercice Fiscal Analysé</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0' }}>{annee}</div>
+              <span className="badge badge-success">Exercice Ouvert</span>
+            </div>
+
+            <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Cumul Charges d'Exploitation (Classe 6)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: '#dc2626' }}>
+                ${(clotureQuery.data?.totalChargesUsd ?? 0).toFixed(2)} USD
+              </div>
+              <small style={{ color: 'var(--muted)' }}>Achats grains, salaires, amortissements, frais</small>
+            </div>
+
+            <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Cumul Produits d'Exploitation (Classe 7)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: '#16a34a' }}>
+                ${(clotureQuery.data?.totalProduitsUsd ?? 0).toFixed(2)} USD
+              </div>
+              <small style={{ color: 'var(--muted)' }}>Ventes de farines de maïs/blé et sous-produits</small>
+            </div>
+
+            <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '2px solid var(--accent)' }}>
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Résultat Net Prévisionnel</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0', color: (clotureQuery.data?.resultatNetUsd ?? 0) >= 0 ? '#16a34a' : '#dc2626' }}>
+                {(clotureQuery.data?.resultatNetUsd ?? 0) >= 0 ? '+' : ''}${(clotureQuery.data?.resultatNetUsd ?? 0).toFixed(2)} USD
+              </div>
+              <span className={clsx('badge', (clotureQuery.data?.resultatNetUsd ?? 0) >= 0 ? 'badge-success' : 'badge-danger')}>
+                {(clotureQuery.data?.resultatNetUsd ?? 0) >= 0 ? 'Bénéfice Net (Compte 131)' : 'Perte Nette (Compte 139)'}
+              </span>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 18, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <h4 style={{ margin: '0 0 8px' }}>Règles de Clôture d'Exercice selon le Système Comptable OHADA</h4>
+            <p style={{ fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5, margin: 0 }}>
+              La clôture annuelle solde l'ensemble des comptes de gestion (charges de la classe 6 et produits de la classe 7) vers le compte de <strong>Résultat Net de l'exercice (compte 131 ou 139)</strong>. Les comptes de bilan (classes 1 à 5) sont arrêtés et basculent dans la balance d'ouverture (À-Nouveaux) de l'exercice <strong>{annee + 1}</strong>.
+            </p>
+            <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="primary-action"
+                onClick={() => {
+                  if (confirm(`Confirmez-vous la clôture formelle de l'exercice comptable ${annee} ? Cette action générera l'écriture d'affectation au compte 131/139.`)) {
+                    cloturerExerciceMutation.mutate()
+                  }
+                }}
+                disabled={cloturerExerciceMutation.isPending}
+              >
+                <CheckCircle size={18} />
+                {cloturerExerciceMutation.isPending ? 'Clôture en cours...' : `Clôturer définitivement l'exercice ${annee}`}
+              </button>
+              <a
+                className="secondary-action"
+                href={`/api/comptabilite/export/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <FilePdf size={18} /> Télécharger le Compte de Résultat Officiel
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL : NOUVEAU COMPTE PLAN COMPTABLE */}
       {showNewCompteModal && (
         <div className="modal-overlay" onClick={() => setShowNewCompteModal(false)}>
@@ -3101,27 +4416,370 @@ function AccountingPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL : SAISIE D'ÉCRITURE MANUELLE (OD / OPÉRATIONS PARTICULIÈRES) */}
+      {showManualEntryModal && (
+        <div className="modal-overlay" onClick={() => setShowManualEntryModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Saisie d'Écriture Manuelle (Opérations Diverses - OD)</h3>
+              <button className="icon-button" onClick={() => setShowManualEntryModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', margin: '6px 0 14px' }}>
+              Passez vos écritures comptables particulières : dotations aux amortissements, frais bancaires/agios, charges sociales patronales (CNSS/INPP), régularisations d'inventaire ou reports à nouveau.
+            </p>
+
+            {manualEntryError && (
+              <div className="notice warning" style={{ marginBottom: 12 }}>
+                {manualEntryError}
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!compteDebit || !compteCredit) {
+                  setManualEntryError('Veuillez sélectionner un compte à débiter et un compte à créditer.')
+                  return
+                }
+                if (compteDebit === compteCredit) {
+                  setManualEntryError('Le compte débité et le compte crédité ne peuvent pas être identiques.')
+                  return
+                }
+                addManualEcritureMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Type d'opération particulière
+                  <select
+                    value={motifOD}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setMotifOD(val)
+                      if (val === 'AMORTISSEMENT') {
+                        setCompteDebit('681')
+                        setCompteCredit('281')
+                        setLibelleManuel('Dotation aux amortissements matériel et équipement usine')
+                      } else if (val === 'FRAIS_BANCAIRE') {
+                        setCompteDebit('631')
+                        setCompteCredit('521')
+                        setLibelleManuel('Frais de tenue de compte et commissions bancaires')
+                      } else if (val === 'CHARGES_PATRONALES') {
+                        setCompteDebit('664')
+                        setCompteCredit('431')
+                        setLibelleManuel('Cotisations patronales CNSS / INPP / ONEM')
+                      } else if (val === 'REGULARISATION') {
+                        setCompteDebit('658')
+                        setCompteCredit('401')
+                        setLibelleManuel('Régularisation charges exceptionnelles exercice')
+                      }
+                    }}
+                  >
+                    <option value="AMORTISSEMENT">Amortissement & Dépréciation</option>
+                    <option value="FRAIS_BANCAIRE">Frais & Commissions Bancaires</option>
+                    <option value="CHARGES_PATRONALES">Charges Sociales Patronales (CNSS/INPP)</option>
+                    <option value="REGULARISATION">Régularisation & Inventaire</option>
+                    <option value="AUTRE">Autre écriture particulière</option>
+                  </select>
+                </label>
+
+                <label>
+                  Réf. Pièce Justificative (Obligatoire)
+                  <input
+                    required
+                    value={pieceJustificative}
+                    onChange={(e) => setPieceJustificative(e.target.value)}
+                    placeholder="ex: FACT-0492, RELEVE-RAW-09, AMORT-2026"
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Compte à DÉBITER (Emploi)
+                  <select
+                    required
+                    value={compteDebit}
+                    onChange={(e) => setCompteDebit(e.target.value)}
+                  >
+                    <option value="">Sélectionner compte débit...</option>
+                    {planComptable.map((cp) => (
+                      <option key={cp.numero + '-deb'} value={cp.numero}>
+                        {cp.numero} - {cp.libelle}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Compte à CRÉDITER (Ressource)
+                  <select
+                    required
+                    value={compteCredit}
+                    onChange={(e) => setCompteCredit(e.target.value)}
+                  >
+                    <option value="">Sélectionner compte crédit...</option>
+                    {planComptable.map((cp) => (
+                      <option key={cp.numero + '-crd'} value={cp.numero}>
+                        {cp.numero} - {cp.libelle}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                <label>
+                  Devise
+                  <select
+                    value={deviseManuelle}
+                    onChange={(e) => setDeviseManuelle(e.target.value as 'USD' | 'CDF')}
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CDF">CDF (FC)</option>
+                  </select>
+                </label>
+
+                <label>
+                  Montant
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    value={montantManuel}
+                    onChange={(e) => setMontantManuel(e.target.value)}
+                    placeholder="ex: 450.00"
+                  />
+                </label>
+              </div>
+
+              <label>
+                Libellé explicatif de l'opération
+                <input
+                  required
+                  value={libelleManuel}
+                  onChange={(e) => setLibelleManuel(e.target.value)}
+                  placeholder="ex: Dotation mensuelle amortissement moulin à maïs n°2"
+                />
+              </label>
+
+              {/* Aperçu de la partie double */}
+              {montantManuel && compteDebit && compteCredit && (
+                <div style={{ background: 'var(--surface-2)', padding: '10px 12px', borderRadius: 6, fontSize: '0.82rem', border: '1px solid var(--border)' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Contrôle de la partie double (SYSCOHADA) :</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a' }}>
+                    <span>DÉBIT : Compte {compteDebit} ({planComptable.find((c) => c.numero === compteDebit)?.libelle ?? ''})</span>
+                    <strong>+ {money(Number(montantManuel), deviseManuelle)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#dc2626', marginTop: 2 }}>
+                    <span>CRÉDIT : Compte {compteCredit} ({planComptable.find((c) => c.numero === compteCredit)?.libelle ?? ''})</span>
+                    <strong>+ {money(Number(montantManuel), deviseManuelle)}</strong>
+                  </div>
+                  <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: '0.78rem' }}>
+                    Équilibre comptable garanti : Total Débit = Total Crédit (Écart = 0.00)
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowManualEntryModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={addManualEcritureMutation.isPending}>
+                  {addManualEcritureMutation.isPending ? 'Enregistrement...' : 'Valider et Passer l Écriture'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
 
 function ReportingPage() {
+  const token = useToken()
   const agenceId = useAppStore((state) => state.session?.agenceId)
   const month = new Date().getMonth() + 1
   const year = new Date().getFullYear()
   const balancePath = `/api/reporting/export/balance?mois=${month}&annee=${year}${agenceId ? `&agenceId=${agenceId}` : ''}`
+  const stockExportPath = `/api/stocks/export/inventaire${agenceId ? `?agenceId=${agenceId}` : ''}`
+
+  const kpisQuery = useQuery({
+    queryKey: ['direction-kpis', agenceId],
+    queryFn: () =>
+      apiRequest<DirectionKpis>(`/api/reporting/direction-kpis${agenceId ? `?agenceId=${agenceId}` : ''}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const kpis = kpisQuery.data
+  const maxCa = Math.max(...(kpis?.evolutionVentes6Mois.map((m) => m.caUsd) ?? [30000]))
 
   return (
     <section className="page-grid">
-      <ModuleHeader title="Reporting et documents" text="Rapports financiers, exports PDF, factures, reçus et bons." icon={ChartLineUp} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <ModuleHeader
+          title="Tableau de Bord Direction Générale & Reporting"
+          text="KPIs stratégiques de gestion, rentabilité de mouture, trésorerie nette et documents officiels."
+          icon={ChartLineUp}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a className="secondary-action" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
+            <FilePdf size={17} /> Balance Générale (PDF)
+          </a>
+          <a className="primary-action" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
+            <Package size={17} /> Inventaire PMP (PDF)
+          </a>
+        </div>
+      </div>
+
+      {/* CARTES KPIs STRATÉGIQUES DIRECTION */}
+      <div className="metric-grid">
+        <article className="metric-card">
+          <CurrencyCircleDollar size={24} style={{ color: '#16a34a' }} />
+          <span>Chiffre d'Affaires Mensuel</span>
+          <strong style={{ fontSize: '1.35rem' }}>{money(kpis?.caMoisUsd ?? 0, 'USD')}</strong>
+          <small style={{ color: 'var(--muted)' }}>
+            + {((kpis?.caMoisCdf ?? 0) / 1000000).toFixed(1)} M CDF
+          </small>
+        </article>
+
+        <article className="metric-card">
+          <TrendUp size={24} style={{ color: '#2563eb' }} />
+          <span>Marge Brute Meunerie</span>
+          <strong style={{ fontSize: '1.35rem', color: '#16a34a' }}>
+            ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / sac
+          </strong>
+          <small style={{ color: 'var(--muted)' }}>
+            Taux de marge brute : <strong>{kpis?.tauxMargeMoyen ?? 34}%</strong>
+          </small>
+        </article>
+
+        <article className="metric-card">
+          <Package size={24} style={{ color: '#d97706' }} />
+          <span>Rendement Mouture Usine</span>
+          <strong style={{ fontSize: '1.35rem', color: '#d97706' }}>
+            {kpis?.rendementMeunerie ?? 78.4} %
+          </strong>
+          <small style={{ color: 'var(--muted)' }}>
+            Farine extraite / grains traités au moulin
+          </small>
+        </article>
+
+        <article className="metric-card">
+          <Bank size={24} style={{ color: '#9333ea' }} />
+          <span>Trésorerie Nette Consolidée</span>
+          <strong style={{ fontSize: '1.35rem' }}>
+            {money(kpis?.tresorerieNetteConsolideeUsd ?? 0, 'USD')}
+          </strong>
+          <small style={{ color: 'var(--muted)' }}>
+            Banque: {money(kpis?.totalBanqueUsd ?? 0, 'USD')} | Caisse: {money(kpis?.totalCaisseUsd ?? 0, 'USD')}
+          </small>
+        </article>
+
+        <article className="metric-card">
+          <WarningCircle size={24} style={{ color: '#dc2626' }} />
+          <span>Créances Clients & Dettes</span>
+          <strong style={{ fontSize: '1.35rem' }}>
+            {money(kpis?.creancesTotalUsd ?? 0, 'USD')}
+          </strong>
+          <small style={{ color: '#dc2626' }}>
+            dont <strong>{money(kpis?.creancesEchuesUsd ?? 0, 'USD')}</strong> échues (&gt; 30j)
+          </small>
+        </article>
+      </div>
+
+      {/* GRAPHIQUE ÉVOLUTION STRATÉGIQUE SUR 6 MOIS */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Évolution du Chiffre d'Affaires & de la Marge Brute (6 derniers mois)</h3>
+            <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+              Trajectoire de croissance commerciale et marge brute d'exploitation en USD.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 14, fontSize: '0.82rem' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--primary)' }} />
+              Chiffre d'Affaires ($)
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 2, background: '#16a34a' }} />
+              Marge Brute ($)
+            </span>
+          </div>
+        </div>
+
+        <div style={{ height: 190, display: 'flex', alignItems: 'flex-end', gap: 24, padding: '10px 10px 0', borderBottom: '1px solid var(--border)' }}>
+          {(kpis?.evolutionVentes6Mois ?? []).map((item) => {
+            const hCa = Math.round((item.caUsd / maxCa) * 150)
+            const hMarge = Math.round((item.margeUsd / maxCa) * 150)
+            return (
+              <div key={item.mois} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, width: '100%', justifyContent: 'center' }}>
+                  <div
+                    style={{
+                      width: '42%',
+                      height: `${Math.max(15, hCa)}px`,
+                      background: 'var(--primary)',
+                      borderRadius: '4px 4px 0 0',
+                      transition: 'height 0.3s ease',
+                      position: 'relative',
+                    }}
+                    title={`CA: $${item.caUsd.toLocaleString()} USD`}
+                  />
+                  <div
+                    style={{
+                      width: '42%',
+                      height: `${Math.max(10, hMarge)}px`,
+                      background: '#16a34a',
+                      borderRadius: '4px 4px 0 0',
+                      transition: 'height 0.3s ease',
+                      position: 'relative',
+                    }}
+                    title={`Marge: $${item.margeUsd.toLocaleString()} USD`}
+                  />
+                </div>
+                <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>
+                  {item.mois}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
+                  ${(item.caUsd / 1000).toFixed(1)}k
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* RAPPORTS & ÉTATS DE SYNTHÈSE */}
+      <h3 style={{ margin: '14px 0 0' }}>Génération & Téléchargement des Documents Légaux</h3>
       <div className="module-grid">
-        <a className="capability-card" href={downloadUrl(balancePath)}>
+        <a className="capability-card" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
           <FilePdf size={25} />
-          <strong>Exporter balance PDF</strong>
-          <span>Mois courant, agence courante ou consolidation siège.</span>
+          <strong>Exporter Balance OHADA (PDF)</strong>
+          <span>Grand livre en partie double, comptes de résultat et balance bidevise certifiée.</span>
         </a>
-        <Capability title="Documents commerciaux" text="Factures, reçus, bons de livraison, bons de caisse." icon={Receipt} />
-        <Capability title="Performance" text="Recettes, charges, services, agences et consolidé USD." icon={TrendUp} />
+        <a className="capability-card" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
+          <Package size={25} />
+          <strong>Exporter État des Stocks PMP (PDF)</strong>
+          <span>Inventaire valorisé par lot FEFO, DLUO et calcul automatique du coût moyen pondéré.</span>
+        </a>
+        <Capability
+          title="Bordereaux de Livraison (BL)"
+          text="Bons d'expédition avec décharges signées et affectation de la flotte de camions."
+          icon={Truck}
+        />
+        <Capability
+          title="États de Rapprochement Bancaire"
+          text="Relevés Rawbank / Equity rapprochés avec justification comptable des écarts."
+          icon={Bank}
+        />
       </div>
     </section>
   )
@@ -3130,8 +4788,24 @@ function ReportingPage() {
 function AdminPage() {
   const token = useToken()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<'roles' | 'utilisateurs' | 'categories' | 'taux' | 'prix' | 'audit'>('roles')
+  const [activeTab, setActiveTab] = useState<
+    'agences' | 'roles' | 'utilisateurs' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit'
+  >('agences')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+
+  // Agences form states
+  const [showNewAgenceModal, setShowNewAgenceModal] = useState(false)
+  const [showEditAgenceModal, setShowEditAgenceModal] = useState(false)
+  const [editingAgenceId, setEditingAgenceId] = useState<number | null>(null)
+  const [newAgenceNom, setNewAgenceNom] = useState('')
+  const [newAgenceVille, setNewAgenceVille] = useState('')
+  const [newAgenceAdresse, setNewAgenceAdresse] = useState('')
+  const [newAgenceEstSiege, setNewAgenceEstSiege] = useState(false)
+
+  const [editAgenceNom, setEditAgenceNom] = useState('')
+  const [editAgenceVille, setEditAgenceVille] = useState('')
+  const [editAgenceAdresse, setEditAgenceAdresse] = useState('')
+  const [editAgenceEstSiege, setEditAgenceEstSiege] = useState(false)
 
   // Users & Categories form states
   const [showNewUserModal, setShowNewUserModal] = useState(false)
@@ -3140,9 +4814,102 @@ function AdminPage() {
   const [newUserRole, setNewUserRole] = useState('VENDEUR')
   const [newUserAgenceId, setNewUserAgenceId] = useState(1)
 
+  // Edit User form states
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [editingUserId, setEditingUserId] = useState<number | null>(null)
+  const [editUserName, setEditUserName] = useState('')
+  const [editUserEmail, setEditUserEmail] = useState('')
+  const [editUserRole, setEditUserRole] = useState('VENDEUR')
+  const [editUserAgenceId, setEditUserAgenceId] = useState(1)
+  const [editUserActif, setEditUserActif] = useState(true)
+
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryDesc, setNewCategoryDesc] = useState('')
+
+  // Entreprise & Mentions Légales
+  const entrepriseQuery = useQuery({
+    queryKey: ['admin-entreprise'],
+    queryFn: () => apiRequest<any>('/api/parametrage/entreprise', { token }),
+    enabled: Boolean(token),
+  })
+
+  const [formEntreprise, setFormEntreprise] = useState<any>(null)
+  useEffect(() => {
+    if (entrepriseQuery.data && !formEntreprise) {
+      setFormEntreprise(entrepriseQuery.data)
+    }
+  }, [entrepriseQuery.data, formEntreprise])
+
+  const updateEntrepriseMutation = useMutation({
+    mutationFn: (data: any) =>
+      apiRequest('/api/parametrage/entreprise', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-entreprise'] })
+      setActionNotice('Mentions légales et identité de la société mises à jour avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la mise à jour'),
+  })
+
+  // Camions & Flotte
+  const flotteQuery = useQuery({
+    queryKey: ['admin-flotte'],
+    queryFn: () => apiRequest<any[]>('/api/flotte/vehicules', { token }),
+    enabled: Boolean(token),
+  })
+
+  const [showNewVehiculeModal, setShowNewVehiculeModal] = useState(false)
+  const [newVehiculePlaque, setNewVehiculePlaque] = useState('')
+  const [newVehiculeModele, setNewVehiculeModele] = useState('')
+  const [newVehiculeTonnes, setNewVehiculeTonnes] = useState('15')
+  const [newVehiculeSacs, setNewVehiculeSacs] = useState('600')
+  const [newVehiculeChauffeur, setNewVehiculeChauffeur] = useState('')
+  const [newVehiculeTel, setNewVehiculeTel] = useState('')
+  const [newVehiculeAgenceId, setNewVehiculeAgenceId] = useState(1)
+
+  const createVehiculeMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/flotte/vehicules', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          plaqueImmatriculation: newVehiculePlaque,
+          marqueModele: newVehiculeModele,
+          capaciteTonnes: Number(newVehiculeTonnes),
+          capaciteSacs: Number(newVehiculeSacs),
+          chauffeurNom: newVehiculeChauffeur,
+          chauffeurTelephone: newVehiculeTel,
+          agenceId: Number(newVehiculeAgenceId),
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
+      setShowNewVehiculeModal(false)
+      setNewVehiculePlaque('')
+      setNewVehiculeModele('')
+      setNewVehiculeChauffeur('')
+      setNewVehiculeTel('')
+      setActionNotice('Nouveau camion ajouté à la flotte de livraison.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de l ajout'),
+  })
+
+  const updateVehiculeStatutMutation = useMutation({
+    mutationFn: ({ id, statut }: { id: number; statut: string }) =>
+      apiRequest(`/api/flotte/vehicules/${id}`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({ statut }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
+      setActionNotice('Statut du véhicule mis à jour.')
+    },
+  })
 
   const usersQuery = useQuery({
     queryKey: ['admin-users'],
@@ -3241,6 +5008,84 @@ function AdminPage() {
     onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la création de l utilisateur'),
   })
 
+  const updateUserMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/users/${editingUserId}`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({
+          nom: editUserName,
+          email: editUserEmail,
+          role: editUserRole,
+          agenceId: Number(editUserAgenceId),
+          actif: editUserActif,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      setShowEditUserModal(false)
+      setActionNotice('Compte utilisateur modifié avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la modification de l utilisateur'),
+  })
+
+  const toggleUserStatutMutation = useMutation({
+    mutationFn: (userId: number) =>
+      apiRequest(`/api/admin/users/${userId}/toggle-statut`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      setActionNotice('Statut du compte utilisateur mis à jour.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors du changement de statut'),
+  })
+
+  const createAgenceMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/agences', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          nom: newAgenceNom,
+          ville: newAgenceVille,
+          adresse: newAgenceAdresse,
+          estSiege: newAgenceEstSiege,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agences'] })
+      setShowNewAgenceModal(false)
+      setNewAgenceNom('')
+      setNewAgenceVille('')
+      setNewAgenceAdresse('')
+      setNewAgenceEstSiege(false)
+      setActionNotice('Nouvelle agence créée avec succès. Caisse comptoir et stocks initialisés.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la création de l agence'),
+  })
+
+  const updateAgenceMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/agences/${editingAgenceId}`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({
+          nom: editAgenceNom,
+          ville: editAgenceVille,
+          adresse: editAgenceAdresse,
+          estSiege: editAgenceEstSiege,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agences'] })
+      setShowEditAgenceModal(false)
+      setActionNotice('Coordonnées de l agence mises à jour avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la modification de l agence'),
+  })
+
   const createCategoryMutation = useMutation({
     mutationFn: () =>
       apiRequest('/api/categories', {
@@ -3277,11 +5122,20 @@ function AdminPage() {
       )}
 
       <div className="tab-bar">
+        <button className={clsx('tab-button', activeTab === 'agences' && 'active')} onClick={() => setActiveTab('agences')}>
+          <Buildings size={17} /> Agences & Succursales ({agencesQuery.data?.length ?? 0})
+        </button>
         <button className={clsx('tab-button', activeTab === 'roles' && 'active')} onClick={() => setActiveTab('roles')}>
           <ShieldCheck size={17} /> Rôles et Permissions
         </button>
         <button className={clsx('tab-button', activeTab === 'utilisateurs' && 'active')} onClick={() => setActiveTab('utilisateurs')}>
           <UsersThree size={17} /> Utilisateurs Agences ({usersQuery.data?.length ?? 0})
+        </button>
+        <button className={clsx('tab-button', activeTab === 'entreprise' && 'active')} onClick={() => setActiveTab('entreprise')}>
+          <Buildings size={17} /> Mentions Légales & Société
+        </button>
+        <button className={clsx('tab-button', activeTab === 'flotte' && 'active')} onClick={() => setActiveTab('flotte')}>
+          <Truck size={17} /> Camions & Flotte ({flotteQuery.data?.length ?? 0})
         </button>
         <button className={clsx('tab-button', activeTab === 'categories' && 'active')} onClick={() => setActiveTab('categories')}>
           <Package size={17} /> Catégories & Services ({categoriesQuery.data?.length ?? 0})
@@ -3296,6 +5150,54 @@ function AdminPage() {
           <ClockCounterClockwise size={17} /> Journal d Audit
         </button>
       </div>
+
+      {activeTab === 'agences' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Réseau d'Agences & Succursales Commerciales</h3>
+              <p style={{ color: 'var(--muted)', margin: '4px 0 0', fontSize: '0.88rem' }}>
+                Gestion multi-sites : usine de mouture, dépôts régionaux, comptoirs et succursales de distribution.
+              </p>
+            </div>
+            <button className="primary-action" onClick={() => setShowNewAgenceModal(true)}>
+              <Buildings size={18} /> Nouvelle Agence / Succursale
+            </button>
+          </div>
+          <DataTable
+            columns={['Code / ID', 'Nom de l agence', 'Ville', 'Adresse physique', 'Statut / Vocation', 'Actions']}
+            loading={agencesQuery.isLoading}
+            rows={(agencesQuery.data ?? []).map((ag: any) => [
+              <strong>AG-{ag.id}</strong>,
+              ag.nom,
+              ag.ville,
+              ag.adresse,
+              ag.estSiege ? (
+                <span key={ag.id + '-stat'} className="badge badge-success">Siège Principal / Minoterie</span>
+              ) : (
+                <span key={ag.id + '-stat'} className="badge">Succursale Commerciale / Dépôt</span>
+              ),
+              <button
+                key={ag.id + '-edit'}
+                className="secondary-action"
+                style={{ padding: '4px 10px', fontSize: '0.82rem' }}
+                onClick={() => {
+                  setEditingAgenceId(ag.id)
+                  setEditAgenceNom(ag.nom)
+                  setEditAgenceVille(ag.ville)
+                  setEditAgenceAdresse(ag.adresse)
+                  setEditAgenceEstSiege(Boolean(ag.estSiege))
+                  setShowEditAgenceModal(true)
+                }}
+                title="Modifier les coordonnées de cette agence"
+              >
+                <PencilSimple size={15} /> Modifier
+              </button>,
+            ])}
+            emptyText="Aucune agence enregistrée."
+          />
+        </div>
+      )}
 
       {activeTab === 'roles' && (
         <div className="two-column">
@@ -3336,14 +5238,50 @@ function AdminPage() {
             </button>
           </div>
           <DataTable
-            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle système', 'Agence rattachée', 'Statut']}
+            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle système', 'Agence rattachée', 'Statut', 'Actions']}
             loading={usersQuery.isLoading}
             rows={(usersQuery.data ?? []).map((u: any) => [
               <strong>{u.nom}</strong>,
               u.email,
               <code>{u.role}</code>,
               u.agence?.nom ?? `Agence #${u.agenceId}`,
-              <span key={u.id + '-stat'} className="badge badge-success">Actif</span>,
+              <span
+                key={u.id + '-stat'}
+                className={clsx('badge', u.actif !== false ? 'badge-success' : 'badge-danger')}
+              >
+                {u.actif !== false ? 'Actif' : 'Inactif / Bloqué'}
+              </span>,
+              <div key={u.id + '-actions'} style={{ display: 'flex', gap: 6 }}>
+                <button
+                  className="secondary-action"
+                  style={{ padding: '4px 10px', fontSize: '0.82rem' }}
+                  onClick={() => {
+                    setEditingUserId(u.id)
+                    setEditUserName(u.nom)
+                    setEditUserEmail(u.email)
+                    setEditUserRole(u.role)
+                    setEditUserAgenceId(u.agenceId || 1)
+                    setEditUserActif(u.actif !== false)
+                    setShowEditUserModal(true)
+                  }}
+                  title="Modifier les informations de cet utilisateur"
+                >
+                  <PencilSimple size={15} /> Modifier
+                </button>
+                <button
+                  className={u.actif !== false ? 'secondary-action' : 'primary-action'}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '0.8rem',
+                    color: u.actif !== false ? '#dc2626' : undefined,
+                    borderColor: u.actif !== false ? '#fca5a5' : undefined,
+                  }}
+                  onClick={() => toggleUserStatutMutation.mutate(u.id)}
+                  title={u.actif !== false ? 'Désactiver / suspendre le compte' : 'Réactiver le compte'}
+                >
+                  {u.actif !== false ? 'Suspendre' : 'Activer'}
+                </button>
+              </div>,
             ])}
             emptyText="Aucun utilisateur enregistré."
           />
@@ -3440,6 +5378,169 @@ function AdminPage() {
         </div>
       )}
 
+      {activeTab === 'entreprise' && formEntreprise && (
+        <div className="panel" style={{ background: 'var(--surface)', padding: 24, borderRadius: 10, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Identité de la Société & Mentions Légales</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Ces données sont appliquées dynamiquement sur les Factures A4, Reçus thermiques, Bordereaux de livraison et Balances comptables.
+              </p>
+            </div>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              updateEntrepriseMutation.mutate(formEntreprise)
+            }}
+            style={{ display: 'grid', gap: 16 }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <label>
+                Nom / Raison Sociale officielle
+                <input
+                  value={formEntreprise.nomSociete || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, nomSociete: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Slogan / Activité principale
+                <input
+                  value={formEntreprise.slogan || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, slogan: e.target.value })}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+              <label>
+                Numéro RCCM (Registre du Commerce)
+                <input
+                  value={formEntreprise.rccm || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, rccm: e.target.value })}
+                  placeholder="ex: CD/GOM/RCCM/21-B-00452"
+                  required
+                />
+              </label>
+              <label>
+                Identification Nationale (ID. NAT)
+                <input
+                  value={formEntreprise.idNat || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, idNat: e.target.value })}
+                  placeholder="ex: 01-83-N12457K"
+                  required
+                />
+              </label>
+              <label>
+                Numéro d Impôt / NIF
+                <input
+                  value={formEntreprise.nif || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, nif: e.target.value })}
+                  placeholder="ex: A2189410F"
+                  required
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 14 }}>
+              <label>
+                Adresse complète du Siège Social
+                <input
+                  value={formEntreprise.siegeAdresse || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, siegeAdresse: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Téléphone(s) officiels
+                <input
+                  value={formEntreprise.telephone || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, telephone: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Email de contact
+                <input
+                  type="email"
+                  value={formEntreprise.emailContact || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, emailContact: e.target.value })}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <label>
+                Mentions au pied des Factures (Garantie / Conditions)
+                <textarea
+                  rows={2}
+                  value={formEntreprise.mentionsPiedFacture || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, mentionsPiedFacture: e.target.value })}
+                />
+              </label>
+              <label>
+                Conditions au pied du Bordereau de Livraison (Agréage transport)
+                <textarea
+                  rows={2}
+                  value={formEntreprise.mentionsPiedLivraison || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, mentionsPiedLivraison: e.target.value })}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <button className="primary-action" type="submit" disabled={updateEntrepriseMutation.isPending}>
+                <CheckCircle size={18} />
+                {updateEntrepriseMutation.isPending ? 'Enregistrement...' : 'Enregistrer les Mentions Légales'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {activeTab === 'flotte' && (
+        <div className="page-grid">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Flotte de Camions & Logistique Minoterie</h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Suivi des véhicules de transport, chauffeurs attitrés et affectation sur les bordereaux de livraison.
+              </p>
+            </div>
+            <button className="primary-action" onClick={() => setShowNewVehiculeModal(true)}>
+              <Truck size={18} /> Nouveau Camion
+            </button>
+          </div>
+
+          <DataTable
+            columns={['Plaque', 'Modèle & Marque', 'Capacité (T / Sacs)', 'Chauffeur Attitré', 'Agence', 'Statut', 'Actions']}
+            loading={flotteQuery.isLoading}
+            rows={(flotteQuery.data ?? []).map((v: any) => [
+              <strong key={'plk-' + v.id}>{v.plaqueImmatriculation}</strong>,
+              v.marqueModele,
+              `${v.capaciteTonnes} T (${v.capaciteSacs} sacs)`,
+              <span key={'chf-' + v.id}>{v.chauffeurNom} {v.chauffeurTelephone ? <small style={{ color: 'var(--muted)' }}>({v.chauffeurTelephone})</small> : ''}</span>,
+              v.agence?.nom ?? `Agence #${v.agenceId}`,
+              <span key={'st-' + v.id} className={clsx('badge', v.statut === 'DISPONIBLE' ? 'badge-success' : v.statut === 'EN_COURSE' ? 'badge-warning' : 'badge-danger')}>
+                {v.statut === 'DISPONIBLE' ? 'Disponible' : v.statut === 'EN_COURSE' ? 'En course' : 'Maintenance'}
+              </span>,
+              <select
+                key={'sel-' + v.id}
+                style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                value={v.statut}
+                onChange={(e) => updateVehiculeStatutMutation.mutate({ id: v.id, statut: e.target.value })}
+              >
+                <option value="DISPONIBLE">Disponible</option>
+                <option value="EN_COURSE">En course</option>
+                <option value="EN_MAINTENANCE">Maintenance</option>
+              </select>,
+            ])}
+            emptyText="Aucun véhicule de transport enregistré."
+          />
+        </div>
+      )}
+
       {activeTab === 'audit' && (
         <DataTable
           columns={['Horodatage', 'Utilisateur', 'Opération / Action', 'Détails de traçabilité']}
@@ -3452,6 +5553,128 @@ function AdminPage() {
           ])}
           emptyText="Aucun événement d audit consigné."
         />
+      )}
+
+      {/* MODAL NOUVELLE AGENCE */}
+      {showNewAgenceModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Ouvrir une nouvelle agence / succursale</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              La création d une agence initialise automatiquement sa caisse comptoir principale, son taux de change et ses stocks d articles.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); createAgenceMutation.mutate(); }}>
+              <label>
+                Nom de l agence / succursale
+                <input
+                  value={newAgenceNom}
+                  onChange={(e) => setNewAgenceNom(e.target.value)}
+                  placeholder="ex: Succursale Butembo ou Dépôt Minoterie Bukavu"
+                  required
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Ville d implantation
+                  <input
+                    value={newAgenceVille}
+                    onChange={(e) => setNewAgenceVille(e.target.value)}
+                    placeholder="ex: Butembo, Bukavu, Kinshasa, Beni"
+                    required
+                  />
+                </label>
+                <label>
+                  Adresse physique
+                  <input
+                    value={newAgenceAdresse}
+                    onChange={(e) => setNewAgenceAdresse(e.target.value)}
+                    placeholder="ex: Boulevard Président Mobutu N° 45"
+                  />
+                </label>
+              </div>
+
+              <div style={{ marginTop: 14, padding: '10px 14px', background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0, fontWeight: 500 }}>
+                  <input
+                    type="checkbox"
+                    checked={newAgenceEstSiege}
+                    onChange={(e) => setNewAgenceEstSiege(e.target.checked)}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  <span>Définir comme Siège Principal / Site Minoterie Centrale</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewAgenceModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createAgenceMutation.isPending}>
+                  {createAgenceMutation.isPending ? 'Création...' : 'Créer et Initialiser l Agence'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MODIFIER AGENCE */}
+      {showEditAgenceModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Modifier les coordonnées de l agence</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Mise à jour du libellé, de la localisation géographique et de la vocation du site.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); updateAgenceMutation.mutate(); }}>
+              <label>
+                Nom de l agence / succursale
+                <input
+                  value={editAgenceNom}
+                  onChange={(e) => setEditAgenceNom(e.target.value)}
+                  placeholder="ex: Succursale Butembo"
+                  required
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Ville d implantation
+                  <input
+                    value={editAgenceVille}
+                    onChange={(e) => setEditAgenceVille(e.target.value)}
+                    placeholder="ex: Butembo"
+                    required
+                  />
+                </label>
+                <label>
+                  Adresse physique
+                  <input
+                    value={editAgenceAdresse}
+                    onChange={(e) => setEditAgenceAdresse(e.target.value)}
+                    placeholder="ex: Avenue du Commerce N° 12"
+                  />
+                </label>
+              </div>
+
+              <div style={{ marginTop: 14, padding: '10px 14px', background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0, fontWeight: 500 }}>
+                  <input
+                    type="checkbox"
+                    checked={editAgenceEstSiege}
+                    onChange={(e) => setEditAgenceEstSiege(e.target.checked)}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  <span>Siège Principal / Minoterie Centrale</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowEditAgenceModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={updateAgenceMutation.isPending}>
+                  {updateAgenceMutation.isPending ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* MODAL NOUVEL UTILISATEUR */}
@@ -3505,6 +5728,74 @@ function AdminPage() {
         </div>
       )}
 
+      {/* MODAL MODIFIER UTILISATEUR */}
+      {showEditUserModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Modifier le compte collaborateur</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Mise à jour des informations, du rôle système, de l agence d affectation et du statut d accès.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); updateUserMutation.mutate(); }}>
+              <label>
+                Nom complet
+                <input value={editUserName} onChange={(e) => setEditUserName(e.target.value)} placeholder="ex: Jean Kasereka" required />
+              </label>
+              <label style={{ marginTop: 12 }}>
+                Adresse email professionnelle
+                <input type="email" value={editUserEmail} onChange={(e) => setEditUserEmail(e.target.value)} placeholder="ex: j.kasereka@mvg.cd" required />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Rôle système
+                  <select value={editUserRole} onChange={(e) => setEditUserRole(e.target.value)}>
+                    <option value="VENDEUR">Vendeur / Commercial</option>
+                    <option value="CAISSIER">Caissier</option>
+                    <option value="MAGASINIER">Magasinier</option>
+                    <option value="CHEF_AGENCE">Chef d Agence</option>
+                    <option value="COMPTABLE">Comptable</option>
+                    <option value="COMPTABLE_SENIOR">Comptable Senior</option>
+                    <option value="PRODUCTION">Chef Production</option>
+                    <option value="ADMIN_SIEGE">Administrateur Siège</option>
+                    <option value="SUPER_ADMIN">Super Administrateur</option>
+                  </select>
+                </label>
+                <label>
+                  Agence rattachée
+                  <select value={editUserAgenceId} onChange={(e) => setEditUserAgenceId(Number(e.target.value))}>
+                    {(agencesQuery.data ?? []).map((ag: any) => (
+                      <option key={ag.id} value={ag.id}>{ag.nom} ({ag.ville})</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div style={{ marginTop: 16, padding: '12px', background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0, fontWeight: 500 }}>
+                  <input
+                    type="checkbox"
+                    checked={editUserActif}
+                    onChange={(e) => setEditUserActif(e.target.checked)}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  <span>Compte actif (autorisé à se connecter au système)</span>
+                </label>
+                <p style={{ margin: '4px 0 0 28px', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  {editUserActif ? 'L utilisateur peut se connecter normalement.' : 'L accès est immédiatement bloqué pour cet utilisateur.'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowEditUserModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={updateUserMutation.isPending}>
+                  {updateUserMutation.isPending ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL NOUVELLE CATEGORIE */}
       {showNewCategoryModal && (
         <div className="modal-backdrop">
@@ -3523,6 +5814,64 @@ function AdminPage() {
                 <button type="button" className="secondary-action" onClick={() => setShowNewCategoryModal(false)}>Annuler</button>
                 <button type="submit" className="primary-action" disabled={createCategoryMutation.isPending}>
                   {createCategoryMutation.isPending ? 'Enregistrement...' : 'Ajouter catégorie'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOUVEAU CAMION */}
+      {showNewVehiculeModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Ajouter un camion à la flotte</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Véhicule de livraison et logistique inter-agences pour les cargaisons de farine.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); createVehiculeMutation.mutate(); }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label>
+                  Plaque d immatriculation
+                  <input value={newVehiculePlaque} onChange={(e) => setNewVehiculePlaque(e.target.value)} placeholder="ex: 4512AB/19" required />
+                </label>
+                <label>
+                  Marque & Modèle
+                  <input value={newVehiculeModele} onChange={(e) => setNewVehiculeModele(e.target.value)} placeholder="ex: Mitsubishi Fuso (10T)" required />
+                </label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Capacité en Tonnes
+                  <input type="number" value={newVehiculeTonnes} onChange={(e) => setNewVehiculeTonnes(e.target.value)} required />
+                </label>
+                <label>
+                  Capacité en Sacs (25kg)
+                  <input type="number" value={newVehiculeSacs} onChange={(e) => setNewVehiculeSacs(e.target.value)} required />
+                </label>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Nom du Chauffeur
+                  <input value={newVehiculeChauffeur} onChange={(e) => setNewVehiculeChauffeur(e.target.value)} placeholder="ex: Bahati Kasereka" required />
+                </label>
+                <label>
+                  Téléphone du Chauffeur
+                  <input value={newVehiculeTel} onChange={(e) => setNewVehiculeTel(e.target.value)} placeholder="ex: +243 999 123 456" />
+                </label>
+              </div>
+              <label style={{ marginTop: 12 }}>
+                Agence de rattachement
+                <select value={newVehiculeAgenceId} onChange={(e) => setNewVehiculeAgenceId(Number(e.target.value))}>
+                  {(agencesQuery.data ?? []).map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>{ag.nom} ({ag.ville})</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewVehiculeModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createVehiculeMutation.isPending}>
+                  {createVehiculeMutation.isPending ? 'Ajout...' : 'Ajouter le camion'}
                 </button>
               </div>
             </form>

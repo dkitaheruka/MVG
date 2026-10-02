@@ -6,9 +6,10 @@ import {
   Truck,
   Printer,
   CheckCircle,
+  FilePdf,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
-import { apiRequest } from '../lib/api'
+import { apiRequest, downloadUrl } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
 
 export function StockTransfersPage() {
@@ -27,6 +28,7 @@ export function StockTransfersPage() {
   const [agenceDestId, setAgenceDestId] = useState<number>(2) // Kinshasa by default
   const [selectedStockId, setSelectedStockId] = useState<number | ''>('')
   const [quantiteExpediee, setQuantiteExpediee] = useState('10')
+  const [selectedVehiculeId, setSelectedVehiculeId] = useState<number | ''>(1)
 
   const transfertsQuery = useQuery({
     queryKey: ['transferts-stock', agenceId],
@@ -46,6 +48,12 @@ export function StockTransfersPage() {
     enabled: Boolean(token),
   })
 
+  const flotteQuery = useQuery({
+    queryKey: ['flotte-vehicules'],
+    queryFn: () => apiRequest<any[]>('/api/flotte/vehicules', { token }),
+    enabled: Boolean(token),
+  })
+
   const createTransfertMutation = useMutation({
     mutationFn: () => {
       const selectedStock = stockQuery.data?.find((s) => s.id === Number(selectedStockId))
@@ -61,6 +69,7 @@ export function StockTransfersPage() {
         body: JSON.stringify({
           agenceSourceId: agenceId,
           agenceDestId: Number(agenceDestId),
+          vehiculeId: selectedVehiculeId ? Number(selectedVehiculeId) : undefined,
           lignes: [
             {
               articleId: selectedStock.article.id,
@@ -74,6 +83,8 @@ export function StockTransfersPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
       setShowNewTransfertModal(false)
       setSelectedStockId('')
       setQuantiteExpediee('10')
@@ -96,6 +107,8 @@ export function StockTransfersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
       setReceptionTransfert(null)
       setEcartConstate(false)
       setMotifEcart('')
@@ -107,16 +120,11 @@ export function StockTransfersPage() {
   return (
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="brand-mark" style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--surface-2)', display: 'grid', placeItems: 'center' }}>
-            <Truck size={26} weight="duotone" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: '1.4rem', margin: 0 }}>Transferts de Stock Inter-Agences</h1>
-            <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.88rem' }}>
-              Mouvements de marchandises entre le siège et les succursales, confirmation de réception et arbitrage des écarts.
-            </p>
-          </div>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Transferts Inter-Agences & Convois</h2>
+          <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.88rem' }}>
+            Expéditions de farine en sacs, feuilles de route chauffeurs, suivi de flotte et réception contradictoire.
+          </p>
         </div>
         <button className="primary-action" onClick={() => setShowNewTransfertModal(true)}>
           <Plus size={18} /> Expédier un Transfert
@@ -139,6 +147,7 @@ export function StockTransfersPage() {
               <th>Provenance (Source)</th>
               <th>Destination</th>
               <th>Articles & Lots</th>
+              <th>Camion & Chauffeur</th>
               <th>Statut</th>
               <th>Initiateur / Récepteur</th>
               <th>Actions</th>
@@ -156,7 +165,17 @@ export function StockTransfersPage() {
                   <td>{t.agenceDest?.nom ?? `Agence #${t.agenceDestId}`}</td>
                   <td>
                     <div>{ligne?.article?.designation || 'Article'}</div>
-                    <small style={{ color: 'var(--muted)' }}>Qté: <strong>{ligne?.quantite}</strong> | Lot: {ligne?.numeroLot}</small>
+                    <small style={{ color: 'var(--muted)' }}>Qté: <strong>{ligne?.quantite}</strong> sacs | Lot: {ligne?.numeroLot}</small>
+                  </td>
+                  <td>
+                    {t.immatriculationCamion ? (
+                      <div>
+                        <code style={{ fontWeight: 700, color: 'var(--accent-strong)' }}>{t.immatriculationCamion}</code>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{t.chauffeurNom}</div>
+                      </div>
+                    ) : (
+                      <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>Véhicule agence</span>
+                    )}
                   </td>
                   <td>
                     <span className={clsx('badge', t.statut === 'RECU' ? 'badge-success' : t.statut === 'LITIGE' ? 'badge-danger' : 'badge-warning')}>
@@ -168,13 +187,22 @@ export function StockTransfersPage() {
                     {t.recepteurNom && <small style={{ color: 'var(--muted)' }}>Reçu par : {t.recepteurNom}</small>}
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <a
+                        className="secondary-action"
+                        style={{ padding: '4px 8px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+                        href={downloadUrl(`/api/stocks/transferts/${t.id}/feuille-route`)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <FilePdf size={15} /> Feuille de route
+                      </a>
                       <button
                         className="secondary-action"
                         style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                         onClick={() => setVoucherTransfert(t)}
                       >
-                        <Printer size={15} /> Bon Livraison
+                        <Printer size={15} /> Aperçu
                       </button>
                       {t.statut === 'EN_TRANSIT' && isDestinataire && (
                         <button
@@ -192,8 +220,8 @@ export function StockTransfersPage() {
             })}
             {(transfertsQuery.data ?? []).length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
-                  Aucun transfert de stock enregistré pour cette agence.
+                <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                  Aucun ordre de transfert inter-agences enregistré.
                 </td>
               </tr>
             )}
@@ -201,40 +229,63 @@ export function StockTransfersPage() {
         </table>
       </div>
 
-      {/* MODAL EXPEDITION NOUVEAU TRANSFERT */}
+      {/* MODAL NOUVEL ORDRE DE TRANSFERT */}
       {showNewTransfertModal && (
         <div className="modal-backdrop">
           <div className="modal-card">
-            <h3>Initier un transfert de stock</h3>
+            <h3>Expédier un transfert de stock</h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              Les marchandises sont immédiatement déduites du stock expéditeur et placées sous statut En transit.
+              Les quantités expédiées seront automatiquement déduites du stock de départ et acheminées par convoi.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createTransfertMutation.mutate(); }}>
               <label>
-                Agence destinataire
-                <select value={agenceDestId} onChange={(e) => setAgenceDestId(Number(e.target.value))} required>
+                Agence de destination
+                <select value={agenceDestId} onChange={(e) => setAgenceDestId(Number(e.target.value))}>
                   {(agencesQuery.data ?? [])
-                    .filter((ag: any) => ag.id !== agenceId)
+                    .filter((a: any) => a.id !== agenceId)
                     .map((ag: any) => (
-                      <option key={ag.id} value={ag.id}>{ag.nom} ({ag.ville})</option>
+                      <option key={ag.id} value={ag.id}>
+                        {ag.nom} ({ag.ville})
+                      </option>
                     ))}
                 </select>
               </label>
 
               <label style={{ marginTop: 12 }}>
-                Ligne de stock expédiée
-                <select value={selectedStockId} onChange={(e) => setSelectedStockId(Number(e.target.value))} required>
-                  <option value="">Sélectionner un article & lot disponible</option>
-                  {(stockQuery.data ?? []).map((s: any) => (
-                    <option key={s.id} value={s.id}>
-                      {s.article?.designation} - Lot {s.numeroLot} (Dispo : {s.quantite})
+                Article et lot FEFO à expédier
+                <select
+                  value={selectedStockId}
+                  onChange={(e) => setSelectedStockId(e.target.value ? Number(e.target.value) : '')}
+                  required
+                >
+                  <option value="">Sélectionner dans le stock de l agence...</option>
+                  {(stockQuery.data ?? [])
+                    .filter((s: any) => s.quantite > 0)
+                    .map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.article?.designation} - Lot: {s.numeroLot} (Dispo : {s.quantite} sacs)
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              <label style={{ marginTop: 12 }}>
+                Camion de transport assigné (Flotte MVG)
+                <select
+                  value={selectedVehiculeId}
+                  onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">Affectation automatique / Aucun véhicule attitré</option>
+                  {(flotteQuery.data ?? []).map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {v.plaqueImmatriculation} - {v.marqueModele} ({v.capaciteTonnes}T / {v.capaciteSacs} sacs) - {v.chauffeurNom} [{v.statut}]
                     </option>
                   ))}
                 </select>
               </label>
 
               <label style={{ marginTop: 12 }}>
-                Quantité expédiée
+                Quantité en sacs à expédier
                 <input
                   type="number"
                   min="1"
@@ -266,8 +317,11 @@ export function StockTransfersPage() {
             <form onSubmit={(e) => { e.preventDefault(); receptionMutation.mutate(); }}>
               <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, marginBottom: 12 }}>
                 <div><strong>Article expédié :</strong> {receptionTransfert.lignes?.[0]?.article?.designation}</div>
-                <div><strong>Quantité annoncée :</strong> {receptionTransfert.lignes?.[0]?.quantite} unités</div>
+                <div><strong>Quantité annoncée :</strong> {receptionTransfert.lignes?.[0]?.quantite} sacs</div>
                 <div><strong>Numéro de lot :</strong> {receptionTransfert.lignes?.[0]?.numeroLot}</div>
+                {receptionTransfert.immatriculationCamion && (
+                  <div><strong>Camion convoi :</strong> {receptionTransfert.immatriculationCamion} (Chauffeur : {receptionTransfert.chauffeurNom})</div>
+                )}
               </div>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -305,10 +359,10 @@ export function StockTransfersPage() {
       {/* BON DE LIVRAISON ET DE TRANSFERT IMPRIMABLE */}
       {voucherTransfert && (
         <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 460 }}>
+          <div className="modal-card" style={{ maxWidth: 480 }}>
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ margin: 0 }}>BON DE LIVRAISON INTER-AGENCES</h3>
+                <h3 style={{ margin: 0 }}>BON DE TRANSFERT INTER-AGENCES</h3>
                 <small style={{ color: 'var(--muted)' }}>MATABISHI ERP - MVG SARL</small>
               </div>
               <Truck size={28} style={{ color: 'var(--accent-strong)' }} />
@@ -318,17 +372,29 @@ export function StockTransfersPage() {
               <div><strong>Date expédition :</strong> {new Date(voucherTransfert.dateExpedition).toLocaleString()}</div>
               <div><strong>Agence expéditrice :</strong> {voucherTransfert.agenceSource?.nom || `Agence #${voucherTransfert.agenceSourceId}`}</div>
               <div><strong>Agence réceptrice :</strong> {voucherTransfert.agenceDest?.nom || `Agence #${voucherTransfert.agenceDestId}`}</div>
+              {voucherTransfert.immatriculationCamion && (
+                <div><strong>Camion assigné :</strong> {voucherTransfert.immatriculationCamion} ({voucherTransfert.chauffeurNom})</div>
+              )}
               <div><strong>Responsable expédition :</strong> {voucherTransfert.initiateurNom}</div>
               <div style={{ marginTop: 8, padding: 8, background: 'var(--surface-2)', borderRadius: 6 }}>
-                <strong>Détail des marchandises acheminées :</strong>
+                <strong>Détail des sacs acheminés :</strong>
                 {(voucherTransfert.lignes || []).map((l: any, i: number) => (
                   <div key={i} style={{ fontSize: '0.82rem', marginTop: 4 }}>
-                    - {l.article?.designation || 'Article'} : <strong>{l.quantite} unités</strong> (Lot: {l.numeroLot})
+                    - {l.article?.designation || 'Farine'} : <strong>{l.quantite} sacs</strong> (Lot: {l.numeroLot})
                   </div>
                 ))}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
+              <a
+                className="secondary-action"
+                href={downloadUrl(`/api/stocks/transferts/${voucherTransfert.id}/feuille-route`)}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <FilePdf size={17} /> Imprimer Feuille de Route A4
+              </a>
               <button className="primary-action" onClick={() => setVoucherTransfert(null)}>Fermer</button>
             </div>
           </div>

@@ -23,6 +23,12 @@ import type {
   DbBulletinPaie,
   DbSyncOperation,
   DbCategorie,
+  DbParametresEntreprise,
+  DbVehicule,
+  DbRapprochementBancaire,
+  DbBonLivraison,
+  DbCommandeAchat,
+  DbReceptionPontBascule,
 } from './db'
 
 export const agences: DbAgence[] = [
@@ -131,6 +137,9 @@ export const articles: DbArticle[] = [
   { id: 4, codeUnique: 'BIS-004', designation: 'Biscuits Croquants MVG 100g', type: 'PRODUIT_FINI', uniteMesure: 'Carton', prixVenteStandard: 14.0, alerteExpiration: true },
   { id: 5, codeUnique: 'BLE-RAW', designation: 'Blé Grain Brut d Importation', type: 'MATIERE_PREMIERE', uniteMesure: 'Tonne', prixVenteStandard: 450.0, alerteExpiration: false },
   { id: 6, codeUnique: 'SUC-RAW', designation: 'Sucre de Canne Pur', type: 'MATIERE_PREMIERE', uniteMesure: 'Sac 50kg', prixVenteStandard: 42.0, alerteExpiration: false },
+  { id: 7, codeUnique: 'FAR-MAIS-01', designation: 'Farine de Maïs Extra Blanche MVG 25kg', type: 'PRODUIT_FINI', uniteMesure: 'Sac', prixVenteStandard: 22.0, alerteExpiration: true },
+  { id: 8, codeUnique: 'SON-MAIS-01', designation: 'Son de Maïs pour Provende Animale 50kg', type: 'PRODUIT_FINI', uniteMesure: 'Sac', prixVenteStandard: 9.5, alerteExpiration: false },
+  { id: 9, codeUnique: 'MAIS-RAW', designation: 'Maïs Blanc Grain Brut Local (Nord-Kivu)', type: 'MATIERE_PREMIERE', uniteMesure: 'Tonne', prixVenteStandard: 320.0, alerteExpiration: false },
 ]
 
 export const prixArticlesAgence: DbPrixArticleAgence[] = [
@@ -139,6 +148,10 @@ export const prixArticlesAgence: DbPrixArticleAgence[] = [
   { id: 3, agenceId: 1, articleId: 3, prix: 1.2, devise: 'USD', statut: 'VALIDE', actif: true },
   { id: 4, agenceId: 1, articleId: 4, prix: 13.5, devise: 'USD', statut: 'VALIDE', actif: true },
   { id: 5, agenceId: 2, articleId: 1, prix: 26.5, devise: 'USD', statut: 'VALIDE', actif: true },
+  { id: 6, agenceId: 1, articleId: 7, prix: 22.0, devise: 'USD', statut: 'VALIDE', actif: true },
+  { id: 7, agenceId: 1, articleId: 8, prix: 9.5, devise: 'USD', statut: 'VALIDE', actif: true },
+  { id: 8, agenceId: 2, articleId: 7, prix: 24.5, devise: 'USD', statut: 'VALIDE', actif: true },
+  { id: 9, agenceId: 3, articleId: 7, prix: 22.5, devise: 'USD', statut: 'VALIDE', actif: true },
 ]
 
 export const tauxChanges: DbTauxChange[] = [
@@ -153,6 +166,10 @@ export const stocksAgence: DbStockAgence[] = [
   { id: 3, agenceId: 1, articleId: 3, quantite: 95, numeroLot: 'LOT-2609-03', dateExpiration: '2026-10-08', seuilAlerte: 40 },
   { id: 4, agenceId: 1, articleId: 4, quantite: 210, numeroLot: 'LOT-2609-04', dateExpiration: '2027-02-15', seuilAlerte: 30 },
   { id: 5, agenceId: 2, articleId: 1, quantite: 140, numeroLot: 'LOT-2609-05', dateExpiration: '2027-03-31', seuilAlerte: 30 },
+  { id: 6, agenceId: 1, articleId: 7, quantite: 500, numeroLot: 'LOT-MAIS-2609-01', dateExpiration: '2027-05-31', seuilAlerte: 60 },
+  { id: 7, agenceId: 1, articleId: 8, quantite: 120, numeroLot: 'LOT-SON-2609-01', dateExpiration: '2027-01-31', seuilAlerte: 30 },
+  { id: 8, agenceId: 1, articleId: 9, quantite: 45, numeroLot: 'LOT-RAW-MAIS-01', dateExpiration: '2028-09-30', seuilAlerte: 10 },
+  { id: 9, agenceId: 3, articleId: 7, quantite: 180, numeroLot: 'LOT-MAIS-BK-01', dateExpiration: '2027-05-31', seuilAlerte: 40 },
 ]
 
 export const clients: DbClient[] = [
@@ -162,9 +179,12 @@ export const clients: DbClient[] = [
 ]
 
 export const comptesCaisse: DbCompteCaisse[] = [
-  { id: 1, nom: 'Caisse Principale USD/CDF - Goma', agenceId: 1, soldeUsd: 4850.0, soldeCdf: 2450000.0 },
-  { id: 2, nom: 'Caisse Ventes Comptoir - Goma', agenceId: 1, soldeUsd: 1250.0, soldeCdf: 980000.0 },
-  { id: 3, nom: 'Caisse Principale - Kinshasa', agenceId: 2, soldeUsd: 7200.0, soldeCdf: 5600000.0 },
+  { id: 1, nom: 'Caisse Principale USD/CDF - Goma', agenceId: 1, soldeUsd: 4850.0, soldeCdf: 2450000.0, type: 'CAISSE' },
+  { id: 2, nom: 'Caisse Ventes Comptoir - Goma', agenceId: 1, soldeUsd: 1250.0, soldeCdf: 980000.0, type: 'CAISSE' },
+  { id: 3, nom: 'Banque Rawbank Compte Courant - Goma', agenceId: 1, soldeUsd: 28400.0, soldeCdf: 15200000.0, type: 'BANQUE', numeroCompteBancaire: '00018-05100-01293847201-92' },
+  { id: 4, nom: 'Banque Equity BCDC - Goma', agenceId: 1, soldeUsd: 14500.0, soldeCdf: 8400000.0, type: 'BANQUE', numeroCompteBancaire: '00015-02100-98472910482-14' },
+  { id: 5, nom: 'Caisse Principale - Kinshasa', agenceId: 2, soldeUsd: 7200.0, soldeCdf: 5600000.0, type: 'CAISSE' },
+  { id: 6, nom: 'Banque Rawbank - Kinshasa', agenceId: 2, soldeUsd: 35000.0, soldeCdf: 22000000.0, type: 'BANQUE', numeroCompteBancaire: '00018-01100-74629104819-33' },
 ]
 
 export const transactions: DbTransaction[] = [
@@ -206,17 +226,27 @@ export const ventes: DbVente[] = [
 
 export const planComptable: DbPlanComptable[] = [
   { numero: '101', libelle: 'Capital social', estModifiable: false },
+  { numero: '241', libelle: 'Matériel industriel et équipement usine', estModifiable: false },
+  { numero: '281', libelle: 'Amortissements des immobilisations corporelles', estModifiable: false },
   { numero: '401', libelle: 'Fournisseurs et comptes rattachés', estModifiable: false },
   { numero: '411', libelle: 'Clients et comptes rattachés', estModifiable: false },
-  { numero: '521', libelle: 'Banques locales', estModifiable: false },
+  { numero: '421', libelle: 'Personnel, avances et acomptes', estModifiable: false },
+  { numero: '431', libelle: 'Sécurité sociale (CNSS, INPP, ONEM)', estModifiable: false },
+  { numero: '521', libelle: 'Banques locales (Rawbank, Equity BCDC)', estModifiable: false },
   { numero: '571', libelle: 'Caisse principale USD', estModifiable: false },
   { numero: '572', libelle: 'Caisse principale CDF', estModifiable: false },
-  { numero: '601', libelle: 'Achats de matières premières', estModifiable: false },
-  { numero: '605', libelle: 'Autres achats et fournitures', estModifiable: false },
-  { numero: '661', libelle: 'Rémunérations du personnel', estModifiable: false },
-  { numero: '701', libelle: 'Ventes de produits finis', estModifiable: false },
-  { numero: '706', libelle: 'Services vendus', estModifiable: false },
+  { numero: '585', libelle: 'Virements internes de fonds (Caisse / Banque)', estModifiable: false },
+  { numero: '601', libelle: 'Achats de matières premières (Maïs, Soja)', estModifiable: false },
+  { numero: '605', libelle: 'Autres achats et fournitures de bureau/carburant', estModifiable: false },
+  { numero: '631', libelle: 'Frais bancaires et commissions', estModifiable: false },
+  { numero: '658', libelle: 'Charges diverses d exploitation', estModifiable: false },
+  { numero: '661', libelle: 'Rémunérations directes du personnel', estModifiable: false },
+  { numero: '664', libelle: 'Charges sociales patronales', estModifiable: false },
+  { numero: '681', libelle: 'Dotations aux amortissements d exploitation', estModifiable: false },
+  { numero: '701', libelle: 'Ventes de produits finis (Farines)', estModifiable: false },
+  { numero: '706', libelle: 'Services vendus (Mouture à façon)', estModifiable: false },
   { numero: '707', libelle: 'Ventes de marchandises', estModifiable: false },
+  { numero: '758', libelle: 'Produits exceptionnels et divers', estModifiable: false },
 ]
 
 export const ecrituresComptables: DbEcritureComptable[] = [
@@ -277,6 +307,8 @@ export const recettes: DbRecette[] = [
   { id: 1, articleFiniId: 1, articleMatiereId: 5, quantiteRequise: 0.025 },
   { id: 2, articleFiniId: 3, articleMatiereId: 5, quantiteRequise: 0.0004 },
   { id: 3, articleFiniId: 4, articleMatiereId: 6, quantiteRequise: 0.05 },
+  { id: 4, articleFiniId: 7, articleMatiereId: 9, quantiteRequise: 0.032 },
+  { id: 5, articleFiniId: 8, articleMatiereId: 9, quantiteRequise: 0.055 },
 ]
 
 export const auditLogs: DbAuditLog[] = [
@@ -469,6 +501,183 @@ export const categories: DbCategorie[] = [
   { id: 4, nom: 'Boulangerie & Pâtisserie', description: 'Pains toast et produits finis de panification' },
   { id: 5, nom: 'Biscuiterie & Snacks', description: 'Biscuits secs et confiseries' },
 ]
+
+export let parametresEntreprise: DbParametresEntreprise = {
+  nomSociete: 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)',
+  slogan: 'Transformation agroalimentaire & distribution de farine de maïs et dérivés',
+  rccm: 'CD/GOM/RCCM/21-B-00452',
+  idNat: '01-83-N12457K',
+  nif: 'A2189410F',
+  siegeAdresse: 'Avenue du Port N° 14, Quartier Les Volcans, Goma, Nord-Kivu, RDC',
+  telephone: '+243 998 000 111 / +243 810 000 222',
+  emailContact: 'direction@mvg-minoterie.cd',
+  siteWeb: 'www.mvg-minoterie.cd',
+  tauxTvaPourcent: 16,
+  mentionsPiedFacture: 'Les marchandises vendues et retirées ne sont ni reprises ni échangées. Document certifié par Matabishi ERP.',
+  mentionsPiedLivraison: 'Les sacs et emballages ont été vérifiés au départ de la minoterie. Le destinataire certifie la conformité qualitative et quantitative des sacs réceptionnés.',
+  logoUrl: '',
+}
+
+export const vehicules: DbVehicule[] = [
+  {
+    id: 1,
+    plaqueImmatriculation: '4512AB/19',
+    marqueModele: 'Mitsubishi Fuso Canter (10T)',
+    capaciteTonnes: 10,
+    capaciteSacs: 400,
+    chauffeurNom: 'Bahati Kasereka',
+    chauffeurTelephone: '+243 970 112 233',
+    agenceId: 1,
+    statut: 'DISPONIBLE' as const,
+  },
+  {
+    id: 2,
+    plaqueImmatriculation: '8920AC/19',
+    marqueModele: 'Sinotruk HOWO Benne (25T)',
+    capaciteTonnes: 25,
+    capaciteSacs: 1000,
+    chauffeurNom: 'Muhindo Faustin',
+    chauffeurTelephone: '+243 812 334 455',
+    agenceId: 1,
+    statut: 'DISPONIBLE' as const,
+  },
+  {
+    id: 3,
+    plaqueImmatriculation: '1104BB/19',
+    marqueModele: 'Isuzu Forward (15T)',
+    capaciteTonnes: 15,
+    capaciteSacs: 600,
+    chauffeurNom: 'Kavira Jean-Pierre',
+    chauffeurTelephone: '+243 850 556 677',
+    agenceId: 3,
+    statut: 'EN_COURSE' as const,
+  },
+]
+
+// 1. Rapprochements Bancaires
+export const rapprochementsBancaires: DbRapprochementBancaire[] = [
+  {
+    id: 1,
+    compteCaisseId: 3, // Banque Rawbank Compte Courant - Goma
+    agenceId: 1,
+    dateDebut: '2026-09-01',
+    dateFin: '2026-09-30',
+    soldeDebutReleve: 25000,
+    soldeFinReleve: 28400,
+    soldeComptable: 28400,
+    ecart: 0,
+    devise: 'USD',
+    statut: 'VALIDE',
+    dateCloture: '2026-09-30T17:00:00.000Z',
+    auteur: 'Kambale (Comptable Sr)',
+    operationsPointees: ['TX-VIR-01', 'TX-VIR-02'],
+  },
+]
+
+// 2. Bons de Livraison Clients
+export const bonsLivraison: DbBonLivraison[] = [
+  {
+    id: 1,
+    numeroBL: 'BL-2026-0001',
+    agenceId: 1,
+    venteId: 1,
+    clientNom: 'Boulangerie La Grâce',
+    clientTelephone: '+243 997 123 456',
+    adresseLivraison: 'Avenue Maniema N° 24, Goma',
+    vehiculeId: 1,
+    chauffeurNom: 'Bahati Kasereka',
+    quantiteSacs: 50,
+    poidsTotalKg: 1250,
+    statut: 'LIVRE',
+    dateCreation: '2026-10-01T08:30:00.000Z',
+    dateDepart: '2026-10-01T09:15:00.000Z',
+    dateLivraison: '2026-10-01T10:45:00.000Z',
+    recepteurNom: 'Gérant Boulangerie - M. Patient',
+    recepteurSignature: 'SIGNATURE_CERTIFIEE_DECHARGE',
+    observations: 'Livraison conforme 50 sacs farine de maïs extra-blanche 25kg.',
+  },
+  {
+    id: 2,
+    numeroBL: 'BL-2026-0002',
+    agenceId: 1,
+    venteId: 2,
+    clientNom: 'Établissement Baraka & Frères',
+    clientTelephone: '+243 812 987 654',
+    adresseLivraison: 'Marché Central Virunga, Hangar 3, Goma',
+    vehiculeId: 2,
+    chauffeurNom: 'Muhindo Faustin',
+    quantiteSacs: 120,
+    poidsTotalKg: 3000,
+    statut: 'EN_TRANSIT',
+    dateCreation: '2026-10-02T07:45:00.000Z',
+    dateDepart: '2026-10-02T08:10:00.000Z',
+    observations: 'En cours d acheminement vers le marché Virunga.',
+  },
+]
+
+// 3. Commandes d'Achat Fournisseurs (BC)
+export const commandesAchat: DbCommandeAchat[] = [
+  {
+    id: 1,
+    numeroBC: 'BC-2026-001',
+    agenceId: 1,
+    fournisseurId: 1,
+    fournisseurNom: 'Coopérative Agricole de Rutshuru (COOPAR)',
+    produit: 'Maïs en grains blanc sec qualité supérieure',
+    quantiteKg: 20000,
+    prixUnitaireKgUsd: 0.42,
+    montantTotalUsd: 8400,
+    dateCommande: '2026-09-28T10:00:00.000Z',
+    statut: 'SOLDEE',
+    observations: 'Contrat livraison approvisionnement moulin usine.',
+  },
+  {
+    id: 2,
+    numeroBC: 'BC-2026-002',
+    agenceId: 1,
+    fournisseurId: 2,
+    fournisseurNom: 'Agro-Business Kivu SARL',
+    produit: 'Soja grain cru sélectionné',
+    quantiteKg: 10000,
+    prixUnitaireKgUsd: 0.58,
+    montantTotalUsd: 5800,
+    dateCommande: '2026-10-01T11:30:00.000Z',
+    statut: 'EN_RECEPTION',
+    observations: 'Arrivage prévu par camions bennes échelonnés.',
+  },
+]
+
+// 4. Réceptions & Pesées Pont-Bascule (BR)
+export const receptionsPontBascule: DbReceptionPontBascule[] = [
+  {
+    id: 1,
+    numeroBR: 'BR-2026-0001',
+    commandeAchatId: 1,
+    numeroBC: 'BC-2026-001',
+    agenceId: 1,
+    fournisseurId: 1,
+    fournisseurNom: 'Coopérative Agricole de Rutshuru (COOPAR)',
+    produit: 'Maïs en grains blanc sec',
+    immatriculationCamion: '8920AC/19',
+    chauffeur: 'Amisi Jacques',
+    peseeBruteKg: 34500, // Poids avec camion
+    peseeTareKg: 14500,  // Poids à vide
+    poidsNetKg: 20000,
+    tauxHumidite: 12.8,  // Norme < 13.5%
+    tauxImpuretes: 1.2,
+    refactionKg: 0,
+    poidsNetAccepteKg: 20000,
+    prixUnitaireKgUsd: 0.42,
+    montantTotalFactureUsd: 8400,
+    statut: 'VALIDE',
+    datePeseeBrute: '2026-09-29T09:00:00.000Z',
+    datePeseeTare: '2026-09-29T10:15:00.000Z',
+    magasinierNom: 'Baraka (Magasinier)',
+    observations: 'Conforme aux normes qualitatives minoterie. Grains sains et secs.',
+  },
+]
+
+
 
 
 

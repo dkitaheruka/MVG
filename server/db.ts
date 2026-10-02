@@ -108,6 +108,8 @@ export interface DbCompteCaisse {
   agenceId: number
   soldeUsd: number
   soldeCdf: number
+  type?: 'CAISSE' | 'BANQUE'
+  numeroCompteBancaire?: string
 }
 
 export interface DbTransaction {
@@ -246,6 +248,9 @@ export interface DbTransfertStock {
   initiateurNom: string
   recepteurNom?: string
   motifEcart?: string
+  vehiculeId?: number
+  immatriculationCamion?: string
+  chauffeurNom?: string
   lignes: DbTransfertStockLigne[]
 }
 
@@ -303,4 +308,117 @@ export interface DbSyncOperation {
   stockNegatifSignale: boolean
   dateReception: string
 }
+
+export interface DbParametresEntreprise {
+  nomSociete: string
+  slogan: string
+  rccm: string
+  idNat: string
+  nif: string
+  siegeAdresse: string
+  telephone: string
+  emailContact: string
+  siteWeb?: string
+  tauxTvaPourcent: number
+  mentionsPiedFacture: string
+  mentionsPiedLivraison: string
+  logoUrl?: string
+}
+
+export interface DbVehicule {
+  id: number
+  plaqueImmatriculation: string
+  marqueModele: string
+  capaciteTonnes: number
+  capaciteSacs: number
+  chauffeurNom: string
+  chauffeurTelephone?: string
+  agenceId: number
+  statut: 'DISPONIBLE' | 'EN_COURSE' | 'EN_MAINTENANCE'
+}
+
+// 1. Rapprochement Bancaire
+export interface DbRapprochementBancaire {
+  id: number
+  compteCaisseId: number
+  agenceId: number
+  dateDebut: string
+  dateFin: string
+  soldeDebutReleve: number
+  soldeFinReleve: number
+  soldeComptable: number
+  ecart: number
+  devise: 'USD' | 'CDF'
+  statut: 'EN_COURS' | 'VALIDE'
+  dateCloture?: string
+  auteur: string
+  operationsPointees: string[] // IDs des transactions ou écritures pointées
+}
+
+// 2. Bons de Livraison Clients
+export interface DbBonLivraison {
+  id: number
+  numeroBL: string
+  agenceId: number
+  venteId: number
+  clientNom: string
+  clientTelephone?: string
+  adresseLivraison: string
+  vehiculeId?: number
+  chauffeurNom?: string
+  quantiteSacs: number
+  poidsTotalKg: number
+  statut: 'PREPARATION' | 'EN_TRANSIT' | 'LIVRE' | 'ANNULE'
+  dateCreation: string
+  dateDepart?: string
+  dateLivraison?: string
+  recepteurNom?: string
+  recepteurSignature?: string
+  observations?: string
+}
+
+// 3. Commandes d'Achat Fournisseurs & Pesée Pont-Bascule
+export interface DbCommandeAchat {
+  id: number
+  numeroBC: string
+  agenceId: number
+  fournisseurId: number
+  fournisseurNom: string
+  produit: string
+  quantiteKg: number
+  prixUnitaireKgUsd: number
+  montantTotalUsd: number
+  dateCommande: string
+  statut: 'APPROUVEE' | 'EN_RECEPTION' | 'SOLDEE' | 'ANNULEE'
+  observations?: string
+}
+
+export interface DbReceptionPontBascule {
+  id: number
+  numeroBR: string
+  commandeAchatId?: number
+  numeroBC?: string
+  agenceId: number
+  fournisseurId: number
+  fournisseurNom: string
+  produit: string
+  immatriculationCamion: string
+  chauffeur: string
+  peseeBruteKg: number
+  peseeTareKg: number
+  poidsNetKg: number
+  tauxHumidite: number
+  tauxImpuretes: number
+  refactionKg: number
+  poidsNetAccepteKg: number
+  prixUnitaireKgUsd: number
+  montantTotalFactureUsd: number
+  statut: 'VALIDE' | 'EN_ATTENTE_TARE'
+  datePeseeBrute: string
+  datePeseeTare?: string
+  magasinierNom: string
+  observations?: string
+}
+
+
 

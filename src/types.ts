@@ -174,6 +174,8 @@ export type CompteCaisse = {
   nom: string
   soldeUsd: number
   soldeCdf: number
+  type?: 'CAISSE' | 'BANQUE'
+  numeroCompteBancaire?: string
   agence?: Agence
 }
 
@@ -198,6 +200,7 @@ export type Transaction = {
   agence?: Agence
   service?: ServiceEntreprise
   compteComptable?: PlanComptable
+  caisseId?: number
   caisse?: CompteCaisse
   montant: number
   devise: 'USD' | 'CDF'
@@ -247,4 +250,112 @@ export type ServicePerformance = {
   produits: number
   resultatNet: number
 }
+
+export type RapprochementBancaire = {
+  id: number
+  compteCaisseId: number
+  agenceId: number
+  compte?: CompteCaisse
+  dateDebut: string
+  dateFin: string
+  soldeDebutReleve: number
+  soldeFinReleve: number
+  soldeComptable: number
+  ecart: number
+  devise: 'USD' | 'CDF'
+  statut: 'EN_COURS' | 'VALIDE'
+  dateCloture?: string
+  auteur: string
+  operationsPointees: string[]
+}
+
+export type BonLivraison = {
+  id: number
+  numeroBL: string
+  agenceId: number
+  venteId: number
+  vente?: any
+  clientNom: string
+  clientTelephone?: string
+  adresseLivraison: string
+  vehiculeId?: number
+  vehicule?: any
+  chauffeurNom?: string
+  quantiteSacs: number
+  poidsTotalKg: number
+  statut: 'PREPARATION' | 'EN_TRANSIT' | 'LIVRE' | 'ANNULE'
+  dateCreation: string
+  dateDepart?: string
+  dateLivraison?: string
+  recepteurNom?: string
+  recepteurSignature?: string
+  observations?: string
+}
+
+export type CommandeAchat = {
+  id: number
+  numeroBC: string
+  agenceId: number
+  fournisseurId: number
+  fournisseur?: any
+  fournisseurNom: string
+  produit: string
+  quantiteKg: number
+  prixUnitaireKgUsd: number
+  montantTotalUsd: number
+  dateCommande: string
+  statut: 'APPROUVEE' | 'EN_RECEPTION' | 'SOLDEE' | 'ANNULEE'
+  observations?: string
+}
+
+export type ReceptionPontBascule = {
+  id: number
+  numeroBR: string
+  commandeAchatId?: number
+  numeroBC?: string
+  agenceId: number
+  fournisseurId: number
+  fournisseurNom: string
+  produit: string
+  immatriculationCamion: string
+  chauffeur: string
+  peseeBruteKg: number
+  peseeTareKg: number
+  poidsNetKg: number
+  tauxHumidite: number
+  tauxImpuretes: number
+  refactionKg: number
+  poidsNetAccepteKg: number
+  prixUnitaireKgUsd: number
+  montantTotalFactureUsd: number
+  statut: 'VALIDE' | 'EN_ATTENTE_TARE'
+  datePeseeBrute: string
+  datePeseeTare?: string
+  magasinierNom: string
+  observations?: string
+}
+
+export type DirectionKpis = {
+  caMoisUsd: number
+  caMoisCdf: number
+  sacsVendus: number
+  margeBruteParSacUsd: number
+  tauxMargeMoyen: number
+  farineExtraiteKg: number
+  maisConsommeKg: number
+  rendementMeunerie: number
+  totalCaisseUsd: number
+  totalBanqueUsd: number
+  totalTresorerieCdf: number
+  tresorerieNetteConsolideeUsd: number
+  creancesTotalUsd: number
+  creancesEchuesUsd: number
+  evolutionVentes6Mois: Array<{
+    mois: string
+    caUsd: number
+    margeUsd: number
+    tonnageT: number
+  }>
+}
+
 
