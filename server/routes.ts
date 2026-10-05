@@ -32,6 +32,7 @@ import {
   bonsLivraison,
   commandesAchat,
   receptionsPontBascule,
+  immobilisations,
 } from './seed'
 import {
   renderFactureHtml,
@@ -45,6 +46,7 @@ import {
   renderCompteResultatHtml,
   renderBonCommandeHtml,
   renderTicketPontBasculeHtml,
+  renderTableauImmobilisationsHtml,
 } from './documents'
 
 const router = Router()
@@ -1249,12 +1251,116 @@ router.get('/admin/backup/export', (req: Request, res: Response) => {
     tauxChanges,
     categories,
     auditLogs,
+    immobilisations,
   }
 
   const filename = `backup-matabishi-erp-${new Date().toISOString().slice(0, 10)}.json`
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.send(JSON.stringify(dump, null, 2))
+})
+
+router.post('/admin/backup/restore', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
+    return res.status(403).json({ message: 'Seul un Administrateur peut restaurer la base de données.' })
+  }
+
+  const payload = req.body
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ message: 'Données de sauvegarde invalides ou corrompues.' })
+  }
+
+  const restoredCounts: Record<string, number> = {}
+
+  if (payload.parametresEntreprise && typeof payload.parametresEntreprise === 'object') {
+    Object.assign(parametresEntreprise, payload.parametresEntreprise)
+    restoredCounts.parametres = 1
+  }
+
+  if (Array.isArray(payload.agences)) {
+    agences.length = 0
+    agences.push(...payload.agences)
+    restoredCounts.agences = agences.length
+  }
+
+  if (Array.isArray(payload.articles)) {
+    articles.length = 0
+    articles.push(...payload.articles)
+    restoredCounts.articles = articles.length
+  }
+
+  if (Array.isArray(payload.stocksAgence)) {
+    stocksAgence.length = 0
+    stocksAgence.push(...payload.stocksAgence)
+    restoredCounts.stocks = stocksAgence.length
+  }
+
+  if (Array.isArray(payload.ecrituresComptables)) {
+    ecrituresComptables.length = 0
+    ecrituresComptables.push(...payload.ecrituresComptables)
+    restoredCounts.ecritures = ecrituresComptables.length
+  }
+
+  if (Array.isArray(payload.ventes)) {
+    ventes.length = 0
+    ventes.push(...payload.ventes)
+    restoredCounts.ventes = ventes.length
+  }
+
+  if (Array.isArray(payload.achats)) {
+    achats.length = 0
+    achats.push(...payload.achats)
+    restoredCounts.achats = achats.length
+  }
+
+  if (Array.isArray(payload.commandesAchat)) {
+    commandesAchat.length = 0
+    commandesAchat.push(...payload.commandesAchat)
+    restoredCounts.commandesAchat = commandesAchat.length
+  }
+
+  if (Array.isArray(payload.receptionsPontBascule)) {
+    receptionsPontBascule.length = 0
+    receptionsPontBascule.push(...payload.receptionsPontBascule)
+    restoredCounts.pontBascule = receptionsPontBascule.length
+  }
+
+  if (Array.isArray(payload.vehicules)) {
+    vehicules.length = 0
+    vehicules.push(...payload.vehicules)
+    restoredCounts.vehicules = vehicules.length
+  }
+
+  if (Array.isArray(payload.agents)) {
+    agents.length = 0
+    agents.push(...payload.agents)
+    restoredCounts.agents = agents.length
+  }
+
+  if (Array.isArray(payload.bulletinsPaie)) {
+    bulletinsPaie.length = 0
+    bulletinsPaie.push(...payload.bulletinsPaie)
+    restoredCounts.bulletinsPaie = bulletinsPaie.length
+  }
+
+  if (Array.isArray(payload.immobilisations)) {
+    immobilisations.length = 0
+    immobilisations.push(...payload.immobilisations)
+    restoredCounts.immobilisations = immobilisations.length
+  }
+
+  logAudit(
+    currentUser.nom,
+    'RESTAURATION_BACKUP',
+    `Restauration complète de la base de données ERP effectuée avec succès (${Object.entries(restoredCounts).map(([k, v]) => `${k}: ${v}`).join(', ')})`,
+    1
+  )
+
+  res.json({
+    message: 'Base de données restaurée avec succès',
+    restoredCounts,
+  })
 })
 
 router.get('/admin/export/csv/:type', (req: Request, res: Response) => {
@@ -1482,6 +1588,185 @@ router.post('/comptabilite/exercices/cloture', (req: Request, res: Response) => 
     referenceCloture: refCloture,
     ecritureCloture,
   })
+})
+
+// ----------------- IMMOBILISATIONS & AMORTISSEMENTS (SYSCOHADA) -----------------
+router.get('/comptabilite/immobilisations', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = immobilisations
+    .filter((i) => !agenceId || i.agenceId === agenceId)
+    .map((i) => ({
+      ...i,
+      agence: agences.find((a) => a.id === i.agenceId),
+    }))
+  res.json(list)
+})
+
+router.post('/comptabilite/immobilisations', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const {
+    nom,
+    categorie,
+    compteImmo,
+    valeurAcquisitionUsd,
+    valeurResiduelleUsd,
+    dureeAnnees,
+    methode,
+    dateAcquisition,
+    agenceId,
+    emplacement,
+  } = req.body
+
+  if (!nom || !valeurAcquisitionUsd || !dureeAnnees) {
+    return res.status(400).json({ message: 'Nom, valeur d acquisition et durée requis' })
+  }
+
+  const valAcq = Number(valeurAcquisitionUsd)
+  const valRes = Number(valeurResiduelleUsd) || 0
+  const duree = Number(dureeAnnees)
+  const baseAmort = Math.max(0, valAcq - valRes)
+  const dotAnnuelle = Math.round((baseAmort / duree) * 100) / 100
+  const cImmo = String(compteImmo || '241')
+
+  const newImmo: any = {
+    id: immobilisations.length + 1,
+    code: `IMM-${(nom.substring(0, 3)).toUpperCase()}-${String(immobilisations.length + 1).padStart(2, '0')}`,
+    nom,
+    categorie: categorie || 'CORPORELLE',
+    compteImmo: cImmo,
+    compteAmort: '28' + cImmo.substring(1),
+    valeurAcquisitionUsd: valAcq,
+    valeurResiduelleUsd: valRes,
+    dureeAnnees: duree,
+    methode: methode || 'LINEAIRE',
+    dateAcquisition: dateAcquisition || new Date().toISOString().slice(0, 10),
+    amortissementCumuleUsd: 0,
+    valeurNetteComptableUsd: valAcq,
+    dotationAnnuelleUsd: dotAnnuelle,
+    agenceId: toInt(agenceId) || currentUser.agenceId || 1,
+    statut: 'ACTIF' as const,
+    emplacement: emplacement || 'Usine Goma',
+  }
+
+  immobilisations.unshift(newImmo)
+
+  // Écriture d'acquisition Débit 24x / Crédit 521
+  const refImmo = `ACQ-${newImmo.code}`
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refImmo,
+      agenceId: newImmo.agenceId,
+      compteNumero: newImmo.compteImmo,
+      sens: 'DEBIT',
+      montant: valAcq,
+      devise: 'USD',
+      tauxApplique: 2850,
+      libelle: `Acquisition actif : ${newImmo.nom}`,
+      sourceModule: 'COMPTABILITE',
+      sourceType: 'OD',
+      sourceId: String(newImmo.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: newImmo.dateAcquisition,
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refImmo,
+      agenceId: newImmo.agenceId,
+      compteNumero: '521',
+      sens: 'CREDIT',
+      montant: valAcq,
+      devise: 'USD',
+      tauxApplique: 2850,
+      libelle: `Paiement acquisition ${newImmo.nom} par banque Rawbank`,
+      sourceModule: 'COMPTABILITE',
+      sourceType: 'OD',
+      sourceId: String(newImmo.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: newImmo.dateAcquisition,
+    }
+  )
+
+  logAudit(currentUser.nom, 'CREATION_IMMOBILISATION', `Actif ${newImmo.code} enregistré ($${valAcq} USD)`, newImmo.agenceId)
+  res.status(201).json(newImmo)
+})
+
+router.post('/comptabilite/immobilisations/dotation-annuelle', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const annee = toInt(req.body.annee, new Date().getFullYear())
+  let totalDotation = 0
+
+  immobilisations.forEach((immo) => {
+    if (immo.statut === 'ACTIF' && immo.valeurNetteComptableUsd > 0) {
+      const dot = Math.min(immo.dotationAnnuelleUsd, immo.valeurNetteComptableUsd)
+      immo.amortissementCumuleUsd += dot
+      immo.valeurNetteComptableUsd = Math.max(0, immo.valeurNetteComptableUsd - dot)
+      totalDotation += dot
+
+      ecrituresComptables.push(
+        {
+          id: ecrituresComptables.length + 1,
+          referenceOperation: `DOT-${annee}-${immo.code}`,
+          agenceId: immo.agenceId,
+          compteNumero: '681',
+          sens: 'DEBIT',
+          montant: dot,
+          devise: 'USD',
+          tauxApplique: 2850,
+          libelle: `Dotation amortissement ${annee} : ${immo.nom}`,
+          sourceModule: 'COMPTABILITE',
+          sourceType: 'OD',
+          sourceId: String(immo.id),
+          annulee: false,
+          statutValidation: 'VALIDE',
+          dateEcriture: `${annee}-12-31T23:59:59Z`,
+        },
+        {
+          id: ecrituresComptables.length + 2,
+          referenceOperation: `DOT-${annee}-${immo.code}`,
+          agenceId: immo.agenceId,
+          compteNumero: immo.compteAmort || '2841',
+          sens: 'CREDIT',
+          montant: dot,
+          devise: 'USD',
+          tauxApplique: 2850,
+          libelle: `Amortissement cumulé ${annee} : ${immo.nom}`,
+          sourceModule: 'COMPTABILITE',
+          sourceType: 'OD',
+          sourceId: String(immo.id),
+          annulee: false,
+          statutValidation: 'VALIDE',
+          dateEcriture: `${annee}-12-31T23:59:59Z`,
+        }
+      )
+    }
+  })
+
+  logAudit(currentUser.nom, 'CALCUL_DOTATIONS_AMORTISSEMENTS', `Dotations annuelles passées pour l exercice ${annee}. Total: $${totalDotation.toFixed(2)} USD`, 1)
+
+  res.json({ message: `Dotations annuelles ${annee} calculées et passées en écritures avec succès`, totalDotationUsd: totalDotation })
+})
+
+router.get('/comptabilite/export/immobilisations', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : 1
+  const agence = agences.find((a) => a.id === agenceId)
+  const annee = req.query.annee ? toInt(req.query.annee) : new Date().getFullYear()
+
+  const html = renderTableauImmobilisationsHtml(
+    immobilisations,
+    agence?.nom || 'Minoterie MVG',
+    annee,
+    parametresEntreprise
+  )
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
 })
 
 // ----------------- FLOTTE & GESTION DE CAMIONS -----------------

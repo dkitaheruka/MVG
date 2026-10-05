@@ -420,5 +420,27 @@ export interface DbReceptionPontBascule {
   observations?: string
 }
 
+// 4. Immobilisations & Dotations aux Amortissements (SYSCOHADA)
+export interface DbImmobilisation {
+  id: number
+  code: string
+  nom: string
+  categorie: 'CORPORELLE' | 'INCORPORELLE' | 'FINANCIERE'
+  compteImmo: string
+  compteAmort: string
+  valeurAcquisitionUsd: number
+  valeurResiduelleUsd: number
+  dureeAnnees: number
+  methode: 'LINEAIRE' | 'DEGRESSIF'
+  dateAcquisition: string
+  amortissementCumuleUsd: number
+  valeurNetteComptableUsd: number
+  dotationAnnuelleUsd: number
+  agenceId: number
+  statut: 'ACTIF' | 'REBUTE' | 'CEDE'
+  emplacement: string
+}
+
+
 
 

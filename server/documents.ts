@@ -1,3 +1,39 @@
+const COMMON_SCROLLBAR_CSS = `
+    html {
+      overflow-y: scroll;
+      scroll-behavior: smooth;
+    }
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #0284c7;
+      border-radius: 5px;
+      border: 2px solid #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #0369a1;
+    }
+`
+
+function renderStickyToolbar(docTitle: string): string {
+  return `
+  <div class="no-print" style="position: sticky; top: 0; z-index: 999; background: #ffffff; border-bottom: 2px solid #0284c7; padding: 10px 18px; margin: -28px -28px 20px -28px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 13px; font-weight: 700; color: #0f172a;">Aperçu officiel : ${docTitle}</span>
+      <span style="font-size: 11px; color: #64748b;">(Faites défiler avec la barre de scroll pour tout vérifier avant d'imprimer)</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="print-btn" onclick="window.print()" style="margin: 0; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;">🖨️ Imprimer ce Document (Ctrl+P)</button>
+    </div>
+  </div>
+  `
+}
+
 export function renderFactureHtml(
   vente: any,
   agence: any,
@@ -52,12 +88,11 @@ export function renderFactureHtml(
       body { padding: 0; }
       @page { margin: 12mm; }
     }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer cette Facture</button>
-  </div>
+  ${renderStickyToolbar(vente.estCredit ? 'Facture de Vente à Crédit' : 'Facture de Vente au Comptant')}
 
   <div class="header">
     ${entreprise?.logoUrl ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${entreprise.logoUrl}" alt="Logo" style="max-height: 55px; max-width: 220px; object-fit: contain;" /></div>` : ''}
@@ -185,12 +220,11 @@ export function renderBonLivraisonHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 70px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer ce Bordereau</button>
-  </div>
+  ${renderStickyToolbar(`Bordereau de Livraison BL-${vente.referenceVente || vente.id}`)}
 
   <div class="header">
     <div>
@@ -301,12 +335,11 @@ export function renderBalanceHtml(
     .total-row { background: #f1f5f9; font-weight: 800; font-size: 12px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer la Balance</button>
-  </div>
+  ${renderStickyToolbar('Balance Générale des Comptes OHADA')}
 
   <div class="header">
     <h1 class="company-name">${socNom}</h1>
@@ -388,12 +421,11 @@ export function renderInventaireHtml(stocks: any[], agenceNom: string, entrepris
     .total-row { background: #f1f5f9; font-weight: 800; font-size: 12px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer l'Inventaire</button>
-  </div>
+  ${renderStickyToolbar(`Inventaire des Stocks Physiques - ${agenceNom}`)}
 
   <div class="header">
     <h1 class="company-name">${socNom}</h1>
@@ -492,12 +524,11 @@ export function renderFeuilleRouteTransfertHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer la Feuille de Route</button>
-  </div>
+  ${renderStickyToolbar(`Feuille de Route Transfert ${transfert.referenceTransfert}`)}
 
   <div class="header">
     <div>
@@ -619,12 +650,11 @@ export function renderBonProductionHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer cette Fiche de Production</button>
-  </div>
+  ${renderStickyToolbar(`Ordre de Fabrication & Production ${ordre.codeOrdre}`)}
 
   <div class="header">
     <div>
@@ -773,12 +803,11 @@ export function renderBulletinPaieHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer ce Bulletin de Paie</button>
-  </div>
+  ${renderStickyToolbar(`Bulletin de Paie - ${bulletin.referenceBulletin} (${agent?.nom || 'Collaborateur'})`)}
 
   <div class="header">
     ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 55px; max-width: 220px; object-fit: contain;" /></div>` : ''}
@@ -960,12 +989,11 @@ export function renderGrandLivreHtml(
     .account-total { background: #f8fafc; font-weight: 700; border: 1px solid #cbd5e1; padding: 6px 12px; display: flex; justify-content: space-between; font-size: 11px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer le Grand Livre</button>
-  </div>
+  ${renderStickyToolbar(`Grand Livre Général des Comptes - Exercice ${annee}`)}
 
   <div class="header">
     ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
@@ -1052,12 +1080,11 @@ export function renderCompteResultatHtml(
     .result-box { border: 2px solid ${resultatNet >= 0 ? '#16a34a' : '#dc2626'}; border-radius: 8px; padding: 16px; background: ${resultatNet >= 0 ? '#f0fdf4' : '#fef2f2'}; text-align: center; margin-top: 20px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer le Compte de Résultat</button>
-  </div>
+  ${renderStickyToolbar(`Compte de Résultat Analytique OHADA - Exercice ${annee}`)}
 
   <div class="header">
     ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
@@ -1165,12 +1192,11 @@ export function renderBonCommandeHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer ce Bon de Commande</button>
-  </div>
+  ${renderStickyToolbar(`Bon de Commande Fournisseur BC ${commande.numeroBC}`)}
 
   <div class="header">
     <div>
@@ -1276,12 +1302,11 @@ export function renderTicketPontBasculeHtml(
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 65px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
   </style>
 </head>
 <body>
-  <div class="no-print" style="text-align: right; margin-bottom: 12px;">
-    <button class="print-btn" onclick="window.print()">Imprimer le Ticket Pont-Bascule</button>
-  </div>
+  ${renderStickyToolbar(`Ticket de Pesée Pont-Bascule ${reception.referenceAchat}`)}
 
   <div class="header">
     ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
@@ -1341,6 +1366,120 @@ export function renderTicketPontBasculeHtml(
     <div class="sig-box" style="text-align: right;">
       <strong>Le Responsable Pont-Bascule & Agréage :</strong><br/>
       <small>Visa conforme & Enregistrement en stock</small>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+export function renderTableauImmobilisationsHtml(
+  immos: any[],
+  agenceNom: string,
+  annee: number,
+  entreprise?: any
+): string {
+  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const logo = entreprise?.logoUrl
+
+  const totalAcq = immos.reduce((sum, i) => sum + Number(i.valeurAcquisitionUsd || 0), 0)
+  const totalAmort = immos.reduce((sum, i) => sum + Number(i.amortissementCumuleUsd || 0), 0)
+  const totalVnc = immos.reduce((sum, i) => sum + Number(i.valeurNetteComptableUsd || 0), 0)
+  const totalDot = immos.reduce((sum, i) => sum + Number(i.dotationAnnuelleUsd || 0), 0)
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Tableau des Immobilisations & Amortissements OHADA</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+    .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
+    .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
+    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; }
+    td { border: 1px solid #e2e8f0; padding: 7px 8px; font-size: 12px; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .total-row { background: #f8fafc; font-weight: 800; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; }
+    .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
+    .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    @media print { .no-print { display: none !important; } body { padding: 0; } }
+    ${COMMON_SCROLLBAR_CSS}
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Tableau des Immobilisations & Amortissements OHADA (Exercice ${annee})`)}
+
+  <div class="header">
+    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
+    <h1 class="company-name">${socNom}</h1>
+    <div style="font-size: 11px; color:#64748b;">Système Comptable SYSCOHADA Révisé - Actif Immobilisé (Classe 2)</div>
+    <div class="doc-title">TABLEAU DES IMMOBILISATIONS & AMORTISSEMENTS (ÉTAT FINANCIER)</div>
+    <div style="font-size: 12px; font-weight: 600;">Site / Agence : ${agenceNom} | Exercice : ${annee}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="center">Code</th>
+        <th>Désignation de l'Immobilisation</th>
+        <th class="center">Compte Immo</th>
+        <th class="center">Mise en service</th>
+        <th class="center">Durée</th>
+        <th class="right">Valeur d'Acquisition ($)</th>
+        <th class="right">Amort. Antérieur ($)</th>
+        <th class="right">Dotation Année ($)</th>
+        <th class="right">Amort. Cumulé ($)</th>
+        <th class="right">Valeur Nette VNC ($)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${immos.map((immo) => {
+        const dot = Number(immo.dotationAnnuelleUsd || 0)
+        const cum = Number(immo.amortissementCumuleUsd || 0)
+        const vnc = Number(immo.valeurNetteComptableUsd || 0)
+        const acq = Number(immo.valeurAcquisitionUsd || 0)
+        const ant = Math.max(0, cum - dot)
+        return `
+          <tr>
+            <td class="center"><strong>${immo.code}</strong></td>
+            <td>
+              <strong>${immo.nom}</strong>
+              <div style="font-size: 10px; color:#64748b;">Emplacement : ${immo.emplacement || 'Usine'}</div>
+            </td>
+            <td class="center"><code>${immo.compteImmo}</code></td>
+            <td class="center">${new Date(immo.dateAcquisition).toLocaleDateString('fr-FR')}</td>
+            <td class="center">${immo.dureeAnnees} ans (${immo.methode})</td>
+            <td class="right"><strong>$${acq.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></td>
+            <td class="right">$${ant.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+            <td class="right" style="color:#0284c7;"><strong>$${dot.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></td>
+            <td class="right" style="color:#dc2626;"><strong>$${cum.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></td>
+            <td class="right" style="color:#16a34a; font-weight:800;">$${vnc.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          </tr>
+        `
+      }).join('')}
+      <tr class="total-row">
+        <td colspan="5" style="text-align: right; font-weight: 800;">TOTAUX CONSOLIDÉS :</td>
+        <td class="right" style="font-weight: 800;">$${totalAcq.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+        <td class="right"></td>
+        <td class="right" style="color:#0284c7; font-weight: 800;">$${totalDot.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+        <td class="right" style="color:#dc2626; font-weight: 800;">$${totalAmort.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+        <td class="right" style="color:#16a34a; font-weight: 800;">$${totalVnc.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <strong>Le Responsable des Investissements & Matériel :</strong><br/>
+      <small>Certifie la présence physique des actifs inventoriés</small>
+    </div>
+    <div class="sig-box" style="text-align: right;">
+      <strong>Le Chef Comptable & Direction Financière :</strong><br/>
+      <small>Conforme aux règles d'évaluation SYSCOHADA</small>
     </div>
   </div>
 </body>

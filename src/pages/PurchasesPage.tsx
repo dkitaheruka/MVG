@@ -322,21 +322,33 @@ export function PurchasesPage() {
                     </span>
                   </td>
                   <td>
-                    {cmd.statut !== 'SOLDEE' && (
-                      <button
-                        className="primary-action"
-                        style={{ padding: '3px 8px', fontSize: '0.78rem' }}
-                        onClick={() => {
-                          setPbCommandeId(cmd.id)
-                          setPbFournisseurId(cmd.fournisseurId)
-                          setPbProduit(cmd.produit)
-                          setPbPrixKg(String(cmd.prixUnitaireKgUsd))
-                          setShowNewReceptionModal(true)
-                        }}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <a
+                        className="secondary-action"
+                        style={{ padding: '3px 8px', fontSize: '0.78rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        href={`/api/achats/commandes/${cmd.id}/document`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Imprimer le bon de commande fournisseur"
                       >
-                        Peser arrivage
-                      </button>
-                    )}
+                        <Printer size={14} /> Imprimer BC
+                      </a>
+                      {cmd.statut !== 'SOLDEE' && (
+                        <button
+                          className="primary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                          onClick={() => {
+                            setPbCommandeId(cmd.id)
+                            setPbFournisseurId(cmd.fournisseurId)
+                            setPbProduit(cmd.produit)
+                            setPbPrixKg(String(cmd.prixUnitaireKgUsd))
+                            setShowNewReceptionModal(true)
+                          }}
+                        >
+                          Peser arrivage
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -369,6 +381,7 @@ export function PurchasesPage() {
                 <th>Poids Net Accepté</th>
                 <th>Montant Facturé</th>
                 <th>Magasinier</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -402,11 +415,23 @@ export function PurchasesPage() {
                     <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>(${br.prixUnitaireKgUsd}/kg)</div>
                   </td>
                   <td><span className="badge badge-neutral">{br.magasinierNom}</span></td>
+                  <td>
+                    <a
+                      className="secondary-action"
+                      style={{ padding: '3px 8px', fontSize: '0.78rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      href={`/api/achats/pont-bascule/${br.id}/document`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Imprimer le ticket officiel de pesée pont-bascule"
+                    >
+                      <Printer size={14} /> Ticket
+                    </a>
+                  </td>
                 </tr>
               ))}
               {(receptionsQuery.data ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                  <td colSpan={12} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
                     Aucune pesée pont-bascule enregistrée.
                   </td>
                 </tr>

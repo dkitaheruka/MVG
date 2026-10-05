@@ -265,14 +265,24 @@ export function PayrollPage() {
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button
                           className="secondary-action"
                           style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                           onClick={() => setVoucherBulletin(b)}
                         >
-                          <Printer size={15} /> Voir Bulletin
+                          <Receipt size={15} /> Aperçu
                         </button>
+                        <a
+                          className="secondary-action"
+                          style={{ padding: '4px 8px', fontSize: '0.8rem', textDecoration: 'none' }}
+                          href={`/api/rh/bulletins/${b.id}/document`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Imprimer le bulletin officiel A4"
+                        >
+                          <Printer size={15} /> Imprimer (A4)
+                        </a>
                         {b.statut === 'BROUILLON' && (
                           <button
                             className="primary-action"
@@ -590,7 +600,16 @@ export function PayrollPage() {
                 Préparé par : {voucherBulletin.preparateurNom} | Validation Comptable Senior : {voucherBulletin.comptableSeniorNom || 'En attente'}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <a
+                className="secondary-action"
+                href={`/api/rh/bulletins/${voucherBulletin.id}/document`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Printer size={16} /> Imprimer Bulletin Officiel (A4)
+              </a>
               <button className="primary-action" onClick={() => setVoucherBulletin(null)}>Fermer</button>
             </div>
           </div>

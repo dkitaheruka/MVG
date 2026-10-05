@@ -3783,7 +3783,7 @@ function AccountingPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
 
-  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture'>('journal')
+  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations'>('journal')
   const [mois, setMois] = useState(new Date().getMonth() + 1)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [planSearch, setPlanSearch] = useState('')
@@ -3792,6 +3792,15 @@ function AccountingPage() {
   const [nouveauLibelle, setNouveauLibelle] = useState('')
   const [compteParent, setCompteParent] = useState('')
   const [clotureNotice, setClotureNotice] = useState<string | null>(null)
+
+  // Immobilisations
+  const [showNewImmoModal, setShowNewImmoModal] = useState(false)
+  const [immoNom, setImmoNom] = useState('')
+  const [immoCompte, setImmoCompte] = useState('241')
+  const [immoValAcq, setImmoValAcq] = useState('')
+  const [immoDuree, setImmoDuree] = useState('10')
+  const [immoEmplacement, setImmoEmplacement] = useState('Usine Goma')
+  const [immoNotice, setImmoNotice] = useState<string | null>(null)
 
   // Saisie manuelle d'écriture (OD)
   const [showManualEntryModal, setShowManualEntryModal] = useState(false)
@@ -3842,6 +3851,55 @@ function AccountingPage() {
     queryKey: ['comptabilite-cloture-statut'],
     queryFn: () => apiRequest<any>('/api/comptabilite/exercices/statut', { token }),
     enabled: Boolean(token),
+  })
+
+  const immosQuery = useQuery({
+    queryKey: ['immobilisations', agenceId],
+    queryFn: () => apiRequest<any[]>(`/api/comptabilite/immobilisations?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const addImmoMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/comptabilite/immobilisations', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          nom: immoNom,
+          compteImmo: immoCompte,
+          valeurAcquisitionUsd: Number(immoValAcq),
+          dureeAnnees: Number(immoDuree),
+          emplacement: immoEmplacement,
+          agenceId,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['immobilisations'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      setShowNewImmoModal(false)
+      setImmoNom('')
+      setImmoValAcq('')
+      setImmoNotice('Nouvelle immobilisation enregistrée et écriture d acquisition passée.')
+    },
+    onError: (err: any) => setImmoNotice(err.message || 'Erreur lors de l enregistrement de l actif'),
+  })
+
+  const passerDotationMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/comptabilite/immobilisations/dotation-annuelle', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ annee }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['immobilisations'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['comptabilite-cloture-statut'] })
+      setImmoNotice(data.message || `Dotations annuelles ${annee} passées avec succès.`)
+    },
+    onError: (err: any) => setImmoNotice(err.message || 'Erreur lors du calcul des amortissements'),
   })
 
   const cloturerExerciceMutation = useMutation({
@@ -3972,6 +4030,20 @@ function AccountingPage() {
           >
             <Printer size={17} /> Compte Résultat
           </a>
+          <a
+            className="secondary-action"
+            href={`/api/comptabilite/export/immobilisations?agenceId=${agenceId}&annee=${annee}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Imprimer le Tableau des Immobilisations & Amortissements OHADA"
+          >
+            <Printer size={17} /> Tableau Amortissements
+          </a>
+          {activeTab === 'immobilisations' && (
+            <button className="primary-action" onClick={() => setShowNewImmoModal(true)}>
+              <Plus size={17} /> Nouvelle Immobilisation
+            </button>
+          )}
           {activeTab === 'journal' && (
             <button className="primary-action" onClick={() => setShowManualEntryModal(true)}>
               <Plus size={17} /> Saisie Écriture Manuelle (OD)
@@ -4015,6 +4087,12 @@ function AccountingPage() {
           onClick={() => setActiveTab('plan')}
         >
           <Books size={17} /> Plan Comptable ({planComptable.length})
+        </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'immobilisations' && 'active')}
+          onClick={() => setActiveTab('immobilisations')}
+        >
+          <Package size={17} /> Immobilisations & Amortissements ({(immosQuery.data ?? []).length})
         </button>
         <button
           className={clsx('tab-btn', activeTab === 'cloture' && 'active')}
@@ -4350,6 +4428,187 @@ function AccountingPage() {
                 <FilePdf size={18} /> Télécharger le Compte de Résultat Officiel
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6 : IMMOBILISATIONS & AMORTISSEMENTS SYSCOHADA */}
+      {activeTab === 'immobilisations' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {immoNotice && (
+            <div className="notice" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: 12, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{immoNotice}</span>
+              <button className="icon-button" onClick={() => setImmoNotice(null)}><X size={16} /></button>
+            </div>
+          )}
+
+          {/* KPI CARDS IMMOBILISATIONS */}
+          {(() => {
+            const list = immosQuery.data ?? []
+            const totalAcq = list.reduce((sum, i) => sum + Number(i.valeurAcquisitionUsd || 0), 0)
+            const totalAmort = list.reduce((sum, i) => sum + Number(i.amortissementCumuleUsd || 0), 0)
+            const totalVnc = list.reduce((sum, i) => sum + Number(i.valeurNetteComptableUsd || 0), 0)
+            const totalDot = list.reduce((sum, i) => sum + Number(i.dotationAnnuelleUsd || 0), 0)
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
+                <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Valeur Brute d'Acquisition (Classe 2)</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: 'var(--primary)' }}>
+                    ${totalAcq.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                  </div>
+                  <small style={{ color: 'var(--muted)' }}>{list.length} équipement(s) et actif(s) inventoriés</small>
+                </div>
+
+                <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Amortissements Cumulés (Compte 28)</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: '#dc2626' }}>
+                    -${totalAmort.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                  </div>
+                  <small style={{ color: 'var(--muted)' }}>Usure et dépréciation constatée</small>
+                </div>
+
+                <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '2px solid #16a34a' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Valeur Nette Comptable (VNC)</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, margin: '6px 0', color: '#16a34a' }}>
+                    ${totalVnc.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                  </div>
+                  <span className="badge badge-success">Patrimoine industriel net</span>
+                </div>
+
+                <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Dotation Annuelle d'Amortissement</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: '#0284c7' }}>
+                    ${totalDot.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD/an
+                  </div>
+                  <button
+                    className="primary-action"
+                    style={{ fontSize: '0.8rem', padding: '4px 10px', marginTop: 4 }}
+                    onClick={() => {
+                      if (confirm(`Passer la dotation annuelle ${annee} aux amortissements (Débit 681 / Crédit 284) ?`)) {
+                        passerDotationMutation.mutate()
+                      }
+                    }}
+                    disabled={passerDotationMutation.isPending}
+                  >
+                    <CheckCircle size={15} /> Passer Dotation {annee}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* TABLE IMMOBILISATIONS */}
+          <DataTable
+            columns={['Code', 'Désignation Actif', 'Compte', 'Mise en service', 'Durée / Mode', 'Valeur Acquisition', 'Amort. Cumulé', 'VNC Résiduelle', 'Emplacement']}
+            loading={immosQuery.isLoading}
+            rows={(immosQuery.data ?? []).map((immo: any) => [
+              <strong key={'cd-' + immo.id}>{immo.code}</strong>,
+              <div key={'nm-' + immo.id}>
+                <strong>{immo.nom}</strong>
+                <span className="badge badge-neutral" style={{ marginLeft: 6, fontSize: '0.72rem' }}>{immo.categorie}</span>
+              </div>,
+              <code key={'cpt-' + immo.id}>{immo.compteImmo}</code>,
+              new Date(immo.dateAcquisition).toLocaleDateString('fr-FR'),
+              `${immo.dureeAnnees} ans (${immo.methode})`,
+              <strong>${Number(immo.valeurAcquisitionUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>,
+              <span key={'am-' + immo.id} style={{ color: '#dc2626' }}>
+                -${Number(immo.amortissementCumuleUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+              </span>,
+              <strong key={'vnc-' + immo.id} style={{ color: '#16a34a' }}>
+                ${Number(immo.valeurNetteComptableUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+              </strong>,
+              immo.emplacement || 'Usine Goma',
+            ])}
+            emptyText="Aucune immobilisation enregistrée."
+          />
+        </div>
+      )}
+
+      {/* MODAL : NOUVELLE IMMOBILISATION */}
+      {showNewImmoModal && (
+        <div className="modal-overlay" onClick={() => setShowNewImmoModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Nouvelle Immobilisation (SYSCOHADA)</h3>
+              <button className="icon-button" onClick={() => setShowNewImmoModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '6px 0 14px' }}>
+              L'enregistrement génère automatiquement l'écriture comptable d'acquisition Débit 24x / Crédit 521.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                addImmoMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <label>
+                Désignation de l'équipement ou matériel
+                <input
+                  required
+                  placeholder="ex: Broyeur à cylindres 50T/j ou Silo 500T"
+                  value={immoNom}
+                  onChange={(e) => setImmoNom(e.target.value)}
+                />
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label>
+                  Compte Immo SYSCOHADA
+                  <select value={immoCompte} onChange={(e) => setImmoCompte(e.target.value)}>
+                    <option value="241">241 - Matériel & outillage industriel usine</option>
+                    <option value="244">244 - Matériel de bureau & informatique</option>
+                    <option value="245">245 - Matériel de transport (Camions)</option>
+                    <option value="215">215 - Bâtiments industriels & silos</option>
+                  </select>
+                </label>
+                <label>
+                  Durée d'amortissement (ans)
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    required
+                    value={immoDuree}
+                    onChange={(e) => setImmoDuree(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label>
+                  Valeur d'acquisition (USD)
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    required
+                    placeholder="ex: 35000"
+                    value={immoValAcq}
+                    onChange={(e) => setImmoValAcq(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Emplacement / Affectation
+                  <input
+                    placeholder="ex: Unité de mouture Halle 1"
+                    value={immoEmplacement}
+                    onChange={(e) => setImmoEmplacement(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewImmoModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={addImmoMutation.isPending}>
+                  <CheckCircle size={18} />
+                  {addImmoMutation.isPending ? 'Enregistrement...' : 'Enregistrer et Comptabiliser'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -4789,7 +5048,7 @@ function AdminPage() {
   const token = useToken()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<
-    'agences' | 'roles' | 'utilisateurs' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit'
+    'agences' | 'roles' | 'utilisateurs' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit' | 'sauvegardes'
   >('agences')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
@@ -4826,6 +5085,26 @@ function AdminPage() {
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryDesc, setNewCategoryDesc] = useState('')
+
+  // Restauration de Sauvegarde
+  const [backupFileContent, setBackupFileContent] = useState<any>(null)
+  const [restoreSummary, setRestoreSummary] = useState<any>(null)
+
+  const restoreMutation = useMutation({
+    mutationFn: (payload: any) =>
+      apiRequest('/api/admin/backup/restore', {
+        method: 'POST',
+        token,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries()
+      setActionNotice(data.message || 'Base de données restaurée avec succès.')
+      setBackupFileContent(null)
+      setRestoreSummary(null)
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la restauration de la sauvegarde'),
+  })
 
   // Entreprise & Mentions Légales
   const entrepriseQuery = useQuery({
@@ -5148,6 +5427,9 @@ function AdminPage() {
         </button>
         <button className={clsx('tab-button', activeTab === 'audit' && 'active')} onClick={() => setActiveTab('audit')}>
           <ClockCounterClockwise size={17} /> Journal d Audit
+        </button>
+        <button className={clsx('tab-button', activeTab === 'sauvegardes' && 'active')} onClick={() => setActiveTab('sauvegardes')}>
+          <FloppyDisk size={17} /> Sauvegardes & Exports
         </button>
       </div>
 
@@ -5489,6 +5771,49 @@ function AdminPage() {
               </label>
             </div>
 
+            <div style={{ padding: 14, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center', marginTop: 10 }}>
+              <div>
+                <label style={{ margin: 0, fontWeight: 700 }}>Logo Officiel de l'Entreprise / Minoterie</label>
+                <p style={{ margin: '4px 0 10px', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Ce logo apparaîtra en haut de tous les documents officiels imprimables (Factures A4, Tickets thermiques, Bons de livraison, Fiches d'inventaire, Bulletins de paie, Grand Livre).
+                </p>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        const reader = new FileReader()
+                        reader.onload = (ev) => {
+                          const base64 = ev.target?.result as string
+                          setFormEntreprise({ ...formEntreprise, logoUrl: base64 })
+                        }
+                        reader.readAsDataURL(file)
+                      }
+                    }}
+                  />
+                  {formEntreprise.logoUrl && (
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                      onClick={() => setFormEntreprise({ ...formEntreprise, logoUrl: '' })}
+                    >
+                      Supprimer le logo
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div style={{ width: 120, height: 70, border: '1px dashed var(--border)', borderRadius: 6, display: 'grid', placeItems: 'center', background: '#fff', overflow: 'hidden' }}>
+                {formEntreprise.logoUrl ? (
+                  <img src={formEntreprise.logoUrl} alt="Logo" style={{ maxHeight: 60, maxWidth: 110, objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>Aucun logo</span>
+                )}
+              </div>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
               <button className="primary-action" type="submit" disabled={updateEntrepriseMutation.isPending}>
                 <CheckCircle size={18} />
@@ -5553,6 +5878,138 @@ function AdminPage() {
           ])}
           emptyText="Aucun événement d audit consigné."
         />
+      )}
+
+      {activeTab === 'sauvegardes' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FloppyDisk size={22} color="var(--primary)" />
+              Sauvegarde Globale du Système (Backup Intégral JSON)
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+              Téléchargez une archive complète chiffrée contenant toutes les données de l'entreprise : agences, collaborateurs, stocks des moulins et dépôts, écritures comptables OHADA, ventes, achats, paie et journal d'audit.
+            </p>
+            <a
+              href="/api/admin/backup/export"
+              target="_blank"
+              rel="noreferrer"
+              className="primary-action"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+            >
+              <DownloadSimple size={18} /> Télécharger l'Archive Complète de Sauvegarde (.JSON)
+            </a>
+          </div>
+
+          <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ArrowDownLeft size={22} color="#16a34a" />
+              Restaurer une Sauvegarde Système (.JSON)
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+              Sélectionnez un fichier JSON de sauvegarde préalablement exporté. Cette opération réinjectera l'ensemble des données d'exploitation (agences, articles, stocks, écritures OHADA, ventes, achats, camions).
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    const reader = new FileReader()
+                    reader.onload = (ev) => {
+                      try {
+                        const parsed = JSON.parse(ev.target?.result as string)
+                        setBackupFileContent(parsed)
+                        setRestoreSummary({
+                          agences: parsed.agences?.length ?? 0,
+                          articles: parsed.articles?.length ?? 0,
+                          stocks: parsed.stocksAgence?.length ?? 0,
+                          ecritures: parsed.ecrituresComptables?.length ?? 0,
+                          ventes: parsed.ventes?.length ?? 0,
+                          achats: parsed.achats?.length ?? 0,
+                          dateExport: parsed.metadata?.dateExport ?? 'Inconnue',
+                        })
+                      } catch {
+                        alert('Le fichier sélectionné n est pas un fichier JSON valide.')
+                      }
+                    }
+                    reader.readAsText(file)
+                  }
+                }}
+              />
+              {restoreSummary && (
+                <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.85rem' }}>
+                  <strong>Aperçu du contenu à restaurer :</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
+                    <div>Agences : <strong>{restoreSummary.agences}</strong></div>
+                    <div>Articles : <strong>{restoreSummary.articles}</strong></div>
+                    <div>Lignes de stock : <strong>{restoreSummary.stocks}</strong></div>
+                    <div>Écritures OHADA : <strong>{restoreSummary.ecritures}</strong></div>
+                    <div>Ventes : <strong>{restoreSummary.ventes}</strong></div>
+                    <div>Achats : <strong>{restoreSummary.achats}</strong></div>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      className="primary-action"
+                      style={{ background: '#16a34a' }}
+                      disabled={restoreMutation.isPending}
+                      onClick={() => {
+                        if (confirm('Êtes-vous sûr de vouloir restaurer cette sauvegarde ? Les données actuelles seront remplacées.')) {
+                          restoreMutation.mutate(backupFileContent)
+                        }
+                      }}
+                    >
+                      <CheckCircle size={18} />
+                      {restoreMutation.isPending ? 'Restauration en cours...' : 'Confirmer la Restauration des Données'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <DownloadSimple size={22} color="var(--primary)" />
+              Exports Tabulaires (.CSV pour Excel)
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: '0.88rem', color: 'var(--muted)' }}>
+              Exportez les données métiers spécifiques en fichiers CSV avec encodage UTF-8 prêt pour Microsoft Excel.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)' }}>
+                <strong>Journal des Ventes</strong>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '4px 0 10px' }}>Toutes les factures, comptant et crédit</p>
+                <a href="/api/admin/export/csv/ventes" target="_blank" rel="noreferrer" className="secondary-action" style={{ fontSize: '0.82rem', textDecoration: 'none' }}>
+                  <DownloadSimple size={16} /> Exporter Ventes (.CSV)
+                </a>
+              </div>
+              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)' }}>
+                <strong>Inventaire des Stocks</strong>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '4px 0 10px' }}>Quantités, lots, DLUO et valorisations</p>
+                <a href="/api/admin/export/csv/stocks" target="_blank" rel="noreferrer" className="secondary-action" style={{ fontSize: '0.82rem', textDecoration: 'none' }}>
+                  <DownloadSimple size={16} /> Exporter Stocks (.CSV)
+                </a>
+              </div>
+              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)' }}>
+                <strong>Écritures & Grand Livre</strong>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '4px 0 10px' }}>Mouvements comptables Débit/Crédit</p>
+                <a href="/api/admin/export/csv/ecritures" target="_blank" rel="noreferrer" className="secondary-action" style={{ fontSize: '0.82rem', textDecoration: 'none' }}>
+                  <DownloadSimple size={16} /> Exporter Écritures (.CSV)
+                </a>
+              </div>
+              <div style={{ padding: 14, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)' }}>
+                <strong>Journal d'Audit Système</strong>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '4px 0 10px' }}>Traçabilité des opérations et connexions</p>
+                <a href="/api/admin/export/csv/audit" target="_blank" rel="noreferrer" className="secondary-action" style={{ fontSize: '0.82rem', textDecoration: 'none' }}>
+                  <DownloadSimple size={16} /> Exporter Audit (.CSV)
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL NOUVELLE AGENCE */}
