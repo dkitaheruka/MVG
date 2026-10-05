@@ -190,12 +190,17 @@ export function renderBonLivraisonHtml(
   agence: any,
   client: any,
   details: any[],
-  vehicule?: any,
+  transportInfo?: any,
   entreprise?: any
 ): string {
   const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
   const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
   const socPied = entreprise?.mentionsPiedLivraison || 'Les sacs et emballages ont été vérifiés au départ de la minoterie. Le destinataire certifie la conformité qualitative et quantitative des sacs réceptionnés.'
+
+  const mode = transportInfo?.modeTransport || (transportInfo?.marqueModele ? 'FLOTTE_ENTREPRISE' : 'ENLEVEMENT_MAGASIN')
+  const vehicule = transportInfo?.vehicule || (transportInfo?.marqueModele ? transportInfo : undefined)
+  const clientVehicule = transportInfo?.clientVehicule
+  const clientChauffeur = transportInfo?.clientChauffeur
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -216,7 +221,7 @@ export function renderBonLivraisonHtml(
     td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .center { text-align: center; }
     .right { text-align: right; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 30px; font-size: 11px; }
+    .signatures { display: grid; grid-template-columns: ${mode === 'ENLEVEMENT_MAGASIN' ? '1fr 1fr' : '1fr 1fr 1fr'}; gap: 16px; margin-top: 30px; font-size: 11px; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 70px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -246,8 +251,20 @@ export function renderBonLivraisonHtml(
       <strong>Magasin / Expédition :</strong><br/>
       Entrepôt : ${agence?.nom || 'Entrepôt Central'}<br/>
       Ville : ${agence?.ville || 'Nord-Kivu'}<br/>
-      Véhicule affecté : <strong>${vehicule ? `${vehicule.marqueModele} (Plaque: ${vehicule.plaqueImmatriculation})` : 'Véhicule de livraison agence'}</strong><br/>
-      Chauffeur : <strong>${vehicule?.chauffeurNom || 'Bahati Kasereka'}</strong> ${vehicule?.chauffeurTelephone ? `(${vehicule.chauffeurTelephone})` : ''}
+      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
+        ${mode === 'ENLEVEMENT_MAGASIN' ? `
+          Transport : <strong>🏪 Enlèvement direct au comptoir / dépôt</strong><br/>
+          <span style="color:#64748b;">Retrait sur place par le client (Aucun véhicule société mobilisé).</span>
+        ` : mode === 'VEHICULE_CLIENT' ? `
+          Transport : <strong>🚗 Véhicule propre du Client</strong><br/>
+          Véhicule client : <strong>${clientVehicule || 'Véhicule apporté par le client'}</strong><br/>
+          Chauffeur / Convoyeur : <strong>${clientChauffeur || 'Chauffeur / Porteur désigné par le client'}</strong>
+        ` : `
+          Transport : <strong>🚚 Flotte de l'Entreprise (Minoterie MVG)</strong><br/>
+          Camion affecté : <strong>${vehicule ? `${vehicule.marqueModele} (Plaque: ${vehicule.plaqueImmatriculation})` : 'Camion de livraison agence'}</strong><br/>
+          Chauffeur société : <strong>${vehicule?.chauffeurNom || 'Bahati Kasereka'}</strong> ${vehicule?.chauffeurTelephone ? `(${vehicule.chauffeurTelephone})` : ''}
+        `}
+      </div>
     </div>
     <div class="meta-box">
       <strong>Destinataire / Livré à :</strong><br/>
@@ -289,17 +306,24 @@ export function renderBonLivraisonHtml(
 
   <div class="signatures">
     <div class="sig-box">
-      <strong>Magasinier Expéditeur :</strong><br/>
-      <small>Nom & Visa</small>
+      <strong>Le Magasinier / Vendeur :</strong><br/>
+      <small>Visa sortie de stock certifiée</small>
     </div>
-    <div class="sig-box">
-      <strong>Transporteur / Chauffeur :</strong><br/>
-      <small>Nom, N° Plaque & Signature</small>
+    ${mode === 'ENLEVEMENT_MAGASIN' ? `
+    <div class="sig-box right">
+      <strong>Le Client Réceptionnaire :</strong><br/>
+      <small>Certifie le retrait en bon état au comptoir</small>
     </div>
-    <div class="sig-box">
-      <strong>Réceptionnaire Client (Décharge) :</strong><br/>
-      <small>Nom, Date & Signature</small>
+    ` : `
+    <div class="sig-box center">
+      <strong>Le Chauffeur / Transporteur (${mode === 'VEHICULE_CLIENT' ? 'Véhicule Client' : 'Flotte Entreprise'}) :</strong><br/>
+      <small>Prise en charge marchandise</small>
     </div>
+    <div class="sig-box right">
+      <strong>Le Client / Destinataire :</strong><br/>
+      <small>Décharge et conformité livraison</small>
+    </div>
+    `}
   </div>
 </body>
 </html>`

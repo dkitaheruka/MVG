@@ -516,6 +516,9 @@ function SalesPage() {
   const [repaymentCaisseId, setRepaymentCaisseId] = useState<number | ''>(1)
   const [repaymentError, setRepaymentError] = useState<string | null>(null)
   const [selectedVehiculeId, setSelectedVehiculeId] = useState<number | ''>('')
+  const [modeTransport, setModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE'>('ENLEVEMENT_MAGASIN')
+  const [clientVehicule, setClientVehicule] = useState('')
+  const [clientChauffeur, setClientChauffeur] = useState('')
 
   // Formulaire Bon de Livraison
   const [showNewBLModal, setShowNewBLModal] = useState(false)
@@ -523,6 +526,9 @@ function SalesPage() {
   const [blClientNom, setBlClientNom] = useState('')
   const [blClientTel, setBlClientTel] = useState('')
   const [blAdresse, setBlAdresse] = useState('')
+  const [blModeTransport, setBlModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE'>('ENLEVEMENT_MAGASIN')
+  const [blClientVehicule, setBlClientVehicule] = useState('')
+  const [blClientChauffeur, setBlClientChauffeur] = useState('')
   const [blVehiculeId, setBlVehiculeId] = useState<number | ''>('')
   const [blSacs, setBlSacs] = useState('50')
   const [blPoidsKg, setBlPoidsKg] = useState('1250')
@@ -596,7 +602,10 @@ function SalesPage() {
           clientNom: blClientNom,
           clientTelephone: blClientTel,
           adresseLivraison: blAdresse,
-          vehiculeId: blVehiculeId || undefined,
+          modeTransport: blModeTransport,
+          clientVehicule: blClientVehicule || undefined,
+          clientChauffeur: blClientChauffeur || undefined,
+          vehiculeId: blModeTransport === 'FLOTTE_ENTREPRISE' ? (blVehiculeId || undefined) : undefined,
           quantiteSacs: Number(blSacs),
           poidsTotalKg: Number(blPoidsKg),
           observations: blObservations,
@@ -1557,20 +1566,79 @@ function SalesPage() {
                 />
               </label>
 
-              <label>
-                Camion & Chauffeur Affecté
-                <select
-                  value={blVehiculeId}
-                  onChange={(e) => setBlVehiculeId(e.target.value ? Number(e.target.value) : '')}
-                >
-                  <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
-                  {(flotteQuery.data ?? []).map((v: any) => (
-                    <option key={'cam-' + v.id} value={v.id}>
-                      {v.plaqueImmatriculation} - {v.marqueModele} (Chauffeur: {v.chauffeurNom}) - {v.statut}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>
+                <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Mode d'Acheminement / Transport</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', blModeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    onClick={() => setBlModeTransport('ENLEVEMENT_MAGASIN')}
+                  >
+                    🏪 Retrait Comptoir
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', blModeTransport === 'VEHICULE_CLIENT' && 'active')}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    onClick={() => setBlModeTransport('VEHICULE_CLIENT')}
+                  >
+                    🚗 Véhicule Client
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', blModeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    onClick={() => setBlModeTransport('FLOTTE_ENTREPRISE')}
+                  >
+                    🚚 Flotte Société
+                  </button>
+                </div>
+              </div>
+
+              {blModeTransport === 'ENLEVEMENT_MAGASIN' && (
+                <div style={{ padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  ✓ Le client retire directement ses sacs au magasin/dépôt. Aucun véhicule de transport n'est mobilisé.
+                </div>
+              )}
+
+              {blModeTransport === 'VEHICULE_CLIENT' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 10, background: 'var(--surface-2)', borderRadius: 6 }}>
+                  <label>
+                    Véhicule du Client (Plaque / Modèle)
+                    <input
+                      placeholder="ex: Canter 4812AB/19 ou Pick-up"
+                      value={blClientVehicule}
+                      onChange={(e) => setBlClientVehicule(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Chauffeur / Convoyeur du Client
+                    <input
+                      placeholder="ex: M. Justin (Porteur client)"
+                      value={blClientChauffeur}
+                      onChange={(e) => setBlClientChauffeur(e.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {blModeTransport === 'FLOTTE_ENTREPRISE' && (
+                <label>
+                  Camion & Chauffeur Affecté (Flotte MVG)
+                  <select
+                    value={blVehiculeId}
+                    onChange={(e) => setBlVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                  >
+                    <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                    {(flotteQuery.data ?? []).map((v: any) => (
+                      <option key={'cam-' + v.id} value={v.id}>
+                        {v.plaqueImmatriculation} - {v.marqueModele} (Chauffeur: {v.chauffeurNom}) - {v.statut}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label>
@@ -1741,8 +1809,36 @@ function SalesPage() {
 
       {/* MODAL : TICKET DE CAISSE THERMIQUE IMPRIMABLE */}
       {activeReceipt && (
-        <div className="modal-overlay" onClick={() => setActiveReceipt(null)}>
-          <div className="receipt-preview-wrap" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => setActiveReceipt(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflowY: 'auto', padding: '20px 10px' }}>
+          <div
+            className="receipt-preview-wrap"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#0284c7 #f1f5f9',
+              width: 'min(100%, 480px)',
+              background: '#ffffff',
+              borderRadius: 12,
+              padding: 20,
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            {/* EN-TETE DE VISUALISATION */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0369a1', fontWeight: 700, fontSize: '0.95rem' }}>
+                <Receipt size={20} />
+                <span>Reçu d'Encaissement & Expédition</span>
+              </div>
+              <button className="icon-button" onClick={() => setActiveReceipt(null)} title="Fermer (Échap)">
+                <X size={18} />
+              </button>
+            </div>
+
             <div className="thermal-ticket">
               <div className="ticket-header">
                 <h3>MATABISHI MVG SARL</h3>
@@ -1802,11 +1898,19 @@ function SalesPage() {
 
               <div style={{ textAlign: 'center', fontSize: 11 }}>
                 <span>
-                  Mode :{' '}
+                  Règlement :{' '}
                   {activeReceipt.estCredit
                     ? `CRÉDIT (${activeReceipt.statutCredit ?? 'EN_ATTENTE'})`
                     : 'PAIEMENT COMPTANT (CASH)'}
                 </span>
+              </div>
+
+              <div className="ticket-line" />
+              <div style={{ fontSize: 11, textAlign: 'left', background: '#f8fafc', padding: '6px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+                <strong>Transport & Enlèvement :</strong><br/>
+                {modeTransport === 'ENLEVEMENT_MAGASIN' && '🏪 Retrait direct au comptoir / dépôt par le client'}
+                {modeTransport === 'VEHICULE_CLIENT' && `🚗 Véhicule client : ${clientVehicule || 'Véhicule client'} ${clientChauffeur ? `(Chauffeur: ${clientChauffeur})` : ''}`}
+                {modeTransport === 'FLOTTE_ENTREPRISE' && `🚚 Camion société : ${flotteQuery.data?.find((v: any) => v.id === selectedVehiculeId)?.marqueModele || 'Flotte Minoterie MVG'}`}
               </div>
 
               <div className="ticket-footer">
@@ -1815,24 +1919,90 @@ function SalesPage() {
               </div>
             </div>
 
-            <div style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '0.84rem' }}>
-              <Truck size={18} style={{ color: 'var(--accent-strong)' }} />
-              <span>Camion de livraison :</span>
-              <select
-                value={selectedVehiculeId}
-                onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
-                style={{ padding: '3px 8px', fontSize: '0.8rem', borderRadius: 4, flex: 1, minWidth: 200 }}
-              >
-                <option value="">Sélectionner un véhicule de la flotte...</option>
-                {(flotteQuery.data ?? []).map((v: any) => (
-                  <option key={v.id} value={v.id}>
-                    {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
-                  </option>
-                ))}
-              </select>
+            {/* CHOIX MODE DE LIVRAISON / TRANSPORT */}
+            <div style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontWeight: 700, fontSize: '0.85rem' }}>
+                <Truck size={17} style={{ color: 'var(--primary)' }} />
+                <span>Mode de transport pour le Bon de Livraison (BL) :</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+                <button
+                  type="button"
+                  className={clsx('tab-btn', modeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  onClick={() => setModeTransport('ENLEVEMENT_MAGASIN')}
+                >
+                  🏪 Retrait Comptoir
+                </button>
+                <button
+                  type="button"
+                  className={clsx('tab-btn', modeTransport === 'VEHICULE_CLIENT' && 'active')}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  onClick={() => setModeTransport('VEHICULE_CLIENT')}
+                >
+                  🚗 Véhicule Client
+                </button>
+                <button
+                  type="button"
+                  className={clsx('tab-btn', modeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  onClick={() => setModeTransport('FLOTTE_ENTREPRISE')}
+                >
+                  🚚 Camion Société
+                </button>
+              </div>
+
+              {modeTransport === 'ENLEVEMENT_MAGASIN' && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: '#fff', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  ✓ Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.
+                </div>
+              )}
+
+              {modeTransport === 'VEHICULE_CLIENT' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Véhicule du client
+                    <input
+                      placeholder="ex: Dyna 8492AB/19 ou Moto"
+                      value={clientVehicule}
+                      onChange={(e) => setClientVehicule(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Chauffeur du client
+                    <input
+                      placeholder="ex: M. Justin"
+                      value={clientChauffeur}
+                      onChange={(e) => setClientChauffeur(e.target.value)}
+                      style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {modeTransport === 'FLOTTE_ENTREPRISE' && (
+                <label style={{ fontSize: '0.8rem' }}>
+                  Camion de l'entreprise
+                  <select
+                    value={selectedVehiculeId}
+                    onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                    style={{ padding: '4px 8px', fontSize: '0.8rem', width: '100%' }}
+                  >
+                    <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                    {(flotteQuery.data ?? []).map((v: any) => (
+                      <option key={v.id} value={v.id}>
+                        {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
 
-            <div className="receipt-modal-actions" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+            {/* BOUTONS D'ACTION */}
+            <div className="receipt-modal-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
               {activeReceipt.id && !String(activeReceipt.id).startsWith('OFF-') && (
                 <>
                   <a
@@ -1841,15 +2011,18 @@ function SalesPage() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <FilePdf size={17} /> Facture A4 (Officielle)
+                    <FilePdf size={17} /> Facture A4
                   </a>
                   <a
                     className="secondary-action"
-                    href={downloadUrl(`/api/ventes/${activeReceipt.id}/bon-livraison${selectedVehiculeId ? `?vehiculeId=${selectedVehiculeId}` : ''}`)}
+                    href={downloadUrl(
+                      `/api/ventes/${activeReceipt.id}/bon-livraison?modeTransport=${modeTransport}&clientVehicule=${encodeURIComponent(clientVehicule)}&clientChauffeur=${encodeURIComponent(clientChauffeur)}&vehiculeId=${selectedVehiculeId || ''}`
+                    )}
                     target="_blank"
                     rel="noreferrer"
+                    style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
                   >
-                    <Truck size={17} /> Bordereau Livraison (BL)
+                    <Truck size={17} /> Bon de Livraison (BL)
                   </a>
                 </>
               )}

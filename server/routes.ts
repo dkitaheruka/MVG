@@ -1039,10 +1039,23 @@ router.get('/ventes/:id/bon-livraison', (req: Request, res: Response) => {
     article: articles.find((a) => a.id === d.articleId),
   }))
 
-  const vehiculeId = req.query.vehiculeId ? toInt(req.query.vehiculeId) : undefined
-  const vehicule = vehiculeId ? vehicules.find((v) => v.id === vehiculeId) : vehicules.find((v) => v.agenceId === vente.agenceId) || vehicules[0]
+  const modeTransport = (req.query.modeTransport as string) || (vente as any).modeTransport || 'ENLEVEMENT_MAGASIN'
+  const clientVehicule = (req.query.clientVehicule as string) || (vente as any).clientVehicule
+  const clientChauffeur = (req.query.clientChauffeur as string) || (vente as any).clientChauffeur
 
-  const html = renderBonLivraisonHtml(vente, agence, client, details, vehicule, parametresEntreprise)
+  const vehiculeId = req.query.vehiculeId ? toInt(req.query.vehiculeId) : (vente as any).vehiculeId
+  const vehicule = (modeTransport === 'FLOTTE_ENTREPRISE' && vehiculeId)
+    ? vehicules.find((v) => v.id === vehiculeId)
+    : (modeTransport === 'FLOTTE_ENTREPRISE' ? (vehicules.find((v) => v.agenceId === vente.agenceId) || vehicules[0]) : undefined)
+
+  const transportInfo = {
+    modeTransport,
+    clientVehicule,
+    clientChauffeur,
+    vehicule,
+  }
+
+  const html = renderBonLivraisonHtml(vente, agence, client, details, transportInfo, parametresEntreprise)
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
@@ -1844,11 +1857,33 @@ router.post('/logistique/livraisons', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { venteId, agenceId, clientNom, clientTelephone, adresseLivraison, vehiculeId, quantiteSacs, poidsTotalKg, observations } = req.body
+  const {
+    venteId,
+    agenceId,
+    clientNom,
+    clientTelephone,
+    adresseLivraison,
+    vehiculeId,
+    quantiteSacs,
+    poidsTotalKg,
+    observations,
+    modeTransport,
+    clientVehicule,
+    clientChauffeur,
+  } = req.body
+
   const numAg = toInt(agenceId) || 1
   const numVenteId = toInt(venteId)
-  const numVehiculeId = vehiculeId ? toInt(vehiculeId) : undefined
+  const mode = modeTransport || (vehiculeId ? 'FLOTTE_ENTREPRISE' : 'ENLEVEMENT_MAGASIN')
+  const numVehiculeId = (mode === 'FLOTTE_ENTREPRISE' && vehiculeId) ? toInt(vehiculeId) : undefined
   const vehicule = numVehiculeId ? vehicules.find((v) => v.id === numVehiculeId) : undefined
+
+  let chauffeurFinal: string | undefined = undefined
+  if (mode === 'FLOTTE_ENTREPRISE' && vehicule) {
+    chauffeurFinal = vehicule.chauffeurNom
+  } else if (mode === 'VEHICULE_CLIENT') {
+    chauffeurFinal = clientChauffeur ? String(clientChauffeur).trim() : 'Chauffeur Client'
+  }
 
   const refBL = `BL-${Date.now().toString().slice(-6)}`
   const nouveauBL: any = {
@@ -1858,12 +1893,15 @@ router.post('/logistique/livraisons', (req: Request, res: Response) => {
     venteId: numVenteId,
     clientNom: String(clientNom || 'Client Comptoir').trim(),
     clientTelephone: clientTelephone ? String(clientTelephone).trim() : undefined,
-    adresseLivraison: String(adresseLivraison || 'Retrait dépôt minoterie').trim(),
+    adresseLivraison: String(adresseLivraison || (mode === 'ENLEVEMENT_MAGASIN' ? 'Retrait sur place (Comptoir Dépôt)' : 'Adresse Client')).trim(),
+    modeTransport: mode,
+    clientVehicule: mode === 'VEHICULE_CLIENT' ? String(clientVehicule || 'Véhicule Client').trim() : undefined,
+    clientChauffeur: mode === 'VEHICULE_CLIENT' ? chauffeurFinal : undefined,
     vehiculeId: numVehiculeId,
-    chauffeurNom: vehicule ? vehicule.chauffeurNom : undefined,
+    chauffeurNom: chauffeurFinal,
     quantiteSacs: Number(quantiteSacs) || 1,
     poidsTotalKg: Number(poidsTotalKg) || ((Number(quantiteSacs) || 1) * 25),
-    statut: 'PREPARATION',
+    statut: mode === 'ENLEVEMENT_MAGASIN' ? 'LIVRE' : 'PREPARATION',
     dateCreation: new Date().toISOString(),
     observations: observations ? String(observations).trim() : undefined,
   }
@@ -1873,7 +1911,12 @@ router.post('/logistique/livraisons', (req: Request, res: Response) => {
   }
 
   bonsLivraison.unshift(nouveauBL)
-  logAudit(currentUser.nom, 'CREATION_BON_LIVRAISON', `Bordereau ${refBL} généré pour ${nouveauBL.clientNom} (${nouveauBL.quantiteSacs} sacs)`, numAg)
+  logAudit(
+    currentUser.nom,
+    'CREATION_BON_LIVRAISON',
+    `Bordereau ${refBL} généré (${mode === 'ENLEVEMENT_MAGASIN' ? 'Retrait comptoir' : mode === 'VEHICULE_CLIENT' ? `Véhicule client ${clientVehicule || ''}` : `Camion société ${vehicule?.marqueModele || ''}`}, ${nouveauBL.quantiteSacs} sacs)`,
+    numAg
+  )
   res.json({ ...nouveauBL, vehicule })
 })
 

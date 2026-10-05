@@ -990,16 +990,20 @@ tr:last-child td {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   padding: 16px;
-  z-index: 100;
+  z-index: 1000;
+  overflow-y: auto;
 }
 
 .modal-card {
   width: min(100%, 540px);
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--surface);
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -1008,19 +1012,47 @@ tr:last-child td {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #0284c7 #e2e8f0;
 }
 
 /* Ticket Thermique Imprimable */
 .receipt-preview-wrap {
-  width: min(100%, 420px);
+  width: min(100%, 480px);
+  max-height: 90vh;
+  overflow-y: auto;
   background: #ffffff;
   color: #000000;
   border-radius: var(--radius);
-  padding: 24px;
+  padding: 22px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #0284c7 #e2e8f0;
+}
+
+.receipt-preview-wrap::-webkit-scrollbar,
+.modal-card::-webkit-scrollbar {
+  width: 8px;
+}
+
+.receipt-preview-wrap::-webkit-scrollbar-track,
+.modal-card::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.receipt-preview-wrap::-webkit-scrollbar-thumb,
+.modal-card::-webkit-scrollbar-thumb {
+  background: #0284c7;
+  border-radius: 4px;
+}
+
+.receipt-preview-wrap::-webkit-scrollbar-thumb:hover,
+.modal-card::-webkit-scrollbar-thumb:hover {
+  background: #0369a1;
 }
 
 .thermal-ticket {
