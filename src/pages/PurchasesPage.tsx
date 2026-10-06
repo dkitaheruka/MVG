@@ -19,6 +19,7 @@ export function PurchasesPage() {
   const queryClient = useQueryClient()
   const token = useAppStore((state) => state.session?.token)
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [activeTab, setActiveTab] = useState<'commandes' | 'pont_bascule' | 'achats' | 'fournisseurs'>('commandes')
   const [showNewAchatModal, setShowNewAchatModal] = useState(false)
@@ -111,11 +112,20 @@ export function PurchasesPage() {
           observations: bcObservations,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (newCmd: any) => {
       queryClient.invalidateQueries({ queryKey: ['commandes-achat'] })
       setShowNewCommandeModal(false)
       setBcObservations('')
       setActionError(null)
+      if (newCmd && newCmd.id) {
+        setPrintProposal({
+          title: 'Bon de Commande Créé avec Succès !',
+          ref: newCmd.numeroCommande || `BC-${newCmd.id}`,
+          subtitle: `Le bon de commande fournisseur pour "${newCmd.produit}" a été validé. Imprimez le bon officiel :`,
+          primaryDocName: 'Bon de Commande (BC)',
+          primaryDocUrl: `/api/achats/commandes/${newCmd.id}/document`,
+        })
+      }
     },
     onError: (err: any) => setActionError(err.message || 'Erreur lors de la création de la commande'),
   })
@@ -140,7 +150,7 @@ export function PurchasesPage() {
           observations: pbObservations,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (newRec: any) => {
       queryClient.invalidateQueries({ queryKey: ['receptions-pont-bascule'] })
       queryClient.invalidateQueries({ queryKey: ['commandes-achat'] })
       queryClient.invalidateQueries({ queryKey: ['fournisseurs'] })
@@ -149,6 +159,15 @@ export function PurchasesPage() {
       setShowNewReceptionModal(false)
       setPbObservations('')
       setActionError(null)
+      if (newRec && newRec.id) {
+        setPrintProposal({
+          title: 'Pesée Pont-Bascule Enregistrée !',
+          ref: newRec.numeroReception || `REC-${newRec.id}`,
+          subtitle: `Poids net accepté de ${newRec.poidsNetAccepteKg} kg réceptionné en stock. Imprimez le ticket de pesée :`,
+          primaryDocName: 'Ticket de Pesée Pont-Bascule',
+          primaryDocUrl: `/api/achats/receptions/${newRec.id}/document`,
+        })
+      }
     },
     onError: (err: any) => setActionError(err.message || 'Erreur lors de l enregistrement de la pesée pont-bascule'),
   })

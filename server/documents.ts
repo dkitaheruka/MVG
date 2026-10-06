@@ -1509,3 +1509,501 @@ export function renderTableauImmobilisationsHtml(
 </body>
 </html>`
 }
+
+// 13. BON OFFICIEL DE DÉCAISSEMENT & REÇU D'ÉTAT DE BESOIN
+export function renderEtatBesoinBonDecaissementHtml(
+  eb: any,
+  agenceNom: string,
+  entreprise?: any
+): string {
+  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socSlogan = entreprise?.slogan || 'Transformation céréalière, minoterie & distribution de farines'
+  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
+  const socIdNat = entreprise?.idNat || '01-83-N12457K'
+  const socNif = entreprise?.nif || 'A2189410F'
+  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
+  const socTel = entreprise?.telephone || '+243 998 000 111'
+
+  const montantFormate = Number(eb.montant || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
+  const devise = eb.devise || 'USD'
+
+  const statutBadge =
+    eb.statut === 'DECAISSE'
+      ? '<span style="background:#dcfce7; color:#166534; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">DÉCAISSÉ & PAYÉ AU GUICHET</span>'
+      : eb.statut === 'APPROUVE_CHEF'
+      ? '<span style="background:#e0f2fe; color:#0369a1; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">VALIDÉ PAR LE CHEF D\'AGENCE (EN ATTENTE DE CAISSE)</span>'
+      : eb.statut === 'REJETE'
+      ? '<span style="background:#fee2e2; color:#991b1b; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">REJETÉ</span>'
+      : '<span style="background:#fef3c7; color:#92400e; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">SOUMIS (EN ATTENTE VISA CHEF)</span>'
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Bon de Décaissement - ${eb.numeroEB}</title>
+  <style>
+    ${COMMON_SCROLLBAR_CSS}
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: #0f172a;
+      background: #ffffff;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .company-name {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0369a1;
+      text-transform: uppercase;
+    }
+    .doc-title {
+      font-size: 19px;
+      font-weight: 800;
+      text-align: center;
+      margin: 16px 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #0f172a;
+      background: #f1f5f9;
+      padding: 8px;
+      border-radius: 6px;
+      border-left: 5px solid #0284c7;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .info-card {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .amount-highlight {
+      background: #f0fdf4;
+      border: 2px solid #16a34a;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .amount-val {
+      font-size: 22px;
+      font-weight: 900;
+      color: #15803d;
+    }
+    .motif-box {
+      background: #ffffff;
+      border: 1px solid #94a3b8;
+      border-radius: 6px;
+      padding: 12px;
+      margin: 14px 0;
+    }
+    .signatures {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-top: 32px;
+      padding-top: 12px;
+      border-top: 1px solid #cbd5e1;
+    }
+    .sig-box {
+      border: 1px dashed #94a3b8;
+      border-radius: 6px;
+      padding: 12px;
+      height: 110px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .notice {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 16px;
+      text-align: center;
+      font-style: italic;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Bon de Décaissement Caisse - ${eb.numeroEB}`)}
+
+  <div class="header">
+    <div>
+      <div class="company-name">${socNom}</div>
+      <div style="font-size: 11px; color: #475569;">${socSlogan}</div>
+      <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+        Siège : ${socSiege}<br/>
+        RCCM: ${socRccm} | ID.NAT: ${socIdNat} | NIF: ${socNif}<br/>
+        Tél: ${socTel}
+      </div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-size: 14px; font-weight: 700; color: #0284c7;">AGENCE : ${agenceNom}</div>
+      <div style="font-size: 12px; color: #475569; margin-top: 4px;">Date d'émission : ${new Date(eb.dateDemande).toLocaleDateString('fr-FR')}</div>
+      <div style="margin-top: 6px;">${statutBadge}</div>
+    </div>
+  </div>
+
+  <div class="doc-title">
+    BON DE DÉCAISSEMENT & DÉCHARGE DE CAISSE N° ${eb.numeroEB}
+  </div>
+
+  <div class="info-grid">
+    <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-bottom: 8px;">
+        1. Demandeur & Imputation
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Service émetteur :</span>
+        <strong>${eb.serviceDemandeur}</strong>
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Bénéficiaire / Demandeur :</span>
+        <strong>${eb.demandeurNom}</strong>
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Compte SYSCOHADA :</span>
+        <code>Compte ${eb.compteImputation || '605'}</code>
+      </div>
+      ${eb.entretienTechniqueId ? `
+      <div class="info-row">
+        <span style="color:#64748b;">Lié à intervention technique :</span>
+        <strong style="color:#0284c7;">Intervention #${eb.entretienTechniqueId}</strong>
+      </div>` : ''}
+    </div>
+
+    <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-bottom: 8px;">
+        2. Règlement & Caisse
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Pièce de Caisse :</span>
+        <strong>${eb.numeroPieceCaisse || 'En attente de libération'}</strong>
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Compte de Caisse :</span>
+        <strong>${eb.caisseNom || 'Caisse Principale'}</strong>
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Caissier payeur :</span>
+        <strong>${eb.caissierNom || 'En attente'}</strong>
+      </div>
+      <div class="info-row">
+        <span style="color:#64748b;">Date décaissement :</span>
+        <strong>${eb.dateDecaissement ? new Date(eb.dateDecaissement).toLocaleString('fr-FR') : '-'}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="amount-highlight">
+    <div>
+      <div style="font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase;">
+        MONTANT TOTAL NET DÉCAISSÉ :
+      </div>
+      <div style="font-size: 11px; color: #15803d; margin-top: 2px;">
+        Libération en espèces contre décharge et engagement d'apurement
+      </div>
+    </div>
+    <div class="amount-val">
+      ${montantFormate} ${devise}
+    </div>
+  </div>
+
+  <div class="motif-box">
+    <strong style="color: #0f172a; display: block; margin-bottom: 4px;">OBJET / MOTIF DÉTAILLÉ DU BESOIN :</strong>
+    <p style="margin: 0; color: #334155; font-size: 13.5px; white-space: pre-wrap;">${eb.motif}</p>
+    ${eb.observations ? `
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b;">
+        <strong>Observations / Justificatifs :</strong> ${eb.observations}
+      </div>` : ''}
+  </div>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <div>
+        <strong>1. Le Demandeur / Bénéficiaire :</strong><br/>
+        <small>${eb.demandeurNom}</small>
+      </div>
+      <small style="color: #64748b; font-size: 10px;">
+        Reconnaît avoir reçu les fonds ci-dessus et s'engage à remettre les factures justificatives sous 48 heures.
+      </small>
+    </div>
+
+    <div class="sig-box">
+      <div>
+        <strong>2. Le Chef d'Agence (Visa) :</strong><br/>
+        <small>${eb.chefValidateurNom || 'En attente'}</small>
+      </div>
+      <small style="color: #64748b; font-size: 10px;">
+        Bon à décaisser. Dépense vérifiée et jugée conforme aux nécessités d'exploitation.
+      </small>
+    </div>
+
+    <div class="sig-box">
+      <div>
+        <strong>3. Le Caissier Payeur :</strong><br/>
+        <small>${eb.caissierNom || 'En attente de paiement'}</small>
+      </div>
+      <small style="color: #64748b; font-size: 10px;">
+        Fonds physiquement remis au bénéficiaire et comptabilisés en caisse.
+      </small>
+    </div>
+  </div>
+
+  <div class="notice">
+    Document de décharge interne certifié par Matabishi ERP • Conservation obligatoire 10 ans selon l'Acte Uniforme OHADA.
+  </div>
+</body>
+</html>`
+}
+
+// 14. FICHE D'INTERVENTION TECHNIQUE & MAINTENANCE
+export function renderFicheMaintenanceTechniqueHtml(
+  maint: any,
+  agenceNom: string,
+  entreprise?: any
+): string {
+  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socSlogan = entreprise?.slogan || 'Transformation céréalière, minoterie & distribution de farines'
+  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
+  const socIdNat = entreprise?.idNat || '01-83-N12457K'
+  const socNif = entreprise?.nif || 'A2189410F'
+  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
+
+  const statutBadge =
+    maint.statut === 'TERMINE'
+      ? '<span style="background:#dcfce7; color:#166534; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">INTERVENTION CLÔTURÉE</span>'
+      : maint.statut === 'EN_COURS'
+      ? '<span style="background:#fef3c7; color:#92400e; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">TRAVAUX EN COURS</span>'
+      : '<span style="background:#e0f2fe; color:#0369a1; padding:4px 10px; border-radius:4px; font-weight:700; font-size:12px;">MAINTENANCE PLANIFIÉE</span>'
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Fiche Maintenance - ${maint.numeroIntervention}</title>
+  <style>
+    ${COMMON_SCROLLBAR_CSS}
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: #0f172a;
+      background: #ffffff;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .doc-title {
+      font-size: 18px;
+      font-weight: 800;
+      text-align: center;
+      margin: 16px 0 12px;
+      text-transform: uppercase;
+      background: #f8fafc;
+      padding: 8px;
+      border-radius: 6px;
+      border-left: 5px solid #0284c7;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .card {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .costs-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+    }
+    .costs-table th, .costs-table td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+    }
+    .costs-table th {
+      background: #f1f5f9;
+      font-weight: 700;
+    }
+    .signatures {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 32px;
+      border-top: 1px solid #cbd5e1;
+      padding-top: 12px;
+    }
+    .sig-box {
+      border: 1px dashed #94a3b8;
+      border-radius: 6px;
+      padding: 12px;
+      height: 100px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Fiche d'Intervention - ${maint.numeroIntervention}`)}
+
+  <div class="header">
+    <div>
+      <div style="font-size: 18px; font-weight: 800; color: #0369a1;">${socNom}</div>
+      <div style="font-size: 11px; color: #64748b;">${socSlogan} • Siège : ${socSiege}</div>
+      <div style="font-size: 11px; color: #64748b;">RCCM: ${socRccm} | ID.NAT: ${socIdNat} | NIF: ${socNif}</div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-size: 14px; font-weight: 700; color: #0284c7;">SITE / ATELIER : ${agenceNom}</div>
+      <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Date : ${new Date(maint.dateIntervention).toLocaleDateString('fr-FR')}</div>
+      <div style="margin-top: 6px;">${statutBadge}</div>
+    </div>
+  </div>
+
+  <div class="doc-title">
+    FICHE D'INTERVENTION TECHNIQUE & RAPPORT DE MAINTENANCE N° ${maint.numeroIntervention}
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-bottom: 8px;">
+        1. Identification de l'Équipement
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Type de matériel :</span>
+        <strong>${maint.typeEquipement}</strong>
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Désignation :</span>
+        <strong>${maint.nomEquipement}</strong>
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Immatriculation / Série :</span>
+        <code>${maint.immatriculationOuSerie || '-'}</code>
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Compteur (Km / Heures) :</span>
+        <strong>${maint.kilometrageOuHeures ? maint.kilometrageOuHeures.toLocaleString('fr-FR') : '-'}</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-bottom: 8px;">
+        2. Caractéristiques de l'Intervention
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Type de maintenance :</span>
+        <strong>${maint.typeMaintenance === 'PREVENTIF' ? 'Préventive & Révision' : 'Curative / Dépannage'}</strong>
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Intervenant / Garage :</span>
+        <strong>${maint.technicienOuGarage}</strong>
+      </div>
+      <div class="row">
+        <span style="color:#64748b;">Prochaine révision prévue :</span>
+        <strong style="color:#0284c7;">${maint.prochaineMaintenancePrevue ? new Date(maint.prochaineMaintenancePrevue).toLocaleDateString('fr-FR') : '-'}</strong>
+      </div>
+      ${maint.etatBesoinId ? `
+      <div class="row">
+        <span style="color:#64748b;">État de besoin lié :</span>
+        <strong>EB #${maint.etatBesoinId}</strong>
+      </div>` : ''}
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 14px;">
+    <strong style="color: #0f172a; display: block; margin-bottom: 6px;">NATURE DÉTAILLÉE DES TRAVAUX & PIÈCES REMPLACÉES :</strong>
+    <p style="margin: 0; color: #334155; font-size: 13.5px; white-space: pre-wrap;">${maint.natureTravaux}</p>
+    ${maint.observations ? `
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; font-size: 12px; color: #64748b;">
+        <strong>Observations techniques :</strong> ${maint.observations}
+      </div>` : ''}
+  </div>
+
+  <table class="costs-table">
+    <thead>
+      <tr>
+        <th>Désignation des Frais</th>
+        <th style="text-align: right; width: 180px;">Montant (USD)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Pièces détachées, consommables et fournitures remplacées</td>
+        <td style="text-align: right;">$${Number(maint.coutPiecesUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+      </tr>
+      <tr>
+        <td>Main d'œuvre mécanicienne, électricien ou prestataire externe</td>
+        <td style="text-align: right;">$${Number(maint.coutMainOeuvreUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+      </tr>
+      <tr style="background: #f8fafc; font-weight: 800; font-size: 14px;">
+        <td>COÛT TOTAL DE L'INTERVENTION TECHNIQUE</td>
+        <td style="text-align: right; color: #0284c7;">$${Number(maint.coutTotalUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <div>
+        <strong>Le Technicien / Chef d'Atelier :</strong><br/>
+        <small>${maint.technicienOuGarage}</small>
+      </div>
+      <small style="color: #64748b; font-size: 10px;">Certifie l'exécution des travaux et l'essai mécanique.</small>
+    </div>
+
+    <div class="sig-box" style="text-align: right;">
+      <div>
+        <strong>Le Chef d'Exploitation / Direction Technique :</strong><br/>
+        <small>Certifié conforme et réintégré au service</small>
+      </div>
+      <small style="color: #64748b; font-size: 10px;">Visa de remise en service opérationnel.</small>
+    </div>
+  </div>
+</body>
+</html>`
+}
+

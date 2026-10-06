@@ -19,6 +19,7 @@ export function PayrollPage() {
   const queryClient = useQueryClient()
   const token = useAppStore((state) => state.session?.token)
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [activeTab, setActiveTab] = useState<'bulletins' | 'avances' | 'agents'>('bulletins')
   const [showNewAgentModal, setShowNewAgentModal] = useState(false)
@@ -149,11 +150,20 @@ export function PayrollPage() {
           annee: bulletinAnnee,
         }),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['rh-bulletins'] })
       setShowGenerateBulletinModal(false)
       setVoucherBulletin(data)
       setActionError(null)
+      if (data && data.id) {
+        setPrintProposal({
+          title: 'Bulletin de Paie Édité avec Succès !',
+          ref: data.numeroBulletin || `PAY-${data.id}`,
+          subtitle: `Le bulletin de paie de l'agent a été calculé et validé. Imprimez le document officiel :`,
+          primaryDocName: 'Bulletin de Paie Officiel',
+          primaryDocUrl: `/api/rh/bulletins/${data.id}/document`,
+        })
+      }
     },
     onError: (err: any) => setActionError(err.message || 'Erreur calcul bulletin'),
   })

@@ -1155,6 +1155,268 @@ export const immobilisations: DbImmobilisation[] = [
   },
 ]
 
+// 6. États de Besoin & Demandes de Fonds (Circuit Hiérarchique & Caisse)
+export interface DbEtatBesoin {
+  id: number
+  numeroEB: string
+  agenceId: number
+  serviceDemandeur: string
+  demandeurNom: string
+  demandeurId?: number
+  motif: string
+  montant: number
+  devise: 'USD' | 'CDF'
+  compteImputation: string
+  dateDemande: string
+  statut: 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'
+  chefValidateurNom?: string
+  dateValidationChef?: string
+  motifRejet?: string
+  caisseId?: number
+  caisseNom?: string
+  caissierNom?: string
+  dateDecaissement?: string
+  numeroPieceCaisse?: string
+  justificatifFourni?: boolean
+  dateApurement?: string
+  entretienTechniqueId?: number
+  observations?: string
+}
+
+export const etatsBesoin: DbEtatBesoin[] = [
+  {
+    id: 1,
+    numeroEB: 'EB-2026-0001',
+    agenceId: 1,
+    serviceDemandeur: 'Garage & Flotte Automobile',
+    demandeurNom: 'Bahati Jacques (Chauffeur / Mécanicien)',
+    demandeurId: 4,
+    motif: 'Achat filtres à gasoil, huile moteur 15W40 et liquide frein pour Camion Fuso Canter 10T',
+    montant: 180,
+    devise: 'USD',
+    compteImputation: '624',
+    dateDemande: '2026-10-02T08:30:00Z',
+    statut: 'DECAISSE',
+    chefValidateurNom: 'Kasereka (Chef d Agence Goma)',
+    dateValidationChef: '2026-10-02T09:15:00Z',
+    caisseId: 1,
+    caisseNom: 'Caisse Principale USD/CDF - Goma',
+    caissierNom: 'Sophie (Caissière)',
+    dateDecaissement: '2026-10-02T09:40:00Z',
+    numeroPieceCaisse: 'BDEC-2026-0042',
+    justificatifFourni: true,
+    dateApurement: '2026-10-03T14:00:00Z',
+    entretienTechniqueId: 1,
+    observations: 'Facture acquittée du Garage Moderne Goma déposée au service comptabilité.',
+  },
+  {
+    id: 2,
+    numeroEB: 'EB-2026-0002',
+    agenceId: 1,
+    serviceDemandeur: 'Production & Meunerie',
+    demandeurNom: 'Karegeya Faustin (Chef Meunier)',
+    demandeurId: 11,
+    motif: 'Graisse industrielle haute température SKF et courroies trapézoïdales pour révision broyeur Bühler 50T/j',
+    montant: 240,
+    devise: 'USD',
+    compteImputation: '624',
+    dateDemande: '2026-10-03T10:00:00Z',
+    statut: 'DECAISSE',
+    chefValidateurNom: 'Kasereka (Chef d Agence Goma)',
+    dateValidationChef: '2026-10-03T11:00:00Z',
+    caisseId: 1,
+    caisseNom: 'Caisse Principale USD/CDF - Goma',
+    caissierNom: 'Sophie (Caissière)',
+    dateDecaissement: '2026-10-03T11:30:00Z',
+    numeroPieceCaisse: 'BDEC-2026-0043',
+    justificatifFourni: true,
+    dateApurement: '2026-10-04T16:00:00Z',
+    entretienTechniqueId: 2,
+    observations: 'Entretien préventif programmé avant lancement du convoi de maïs.',
+  },
+  {
+    id: 3,
+    numeroEB: 'EB-2026-0003',
+    agenceId: 1,
+    serviceDemandeur: 'Ventes & Logistique Commerciale',
+    demandeurNom: 'Mwamba Eric (Commercial)',
+    demandeurId: 4,
+    motif: 'Approvisionnement carburant gasoil (220 Litres) pour convoi de livraison farine vers Sake et Minova',
+    montant: 350,
+    devise: 'USD',
+    compteImputation: '612',
+    dateDemande: '2026-10-05T07:45:00Z',
+    statut: 'APPROUVE_CHEF',
+    chefValidateurNom: 'Kasereka (Chef d Agence Goma)',
+    dateValidationChef: '2026-10-05T08:15:00Z',
+    observations: 'Validé par le Chef d Agence. En attente de présentation au guichet caisse pour libération des fonds.',
+  },
+  {
+    id: 4,
+    numeroEB: 'EB-2026-0004',
+    agenceId: 1,
+    serviceDemandeur: 'Administration & Caisse',
+    demandeurNom: 'Claire (Aide Comptable)',
+    demandeurId: 8,
+    motif: 'Achat de 20 rouleaux papier thermique pour imprimantes tickets de caisse et chemises d archivage',
+    montant: 140000,
+    devise: 'CDF',
+    compteImputation: '605',
+    dateDemande: '2026-10-06T06:30:00Z',
+    statut: 'SOUMIS',
+    observations: 'Demande initiée. En attente de revue et visa par le Chef d Agence.',
+  },
+  {
+    id: 5,
+    numeroEB: 'EB-2026-0005',
+    agenceId: 1,
+    serviceDemandeur: 'Service Technique & Énergie',
+    demandeurNom: 'Alain Mutombo (Électricien Industriel)',
+    demandeurId: 11,
+    motif: 'Réparation d urgence démarreur et régulateur de tension pour Groupe électrogène Cummins 250 kVA',
+    montant: 420,
+    devise: 'USD',
+    compteImputation: '624',
+    dateDemande: '2026-09-28T14:00:00Z',
+    statut: 'DECAISSE',
+    chefValidateurNom: 'David (Super Admin)',
+    dateValidationChef: '2026-09-28T14:30:00Z',
+    caisseId: 1,
+    caisseNom: 'Caisse Principale USD/CDF - Goma',
+    caissierNom: 'Sophie (Caissière)',
+    dateDecaissement: '2026-09-28T15:00:00Z',
+    numeroPieceCaisse: 'BDEC-2026-0038',
+    justificatifFourni: true,
+    dateApurement: '2026-09-29T10:00:00Z',
+    entretienTechniqueId: 3,
+    observations: 'Intervention curative réussie par Electro-Kivu Services. Facture transmise.',
+  },
+]
+
+// 7. Module Technique & Maintenance (Flotte & Équipements Industriels)
+export interface DbEntretienTechnique {
+  id: number
+  numeroIntervention: string
+  agenceId: number
+  typeEquipement: 'VEHICULE' | 'MOULIN_BROYEUR' | 'SILO' | 'PONT_BASCULE' | 'GROUPE_ELECTROGENE' | 'AUTRE'
+  nomEquipement: string
+  immatriculationOuSerie?: string
+  typeMaintenance: 'PREVENTIF' | 'CURATIF'
+  natureTravaux: string
+  dateIntervention: string
+  prochaineMaintenancePrevue?: string
+  kilometrageOuHeures?: number
+  technicienOuGarage: string
+  coutPiecesUsd: number
+  coutMainOeuvreUsd: number
+  coutTotalUsd: number
+  statut: 'PLANIFIE' | 'EN_COURS' | 'TERMINE'
+  etatBesoinId?: number
+  observations?: string
+}
+
+export const entretiensTechniques: DbEntretienTechnique[] = [
+  {
+    id: 1,
+    numeroIntervention: 'MAINT-2026-0001',
+    agenceId: 1,
+    typeEquipement: 'VEHICULE',
+    nomEquipement: 'Camion porteur Mitsubishi Fuso Canter 10T',
+    immatriculationOuSerie: '4512AB/19',
+    typeMaintenance: 'PREVENTIF',
+    natureTravaux: 'Vidange moteur complète 15W40, remplacement filtre huile et filtre carburant, contrôle plaquettes de freins',
+    dateIntervention: '2026-10-02',
+    prochaineMaintenancePrevue: '2026-12-02',
+    kilometrageOuHeures: 142500,
+    technicienOuGarage: 'Garage Moderne Goma (M. Bahati)',
+    coutPiecesUsd: 120,
+    coutMainOeuvreUsd: 60,
+    coutTotalUsd: 180,
+    statut: 'TERMINE',
+    etatBesoinId: 1,
+    observations: 'Camion inspecté et déclaré bon pour le service logistique. Prochaine vidange à 147 500 km.',
+  },
+  {
+    id: 2,
+    numeroIntervention: 'MAINT-2026-0002',
+    agenceId: 1,
+    typeEquipement: 'MOULIN_BROYEUR',
+    nomEquipement: 'Broyeur à cylindres Bühler 50T/jour',
+    immatriculationOuSerie: 'BUH-CH-99482',
+    typeMaintenance: 'PREVENTIF',
+    natureTravaux: 'Graissage complet des paliers haute vitesse, vérification de la tension des courroies trapézoïdales et contrôle du parallélisme des rouleaux cannelés',
+    dateIntervention: '2026-10-03',
+    prochaineMaintenancePrevue: '2026-11-03',
+    kilometrageOuHeures: 3840,
+    technicienOuGarage: 'Équipe Maintenance Interne Usine (Karegeya)',
+    coutPiecesUsd: 190,
+    coutMainOeuvreUsd: 50,
+    coutTotalUsd: 240,
+    statut: 'TERMINE',
+    etatBesoinId: 2,
+    observations: 'Vibrations éliminées. Capacité de mouture optimale à 50 tonnes/jour.',
+  },
+  {
+    id: 3,
+    numeroIntervention: 'MAINT-2026-0003',
+    agenceId: 1,
+    typeEquipement: 'GROUPE_ELECTROGENE',
+    nomEquipement: 'Groupe électrogène Cummins 250 kVA',
+    immatriculationOuSerie: 'CUM-250-9921',
+    typeMaintenance: 'CURATIF',
+    natureTravaux: 'Démontage démarreur 24V, remplacement du lanceur et révision du pont de diodes de l alternateur Stamford',
+    dateIntervention: '2026-09-28',
+    prochaineMaintenancePrevue: '2026-10-28',
+    kilometrageOuHeures: 4120,
+    technicienOuGarage: 'Atelier Electro-Kivu Services',
+    coutPiecesUsd: 320,
+    coutMainOeuvreUsd: 100,
+    coutTotalUsd: 420,
+    statut: 'TERMINE',
+    etatBesoinId: 5,
+    observations: 'Test en charge sous 180 kW concluant. Relais de démarrage automatique testé avec succès.',
+  },
+  {
+    id: 4,
+    numeroIntervention: 'MAINT-2026-0004',
+    agenceId: 1,
+    typeEquipement: 'PONT_BASCULE',
+    nomEquipement: 'Pont-Bascule Électronique 80 Tonnes',
+    immatriculationOuSerie: 'METTLER-TOLEDO-80T',
+    typeMaintenance: 'PREVENTIF',
+    natureTravaux: 'Étalonnage périodique des 6 capteurs de pesée avec masses étalons certifiées, nettoyage des fosses et vérification mise à la terre parafoudre',
+    dateIntervention: '2026-10-15',
+    prochaineMaintenancePrevue: '2027-04-15',
+    kilometrageOuHeures: 12500,
+    technicienOuGarage: 'Office Congolais de Contrôle (OCC) / Métrologie Grands-Lacs',
+    coutPiecesUsd: 80,
+    coutMainOeuvreUsd: 150,
+    coutTotalUsd: 230,
+    statut: 'PLANIFIE',
+    observations: 'Contrôle réglementaire obligatoire pour garantir la précision des pesées de grains de maïs à l agréage.',
+  },
+  {
+    id: 5,
+    numeroIntervention: 'MAINT-2026-0005',
+    agenceId: 1,
+    typeEquipement: 'SILO',
+    nomEquipement: 'Batterie de silos verticaux 500T (Silo n°2 Maïs)',
+    immatriculationOuSerie: 'SILO-VERT-02',
+    typeMaintenance: 'PREVENTIF',
+    natureTravaux: 'Inspection de la vis d Archimède d extraction, dépoussiérage des filtres à manches et contrôle des sondes de température anti-échauffement',
+    dateIntervention: '2026-10-06',
+    prochaineMaintenancePrevue: '2026-12-06',
+    kilometrageOuHeures: 2100,
+    technicienOuGarage: 'Équipe Maintenance Silos Usine',
+    coutPiecesUsd: 60,
+    coutMainOeuvreUsd: 40,
+    coutTotalUsd: 100,
+    statut: 'EN_COURS',
+    observations: 'Opération en cours durant la pause de réception.',
+  },
+]
+
+
 
 
 

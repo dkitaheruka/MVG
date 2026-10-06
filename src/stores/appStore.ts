@@ -6,15 +6,27 @@ export type SessionData = UserSession & {
   agenceNom?: string
 }
 
+export type PrintProposal = {
+  title: string
+  subtitle?: string
+  ref?: string
+  primaryDocName: string
+  primaryDocUrl: string
+  secondaryDocName?: string
+  secondaryDocUrl?: string
+}
+
 interface AppStore {
   session: SessionData | null
   theme: 'light' | 'dark'
   language: 'fr' | 'sw' | 'en'
   sidebarOpen: boolean
+  printProposal: PrintProposal | null
   setSession: (session: SessionData | null) => void
   setTheme: (theme: 'light' | 'dark') => void
   setLanguage: (lang: 'fr' | 'sw' | 'en') => void
   setSidebarOpen: (open: boolean) => void
+  setPrintProposal: (proposal: PrintProposal | null) => void
   can: (permission: string) => boolean
 }
 
@@ -32,6 +44,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   theme: (localStorage.getItem('matabishi_theme') as 'light' | 'dark') || 'light',
   language: (localStorage.getItem('matabishi_lang') as 'fr' | 'sw' | 'en') || 'fr',
   sidebarOpen: true,
+  printProposal: null,
 
   setSession: (session) => {
     if (session) {
@@ -54,6 +67,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  setPrintProposal: (printProposal) => set({ printProposal }),
 
   can: (permission) => {
     const { session } = get()

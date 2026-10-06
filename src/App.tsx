@@ -47,6 +47,9 @@ import {
   PencilSimple,
   DownloadSimple,
   FloppyDisk,
+  Wrench,
+  FileXls,
+  Coins,
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -56,6 +59,7 @@ import { apiRequest, downloadUrl } from './lib/api'
 import { PurchasesPage } from './pages/PurchasesPage'
 import { StockTransfersPage } from './pages/StockTransfersPage'
 import { PayrollPage } from './pages/PayrollPage'
+import { MaintenancePage } from './pages/MaintenancePage'
 import {
   listOfflineOperations,
   saveOfflineOperation,
@@ -85,6 +89,8 @@ import type {
   RapprochementBancaire,
   BonLivraison,
   DirectionKpis,
+  EtatBesoin,
+  EntretienTechnique,
 } from './types'
 
 type NavItem = {
@@ -100,6 +106,7 @@ const navItems: NavItem[] = [
   { to: '/stock', labelKey: 'stock', icon: Package, permission: 'stocks.voir' },
   { to: '/achats', labelKey: 'purchases', icon: ShoppingCart, permission: 'achats.gerer' },
   { to: '/transferts', labelKey: 'transfers', icon: Truck, permission: 'transferts.gerer' },
+  { to: '/maintenance', labelKey: 'maintenance', icon: Wrench, permission: 'flotte.gerer' },
   { to: '/production', labelKey: 'production', icon: Barcode, permission: 'production.gerer' },
   { to: '/tresorerie', labelKey: 'treasury', icon: Bank, permission: 'tresorerie.voir' },
   { to: '/paie', labelKey: 'payroll', icon: UsersThree, permission: 'rh.gerer' },
@@ -304,6 +311,8 @@ function AppShell() {
   const setSession = useAppStore((state) => state.setSession)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
+  const printProposal = useAppStore((state) => state.printProposal)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const can = useAppStore((state) => state.can)
 
   const visibleNav = navItems.filter((item) => can(item.permission))
@@ -413,6 +422,7 @@ function AppShell() {
             <Route path="/stock" element={<StockPage />} />
             <Route path="/achats" element={<PurchasesPage />} />
             <Route path="/transferts" element={<StockTransfersPage />} />
+            <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/production" element={<ProductionPage />} />
             <Route path="/tresorerie" element={<TreasuryPage />} />
             <Route path="/paie" element={<PayrollPage />} />
@@ -423,6 +433,60 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+
+      {printProposal && (
+        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
+          <div className="modal-card" style={{ maxWidth: 520, textAlign: 'center', padding: '28px 24px' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <CheckCircle size={36} />
+            </div>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem' }}>{printProposal.title}</h3>
+            {printProposal.ref && (
+              <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: 10 }}>
+                Référence officielle : <strong>{printProposal.ref}</strong>
+              </div>
+            )}
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '0 0 20px', lineHeight: 1.45 }}>
+              {printProposal.subtitle || "L'opération a été enregistrée avec succès. Souhaitez-vous imprimer le document officiel correspondant maintenant ?"}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <a
+                href={printProposal.primaryDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-action"
+                style={{ padding: '10px 16px', fontSize: '0.92rem', justifyContent: 'center', textDecoration: 'none' }}
+                onClick={() => setPrintProposal(null)}
+              >
+                <Printer size={18} /> Imprimer {printProposal.primaryDocName}
+              </a>
+
+              {printProposal.secondaryDocUrl && (
+                <a
+                  href={printProposal.secondaryDocUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-action"
+                  style={{ padding: '10px 16px', fontSize: '0.92rem', justifyContent: 'center', textDecoration: 'none' }}
+                  onClick={() => setPrintProposal(null)}
+                >
+                  <Printer size={18} /> Imprimer {printProposal.secondaryDocName}
+                </a>
+              )}
+
+              <button
+                type="button"
+                className="secondary-action"
+                style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+                onClick={() => setPrintProposal(null)}
+              >
+                Continuer sans imprimer (Fermer)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -497,6 +561,7 @@ function SalesPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const session = useAppStore((state) => state.session)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'credits' | 'clients' | 'livraisons'>('pos')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -611,13 +676,22 @@ function SalesPage() {
           observations: blObservations,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['livraisons'] })
       queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
       setShowNewBLModal(false)
       setBlClientNom('')
       setBlAdresse('')
       setBlObservations('')
+      if (res && res.id) {
+        setPrintProposal({
+          title: 'Bon de Livraison (BL) Émis !',
+          ref: res.numeroBL || `BL-${res.id}`,
+          subtitle: `Le bon de livraison pour ${res.clientNom || 'le client'} a été validé. Imprimez le document officiel :`,
+          primaryDocName: 'Bon de Livraison Officiel',
+          primaryDocUrl: `/api/logistique/livraisons/${res.id}/document`,
+        })
+      }
     },
   })
 
@@ -743,6 +817,17 @@ function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
       queryClient.invalidateQueries({ queryKey: ['ventes-agence'] })
       queryClient.invalidateQueries({ queryKey: ['sync-operations'] })
+      if (savedVente && savedVente.id && savedVente.id > 0) {
+        setPrintProposal({
+          title: 'Vente Validée et Encaissée !',
+          ref: savedVente.referenceVente || `VNT-${savedVente.id}`,
+          subtitle: `Paiement de $${savedVente.montantTotal} ${savedVente.devise} enregistré. Choisissez le document officiel à imprimer :`,
+          primaryDocName: 'Facture / Ticket de Caisse',
+          primaryDocUrl: `/api/ventes/${savedVente.id}/facture`,
+          secondaryDocName: 'Bon de Livraison (BL)',
+          secondaryDocUrl: `/api/ventes/${savedVente.id}/bon-livraison`,
+        })
+      }
     },
     onError: (err) => {
       setCheckoutMessage(err instanceof Error ? err.message : 'Échec de la validation de la vente')
@@ -1227,6 +1312,20 @@ function SalesPage() {
       {/* ONGLET 2 : HISTORIQUE DES VENTES */}
       {activeTab === 'history' && (
         <div className="page-grid">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
+              Journal certifié des ventes ({salesQuery.data?.length ?? 0} opérations enregistrées)
+            </span>
+            <a
+              href={`/api/export/excel/ventes?agenceId=${agenceId}`}
+              className="secondary-action"
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', padding: '6px 14px', textDecoration: 'none' }}
+            >
+              <FileXls size={17} /> Exporter Journal des Ventes Excel (.xlsx)
+            </a>
+          </div>
           <DataTable
             columns={['Réf Vente', 'Date', 'Client', 'Total', 'Devise', 'Règlement', 'Statut Crédit', 'Annulation / Contrôle', 'Actions']}
             loading={salesQuery.isLoading}
@@ -2173,6 +2272,15 @@ function StockPage() {
           >
             <FilePdf size={18} /> État des Stocks PMP
           </a>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/stocks?agenceId=${agenceId}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+          >
+            <FileXls size={18} /> Exporter Stocks Excel (.xlsx)
+          </a>
           <button className="secondary-action" onClick={() => setShowNewArticleModal(true)}>
             <Plus size={18} /> Nouvel Article / Matière
           </button>
@@ -2415,6 +2523,7 @@ function ProductionPage() {
   const token = useToken()
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const [activeTab, setActiveTab] = useState<'ordres' | 'recettes'>('ordres')
   const [showNewOrdreModal, setShowNewOrdreModal] = useState(false)
   const [showNewRecetteModal, setShowNewRecetteModal] = useState(false)
@@ -2496,9 +2605,19 @@ function ProductionPage() {
       queryClient.invalidateQueries({ queryKey: ['production-ordres'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       setGeneratedLotInfo(res)
+      const finishedOrdreId = clotureOrdre?.id
       setClotureOrdre(null)
       setQuantiteReelle('')
       setPertes('')
+      if (res && res.numeroLot) {
+        setPrintProposal({
+          title: 'Lot de Production Clôturé & Entré en Stock !',
+          ref: res.numeroLot,
+          subtitle: `L'ordre de fabrication a été clôturé avec succès et les sacs de farine ont été crédités en stock. Imprimez le bon officiel :`,
+          primaryDocName: 'Bon de Production Officiel',
+          primaryDocUrl: `/api/production/ordres/${finishedOrdreId}/document`,
+        })
+      }
     },
   })
 
@@ -2786,8 +2905,9 @@ function TreasuryPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const can = useAppStore((state) => state.can)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
-  const [activeTab, setActiveTab] = useState<'caisses' | 'demandes' | 'historique' | 'rapprochement'>('caisses')
+  const [activeTab, setActiveTab] = useState<'caisses' | 'etats-besoin' | 'demandes' | 'historique' | 'rapprochement'>('etats-besoin')
   const [showNewDemandeModal, setShowNewDemandeModal] = useState(false)
   const [showNewCaisseModal, setShowNewCaisseModal] = useState(false)
   const [showVirementModal, setShowVirementModal] = useState(false)
@@ -2797,6 +2917,112 @@ function TreasuryPage() {
   const [rejectionModalTx, setRejectionModalTx] = useState<Transaction | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Formulaires & Modales États de Besoin
+  const [showNewEBModal, setShowNewEBModal] = useState(false)
+  const [showDecaissementModal, setShowDecaissementModal] = useState(false)
+  const [selectedEBForDecaissement, setSelectedEBForDecaissement] = useState<EtatBesoin | null>(null)
+  const [decaissementCaisseId, setDecaissementCaisseId] = useState<number | ''>('')
+  const [ebService, setEbService] = useState('Production & Meunerie')
+  const [ebMotif, setEbMotif] = useState('')
+  const [ebMontant, setEbMontant] = useState('')
+  const [ebDevise, setEbDevise] = useState<'USD' | 'CDF'>('USD')
+  const [ebCompte, setEbCompte] = useState('605')
+  const [ebObservations, setEbObservations] = useState('')
+  const [ebFilter, setEbFilter] = useState<'TOUS' | 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'>('TOUS')
+
+  // Requête États de Besoin
+  const etatsBesoinQuery = useQuery({
+    queryKey: ['etats-besoin', agenceId],
+    queryFn: () => apiRequest<EtatBesoin[]>(`/api/etats-besoin?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  // Mutations États de Besoin
+  const createEBMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<EtatBesoin>('/api/etats-besoin', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agenceId,
+          serviceDemandeur: ebService,
+          motif: ebMotif,
+          montant: Number(ebMontant),
+          devise: ebDevise,
+          compteImputation: ebCompte,
+          observations: ebObservations,
+        }),
+      }),
+    onSuccess: (newEB) => {
+      queryClient.invalidateQueries({ queryKey: ['etats-besoin'] })
+      setShowNewEBModal(false)
+      setEbMotif('')
+      setEbMontant('')
+      setEbObservations('')
+      setActionError(null)
+      setPrintProposal({
+        title: 'État de Besoin Initié avec Succès !',
+        ref: newEB.numeroEB,
+        subtitle: `La demande de fonds (${newEB.montant} ${newEB.devise}) pour "${newEB.serviceDemandeur}" a été transmise au visa du Chef d'Agence.`,
+        primaryDocName: "Aperçu de l'État de Besoin",
+        primaryDocUrl: `/api/etats-besoin/${newEB.id}/bon-decaissement`,
+      })
+    },
+    onError: (err: any) => setActionError(err.message || "Erreur lors de l'initiation de l'état de besoin"),
+  })
+
+  const validerChefEBMutation = useMutation({
+    mutationFn: (ebId: number) =>
+      apiRequest<{ message: string; etatBesoin: EtatBesoin }>(`/api/etats-besoin/${ebId}/valider-chef`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etats-besoin'] })
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors de la validation hiérarchique'),
+  })
+
+  const decaissementEBMutation = useMutation({
+    mutationFn: ({ ebId, caisseId }: { ebId: number; caisseId: number }) =>
+      apiRequest<{ message: string; etatBesoin: EtatBesoin; numeroPieceCaisse: string }>(`/api/etats-besoin/${ebId}/decaissement`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ caisseId }),
+      }),
+    onSuccess: (res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['etats-besoin'] })
+      queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      setShowDecaissementModal(false)
+      setSelectedEBForDecaissement(null)
+      setActionError(null)
+      setPrintProposal({
+        title: 'Fonds Décaissés au Guichet Caisse !',
+        ref: res.numeroPieceCaisse,
+        subtitle: `L'état de besoin a été payé et déduit du solde physique. Imprimez le bon officiel de décaissement et décharge de caisse :`,
+        primaryDocName: 'Bon de Décaissement & Décharge',
+        primaryDocUrl: `/api/etats-besoin/${res.etatBesoin?.id || vars.ebId}/bon-decaissement`,
+      })
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors du décaissement en caisse'),
+  })
+
+  const rejeterEBMutation = useMutation({
+    mutationFn: ({ ebId, motifRejet }: { ebId: number; motifRejet: string }) =>
+      apiRequest(`/api/etats-besoin/${ebId}/rejeter`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ motifRejet }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etats-besoin'] })
+      setActionError(null)
+    },
+  })
 
   // Formulaire Rapprochement bancaire
   const [rapCompteCaisseId, setRapCompteCaisseId] = useState<number | ''>('')
@@ -3045,6 +3271,29 @@ function TreasuryPage() {
           icon={Bank}
         />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="primary-action" style={{ background: '#0284c7' }} onClick={() => setShowNewEBModal(true)}>
+            <Coins size={17} /> Nouvel État de Besoin
+          </button>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/etats-besoin?agenceId=${agenceId}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            title="Exporter tous les états de besoin au format Excel"
+          >
+            <FileXls size={17} color="#16a34a" /> Excel États de Besoin
+          </a>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/tresorerie?agenceId=${agenceId}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            title="Exporter les mouvements de trésorerie au format Excel"
+          >
+            <FileXls size={17} color="#16a34a" /> Excel Trésorerie
+          </a>
           <button className="secondary-action" onClick={() => setShowNewCaisseModal(true)}>
             <Plus size={17} /> Nouveau Compte
           </button>
@@ -3055,7 +3304,7 @@ function TreasuryPage() {
             <CheckCircle size={17} /> Rapprochement Bancaire
           </button>
           <button className="primary-action" onClick={() => setShowNewDemandeModal(true)}>
-            <Plus size={17} /> Nouvelle Demande
+            <Plus size={17} /> Mouvement Direct
           </button>
         </div>
       </div>
@@ -3082,10 +3331,10 @@ function TreasuryPage() {
           <strong>{money(totalCdf, 'CDF')}</strong>
         </article>
         <article className="metric-card">
-          <ArrowsClockwise size={23} />
-          <span>Demandes en attente</span>
-          <strong style={{ color: pendingTx.length > 0 ? 'var(--warning)' : 'inherit' }}>
-            {pendingTx.length}
+          <Coins size={23} />
+          <span>États de Besoin Actifs</span>
+          <strong style={{ color: (etatsBesoinQuery.data ?? []).filter((e) => e.statut !== 'DECAISSE' && e.statut !== 'REJETE').length > 0 ? '#0284c7' : 'inherit' }}>
+            {(etatsBesoinQuery.data ?? []).filter((e) => e.statut !== 'DECAISSE' && e.statut !== 'REJETE').length}
           </strong>
         </article>
         <article className="metric-card">
@@ -3098,6 +3347,12 @@ function TreasuryPage() {
       {/* Navigation sous-onglets */}
       <div className="tabs-header">
         <button
+          className={clsx('tab-btn', activeTab === 'etats-besoin' && 'active')}
+          onClick={() => setActiveTab('etats-besoin')}
+        >
+          <Coins size={17} /> États de Besoin & Décaissements ({(etatsBesoinQuery.data ?? []).length})
+        </button>
+        <button
           className={clsx('tab-btn', activeTab === 'caisses' && 'active')}
           onClick={() => setActiveTab('caisses')}
         >
@@ -3107,7 +3362,7 @@ function TreasuryPage() {
           className={clsx('tab-btn', activeTab === 'demandes' && 'active')}
           onClick={() => setActiveTab('demandes')}
         >
-          <ClockCounterClockwise size={17} /> Demandes en attente ({pendingTx.length})
+          <ClockCounterClockwise size={17} /> Mouvements en attente ({pendingTx.length})
         </button>
         <button
           className={clsx('tab-btn', activeTab === 'historique' && 'active')}
@@ -3122,6 +3377,142 @@ function TreasuryPage() {
           <CheckCircle size={17} /> Rapprochements Bancaires ({rapprochementsQuery.data?.length ?? 0})
         </button>
       </div>
+
+      {/* TAB : ÉTATS DE BESOIN & DEMANDES DE FONDS */}
+      {activeTab === 'etats-besoin' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* BANDEAU DE GOUVERNANCE DU CIRCUIT DE VALIDATION */}
+          <div style={{ background: 'var(--panel-bg)', padding: '14px 18px', borderRadius: 8, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.95rem' }}>
+                <Coins size={18} color="#0284c7" />
+                Circuit d'Approbation Hiérarchique & Décaissement Caisse
+              </strong>
+              <p style={{ margin: '3px 0 0', color: 'var(--muted)', fontSize: '0.82rem' }}>
+                1. Initiation par n'importe quel service $\rightarrow$ 2. Visa & Approbation par le Chef d'Agence $\rightarrow$ 3. Contrôle & Décaissement physique par le Caissier (avec Bon officiel & Décharge).
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(['TOUS', 'SOUMIS', 'APPROUVE_CHEF', 'DECAISSE', 'REJETE'] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  className={clsx('tab-button', ebFilter === st && 'active')}
+                  style={{ fontSize: '0.76rem', padding: '3px 8px' }}
+                  onClick={() => setEbFilter(st)}
+                >
+                  {st === 'TOUS' ? 'Tous' : st === 'SOUMIS' ? 'En attente Chef' : st === 'APPROUVE_CHEF' ? 'Prêts à décaisser' : st === 'DECAISSE' ? 'Décaissés' : 'Rejetés'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <DataTable
+            columns={['N° EB / Date', 'Service & Demandeur', 'Motif / Justification', 'Montant', 'Compte', 'Statut', 'Pièce Caisse', 'Actions']}
+            loading={etatsBesoinQuery.isLoading}
+            rows={(etatsBesoinQuery.data ?? [])
+              .filter((eb) => ebFilter === 'TOUS' || eb.statut === ebFilter)
+              .map((eb) => [
+                <div key={eb.id + '-ref'}>
+                  <strong>{eb.numeroEB}</strong>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>
+                    {new Date(eb.dateDemande).toLocaleDateString('fr-FR')}
+                  </div>
+                </div>,
+                <div key={eb.id + '-srv'}>
+                  <div style={{ fontWeight: 600 }}>{eb.serviceDemandeur}</div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>{eb.demandeurNom}</div>
+                </div>,
+                <div key={eb.id + '-mtf'} style={{ maxWidth: 260 }}>
+                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={eb.motif}>
+                    {eb.motif}
+                  </div>
+                  {eb.entretienTechniqueId && (
+                    <span style={{ fontSize: '0.72rem', color: '#0284c7' }}>
+                      • Rattaché à Intervention #{eb.entretienTechniqueId}
+                    </span>
+                  )}
+                </div>,
+                <strong key={eb.id + '-mnt'} style={{ color: eb.devise === 'USD' ? '#0284c7' : '#16a34a' }}>
+                  {money(eb.montant, eb.devise)}
+                </strong>,
+                <code key={eb.id + '-cpt'} style={{ fontSize: '0.75rem' }}>{eb.compteImputation || '605'}</code>,
+                <span
+                  key={eb.id + '-stat'}
+                  className={clsx(
+                    'badge',
+                    eb.statut === 'DECAISSE' && 'badge-success',
+                    eb.statut === 'APPROUVE_CHEF' && 'badge-neutral',
+                    eb.statut === 'SOUMIS' && 'badge-warning',
+                    eb.statut === 'REJETE' && 'badge-danger'
+                  )}
+                  style={{ fontSize: '0.74rem' }}
+                >
+                  {eb.statut === 'DECAISSE' ? 'Décaissé' : eb.statut === 'APPROUVE_CHEF' ? 'Validé Chef' : eb.statut === 'SOUMIS' ? 'En attente Chef' : 'Rejeté'}
+                </span>,
+                <div key={eb.id + '-pcs'} style={{ fontSize: '0.8rem' }}>
+                  {eb.numeroPieceCaisse ? <strong>{eb.numeroPieceCaisse}</strong> : '-'}
+                  {eb.caissierNom && <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{eb.caissierNom}</div>}
+                </div>,
+                <div key={eb.id + '-acts'} style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {eb.statut === 'SOUMIS' && (
+                    <>
+                      <button
+                        type="button"
+                        className="primary-action"
+                        style={{ padding: '3px 8px', fontSize: '0.74rem', background: '#0284c7' }}
+                        onClick={() => validerChefEBMutation.mutate(eb.id)}
+                        disabled={validerChefEBMutation.isPending}
+                        title="Valider la demande de fonds en tant que Chef d'Agence"
+                      >
+                        <CheckCircle size={14} /> Visa Chef
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        style={{ padding: '3px 8px', fontSize: '0.74rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                        onClick={() => {
+                          const r = prompt('Motif du refus de cet état de besoin :')
+                          if (r) rejeterEBMutation.mutate({ ebId: eb.id, motifRejet: r })
+                        }}
+                        title="Rejeter cet état de besoin"
+                      >
+                        <XCircle size={14} /> Refuser
+                      </button>
+                    </>
+                  )}
+
+                  {eb.statut === 'APPROUVE_CHEF' && (
+                    <button
+                      type="button"
+                      className="primary-action"
+                      style={{ padding: '4px 10px', fontSize: '0.76rem', background: '#16a34a' }}
+                      onClick={() => {
+                        setSelectedEBForDecaissement(eb)
+                        setShowDecaissementModal(true)
+                      }}
+                      title="Libérer les fonds et émettre le bon de décaissement"
+                    >
+                      <Coins size={15} /> Décaisser
+                    </button>
+                  )}
+
+                  <a
+                    href={`/api/etats-besoin/${eb.id}/bon-decaissement`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="secondary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.74rem', textDecoration: 'none' }}
+                    title="Imprimer le bon officiel de décaissement et décharge de caisse"
+                  >
+                    <Printer size={15} /> Bon
+                  </a>
+                </div>,
+              ])}
+            emptyText="Aucun état de besoin enregistré pour ce filtre."
+          />
+        </div>
+      )}
 
       {/* TAB 1 : CAISSES */}
       {activeTab === 'caisses' && (
@@ -4294,9 +4685,20 @@ function AccountingPage() {
                 <option value="RH">Paie & Avances sur Salaire</option>
               </select>
             </div>
-            <button className="secondary-action" onClick={() => setShowManualEntryModal(true)}>
-              <Plus size={15} /> Nouvelle OD Manuelle
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <a
+                href={`/api/export/excel/grand-livre?agenceId=${agenceId}&annee=${annee}`}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <FileXls size={16} /> Exporter Grand Livre (.xlsx)
+              </a>
+              <button className="secondary-action" onClick={() => setShowManualEntryModal(true)}>
+                <Plus size={15} /> Nouvelle OD Manuelle
+              </button>
+            </div>
           </div>
 
           <DataTable
@@ -4353,8 +4755,19 @@ function AccountingPage() {
               </label>
             </div>
 
-            <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-              Équilibre : {totauxBalance.debitUsd === totauxBalance.creditUsd ? 'Parfait' : 'En calcul'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <a
+                href={`/api/export/excel/balance?agenceId=${agenceId}&annee=${annee}&mois=${mois}`}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <FileXls size={16} /> Exporter Balance (.xlsx)
+              </a>
+              <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                Équilibre : {totauxBalance.debitUsd === totauxBalance.creditUsd ? 'Parfait' : 'En calcul'}
+              </div>
             </div>
           </div>
 
@@ -5263,6 +5676,59 @@ function AdminPage() {
   const [backupFileContent, setBackupFileContent] = useState<any>(null)
   const [restoreSummary, setRestoreSummary] = useState<any>(null)
 
+  // Attribution de fonctionnalités (RBAC)
+  const [selectedRoleCode, setSelectedRoleCode] = useState<string>('CHEF_AGENCE')
+  const [selectedRolePerms, setSelectedRolePerms] = useState<string[]>([])
+  
+  // Custom user permissions modal
+  const [showUserPermsModal, setShowUserPermsModal] = useState(false)
+  const [userPermsTarget, setUserPermsTarget] = useState<any | null>(null)
+  const [userPermsSelected, setUserPermsSelected] = useState<string[]>([])
+
+  const rolePermsQuery = useQuery({
+    queryKey: ['role-permissions', selectedRoleCode],
+    queryFn: () => apiRequest<{ role: string; permissions: string[] }>(`/api/admin/roles/${selectedRoleCode}/permissions`, { token }),
+    enabled: Boolean(token && selectedRoleCode),
+  })
+
+  useEffect(() => {
+    if (rolePermsQuery.data?.permissions) {
+      setSelectedRolePerms(rolePermsQuery.data.permissions)
+    }
+  }, [rolePermsQuery.data])
+
+  const updateRolePermsMutation = useMutation({
+    mutationFn: (newPerms: string[]) =>
+      apiRequest(`/api/admin/roles/${selectedRoleCode}/permissions`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({ permissions: newPerms }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['role-permissions', selectedRoleCode] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      setActionNotice(data.message || `Habilitations du rôle ${selectedRoleCode} enregistrées avec succès.`)
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la mise à jour des permissions du rôle'),
+  })
+
+  const updateUserPermsMutation = useMutation({
+    mutationFn: ({ userId, perms }: { userId: number; perms: string[] }) =>
+      apiRequest(`/api/admin/users/${userId}/permissions`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({ permissions: perms }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      setShowUserPermsModal(false)
+      setUserPermsTarget(null)
+      setActionNotice(data.message || 'Habilitations individuelles de l utilisateur mises à jour avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la mise à jour des permissions de l utilisateur'),
+  })
+
   const restoreMutation = useMutation({
     mutationFn: (payload: any) =>
       apiRequest('/api/admin/backup/restore', {
@@ -5655,30 +6121,183 @@ function AdminPage() {
       )}
 
       {activeTab === 'roles' && (
-        <div className="two-column">
-          <Panel title="Rôles système et d agence" icon={UsersThree}>
-            <DataTable
-              columns={['Code rôle', 'Désignation', 'Statut']}
-              loading={rolesQuery.isLoading}
-              rows={(rolesQuery.data ?? []).map((role) => [
-                <strong>{role.code}</strong>,
-                role.nom,
-                <span className="badge badge-success">Actif</span>,
-              ])}
-              emptyText="Aucun rôle chargé."
-            />
-          </Panel>
-          <Panel title="Permissions habilitées par module" icon={UserCircleGear}>
-            <DataTable
-              columns={['Module métier', 'Code permission']}
-              loading={permissionsQuery.isLoading}
-              rows={(permissionsQuery.data ?? []).map((p) => [
-                p.module,
-                <code>{p.code}</code>,
-              ])}
-              emptyText="Aucune permission chargée."
-            />
-          </Panel>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* EN-TETE DE GOUVERNANCE RBAC */}
+          <div style={{ background: 'var(--panel-bg)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ShieldCheck size={22} color="var(--primary)" />
+                Matrice des Habilitations & Attribution des Fonctionnalités (RBAC)
+              </h3>
+              <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.88rem' }}>
+                Sélectionnez un rôle pour configurer les modules et permissions autorisés. Les modifications s'appliquent immédiatement à tous les collaborateurs détenant ce rôle.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  const allCodes = (permissionsQuery.data ?? []).map((p: any) => p.code)
+                  setSelectedRolePerms(allCodes)
+                }}
+                title="Accorder toutes les fonctionnalités à ce rôle"
+              >
+                Tout Cocher
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setSelectedRolePerms([])}
+                title="Retirer toutes les fonctionnalités de ce rôle"
+              >
+                Tout Décocher
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                disabled={updateRolePermsMutation.isPending}
+                onClick={() => updateRolePermsMutation.mutate(selectedRolePerms)}
+                style={{ background: '#16a34a' }}
+              >
+                <CheckCircle size={18} />
+                {updateRolePermsMutation.isPending ? 'Enregistrement...' : `Enregistrer les Habilitations (${selectedRolePerms.length})`}
+              </button>
+            </div>
+          </div>
+
+          {/* SELECTEUR DE ROLES */}
+          <div>
+            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--muted)', marginBottom: 8 }}>
+              Sélectionnez le rôle à configurer :
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+              {(rolesQuery.data ?? []).map((r) => {
+                const userCount = (usersQuery.data ?? []).filter((u: any) => u.role === r.code).length
+                const isSelected = selectedRoleCode === r.code
+                return (
+                  <div
+                    key={r.code}
+                    onClick={() => setSelectedRoleCode(r.code)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: isSelected ? 'var(--surface-2)' : 'var(--panel-bg)',
+                      boxShadow: isSelected ? '0 4px 12px rgba(2, 132, 199, 0.15)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '0.88rem', color: isSelected ? 'var(--primary)' : 'inherit' }}>{r.nom}</strong>
+                      <span className="badge" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>{userCount} collab.</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
+                      <code>{r.code}</code>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* MATRICE DES FONCTIONNALITES PAR MODULE */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+            {(() => {
+              const allPerms = permissionsQuery.data ?? []
+              const grouped: Record<string, typeof allPerms> = {}
+              allPerms.forEach((p: any) => {
+                const mod = p.module || 'Général'
+                if (!grouped[mod]) grouped[mod] = []
+                grouped[mod].push(p)
+              })
+
+              return Object.entries(grouped).map(([modName, perms]) => {
+                const activeCount = perms.filter((p: any) => selectedRolePerms.includes(p.code)).length
+                const allActive = activeCount === perms.length
+
+                return (
+                  <div
+                    key={modName}
+                    style={{
+                      background: 'var(--panel-bg)',
+                      borderRadius: 10,
+                      border: '1px solid var(--border)',
+                      padding: 16,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                      <div>
+                        <strong style={{ fontSize: '0.95rem' }}>{modName}</strong>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+                          {activeCount} / {perms.length} active(s)
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        style={{ padding: '2px 8px', fontSize: '0.74rem' }}
+                        onClick={() => {
+                          if (allActive) {
+                            setSelectedRolePerms(selectedRolePerms.filter((c) => !perms.some((p: any) => p.code === c)))
+                          } else {
+                            const newSet = new Set([...selectedRolePerms, ...perms.map((p: any) => p.code)])
+                            setSelectedRolePerms(Array.from(newSet))
+                          }
+                        }}
+                      >
+                        {allActive ? 'Désactiver tout' : 'Activer tout'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {perms.map((p: any) => {
+                        const isChecked = selectedRolePerms.includes(p.code)
+                        return (
+                          <label
+                            key={p.code}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: 10,
+                              cursor: 'pointer',
+                              padding: '6px 8px',
+                              borderRadius: 6,
+                              background: isChecked ? 'var(--surface-2)' : 'transparent',
+                              border: isChecked ? '1px solid var(--border)' : '1px solid transparent',
+                              fontSize: '0.84rem',
+                              margin: 0,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedRolePerms([...selectedRolePerms, p.code])
+                                } else {
+                                  setSelectedRolePerms(selectedRolePerms.filter((c) => c !== p.code))
+                                }
+                              }}
+                              style={{ width: 17, height: 17, marginTop: 2 }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: isChecked ? 600 : 400 }}>{p.libelle || p.code}</div>
+                              <code style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{p.code}</code>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            })()}
+          </div>
         </div>
       )}
 

@@ -33,6 +33,8 @@ import {
   commandesAchat,
   receptionsPontBascule,
   immobilisations,
+  etatsBesoin,
+  entretiensTechniques,
 } from './seed'
 import {
   renderFactureHtml,
@@ -47,6 +49,8 @@ import {
   renderBonCommandeHtml,
   renderTicketPontBasculeHtml,
   renderTableauImmobilisationsHtml,
+  renderEtatBesoinBonDecaissementHtml,
+  renderFicheMaintenanceTechniqueHtml,
 } from './documents'
 
 const router = Router()
@@ -110,7 +114,9 @@ router.post('/auth/login', (req: Request, res: Response) => {
 })
 
 router.get('/auth/users', (_req: Request, res: Response) => {
-  res.json(users.map(({ id, email, nom, role, agenceId, actif }) => ({ id, email, nom, role, agenceId, actif })))
+  res.json(users.map(({ id, email, nom, role, agenceId, actif, permissions }) => ({
+    id, email, nom, role, agenceId, actif, permissions: permissions || []
+  })))
 })
 
 // ----------------- AGENCES -----------------
@@ -1265,6 +1271,8 @@ router.get('/admin/backup/export', (req: Request, res: Response) => {
     categories,
     auditLogs,
     immobilisations,
+    etatsBesoin,
+    entretiensTechniques,
   }
 
   const filename = `backup-matabishi-erp-${new Date().toISOString().slice(0, 10)}.json`
@@ -1363,6 +1371,18 @@ router.post('/admin/backup/restore', (req: Request, res: Response) => {
     restoredCounts.immobilisations = immobilisations.length
   }
 
+  if (Array.isArray(payload.etatsBesoin)) {
+    etatsBesoin.length = 0
+    etatsBesoin.push(...payload.etatsBesoin)
+    restoredCounts.etatsBesoin = etatsBesoin.length
+  }
+
+  if (Array.isArray(payload.entretiensTechniques)) {
+    entretiensTechniques.length = 0
+    entretiensTechniques.push(...payload.entretiensTechniques)
+    restoredCounts.entretiensTechniques = entretiensTechniques.length
+  }
+
   logAudit(
     currentUser.nom,
     'RESTAURATION_BACKUP',
@@ -1412,6 +1432,151 @@ router.get('/admin/export/csv/:type', (req: Request, res: Response) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.send('\uFEFF' + csv)
 })
+
+// ----------------- EXPORTS EXCEL OFFICIELS (.CSV UTF-8 BOM POUR TABLEUR) -----------------
+router.get('/export/excel/:type', (req: Request, res: Response) => {
+  const type = req.params.type
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const annee = req.query.annee ? toInt(req.query.annee) : new Date().getFullYear()
+  const mois = req.query.mois ? toInt(req.query.mois) : new Date().getMonth() + 1
+  let csv = ''
+  let filename = `matabishi-excel-${type}-${new Date().toISOString().slice(0, 10)}.csv`
+
+  if (type === 'balance') {
+    filename = `balance-generale-${annee}-${mois}.csv`
+    csv = 'N° COMPTE;INTITULÉ COMPTE SYSCOHADA;TOTAL DÉBIT USD;TOTAL CRÉDIT USD;SOLDE DÉBITEUR USD;SOLDE CRÉDITEUR USD\n'
+    const grouped: Record<string, { num: string; lib: string; debit: number; credit: number }> = {}
+    ecrituresComptables.forEach((e) => {
+      if (!e.annulee && (!agenceId || e.agenceId === agenceId)) {
+        if (!grouped[e.compteNumero]) {
+          const cp = planComptable.find((p) => p.numero === e.compteNumero)
+          grouped[e.compteNumero] = {
+            num: e.compteNumero,
+            lib: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+            debit: 0,
+            credit: 0,
+          }
+        }
+        if (e.sens === 'DEBIT') grouped[e.compteNumero].debit += e.montant
+        else grouped[e.compteNumero].credit += e.montant
+      }
+    })
+    const list = Object.values(grouped).sort((a, b) => a.num.localeCompare(b.num))
+    list.forEach((l) => {
+      const solde = l.debit - l.credit
+      const soldeDeb = solde > 0 ? solde.toFixed(2) : '0.00'
+      const soldeCred = solde < 0 ? Math.abs(solde).toFixed(2) : '0.00'
+      csv += `"${l.num}";"${l.lib.replace(/"/g, '""')}";${l.debit.toFixed(2)};${l.credit.toFixed(2)};${soldeDeb};${soldeCred}\n`
+    })
+  } else if (type === 'compte-resultat') {
+    filename = `compte-de-resultat-${annee}.csv`
+    csv = 'N° COMPTE;CLASSE SYSCOHADA;LIBELLÉ DU POSTE;CHARGES USD;PRODUITS USD;SOLDE NET USD\n'
+    const grouped: Record<string, { num: string; lib: string; charges: number; produits: number }> = {}
+    ecrituresComptables.forEach((e) => {
+      if (!e.annulee && (!agenceId || e.agenceId === agenceId)) {
+        if (e.compteNumero.startsWith('6') || e.compteNumero.startsWith('7')) {
+          if (!grouped[e.compteNumero]) {
+            const cp = planComptable.find((p) => p.numero === e.compteNumero)
+            grouped[e.compteNumero] = {
+              num: e.compteNumero,
+              lib: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+              charges: 0,
+              produits: 0,
+            }
+          }
+          if (e.compteNumero.startsWith('6')) {
+            if (e.sens === 'DEBIT') grouped[e.compteNumero].charges += e.montant
+            else grouped[e.compteNumero].charges -= e.montant
+          } else {
+            if (e.sens === 'CREDIT') grouped[e.compteNumero].produits += e.montant
+            else grouped[e.compteNumero].produits -= e.montant
+          }
+        }
+      }
+    })
+    Object.values(grouped).sort((a, b) => a.num.localeCompare(b.num)).forEach((l) => {
+      const classe = l.num.startsWith('6') ? 'CHARGES (CLASSE 6)' : 'PRODUITS (CLASSE 7)'
+      const solde = l.produits - l.charges
+      csv += `"${l.num}";"${classe}";"${l.lib.replace(/"/g, '""')}";${l.charges.toFixed(2)};${l.produits.toFixed(2)};${solde.toFixed(2)}\n`
+    })
+  } else if (type === 'grand-livre') {
+    filename = `grand-livre-ecritures-${annee}.csv`
+    csv = 'PIÈCE / RÉFÉRENCE;DATE;N° COMPTE;INTITULÉ / LIBELLÉ;SENS;MONTANT;DEVISE;MODULE SOURCE;AGENCE\n'
+    ecrituresComptables.forEach((e) => {
+      if (!e.annulee && (!agenceId || e.agenceId === agenceId)) {
+        const ag = agences.find((a) => a.id === e.agenceId)
+        csv += `"${e.referenceOperation}";"${e.dateEcriture.slice(0, 10)}";"${e.compteNumero}";"${(e.libelle || '').replace(/"/g, '""')}";"${e.sens}";${e.montant.toFixed(2)};"${e.devise}";"${e.sourceModule}";"${ag?.nom || e.agenceId}"\n`
+      }
+    })
+  } else if (type === 'immobilisations') {
+    filename = `tableau-immobilisations-amortissements-${annee}.csv`
+    csv = 'CODE IMMO;DÉSIGNATION DU BIEN;EMPLACEMENT;COMPTE IMMO;DATE ACQUISITION;DURÉE (ANS);VALEUR ACQUISITION USD;AMORTISSEMENTS ANTÉRIEURS USD;DOTATION EXERCICE USD;CUMUL AMORTISSEMENTS USD;VALEUR NETTE COMPTABLE (VNC) USD\n'
+    immobilisations.forEach((immo) => {
+      if (!agenceId || immo.agenceId === agenceId) {
+        csv += `"${immo.code}";"${immo.nom.replace(/"/g, '""')}";"${immo.emplacement || 'Usine'}";"${immo.compteImmo}";"${immo.dateAcquisition}";${immo.dureeAnnees};${immo.valeurAcquisitionUsd.toFixed(2)};${(immo.amortissementCumuleUsd - immo.dotationAnnuelleUsd).toFixed(2)};${immo.dotationAnnuelleUsd.toFixed(2)};${immo.amortissementCumuleUsd.toFixed(2)};${immo.valeurNetteComptableUsd.toFixed(2)}\n`
+      }
+    })
+  } else if (type === 'inventaire' || type === 'stocks') {
+    filename = `inventaire-stocks-valorise.csv`
+    csv = 'AGENCE;ARTICLE / FARINE;CODE UNIQUE;N° LOT;DATE EXPIRATION;QUANTITÉ EN STOCK;UNITÉ;PRIX UNITAIRE USD;VALEUR STOCK ESTIMÉE USD;STATUT SEUIL\n'
+    stocksAgence.forEach((s) => {
+      if (!agenceId || s.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === s.agenceId)
+        const art = articles.find((a) => a.id === s.articleId)
+        const pu = art?.prixVenteStandard || 20
+        const valTot = (s.quantite || 0) * pu
+        const seuilStat = (s.quantite || 0) <= (s.seuilAlerte || 0) ? 'ALERTE SEUIL BAS' : 'NORMAL'
+        csv += `"${ag?.nom || s.agenceId}";"${(art?.designation || '').replace(/"/g, '""')}";"${art?.codeUnique || ''}";"${s.numeroLot || ''}";"${s.dateExpiration || ''}";${s.quantite};"${art?.uniteMesure || 'Sac'}";${pu.toFixed(2)};${valTot.toFixed(2)};"${seuilStat}"\n`
+      }
+    })
+  } else if (type === 'ventes') {
+    filename = `journal-des-ventes.csv`
+    csv = 'RÉFÉRENCE FACTURE;DATE VENTE;AGENCE;CLIENT;TÉLÉPHONE CLIENT;VENDEUR;MONTANT TOTAL USD;CONTRE-VALEUR CDF;CRÉDIT ACCORDÉ;STATUT CRÉDIT;STATUT VENTE\n'
+    ventes.forEach((v) => {
+      if (!agenceId || v.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === v.agenceId)
+        const client = clients.find((c) => c.id === v.clientId)
+        const vendeur = users.find((u) => u.id === v.vendeurId)
+        csv += `"${v.referenceVente}";"${(v.dateVente || '').slice(0, 10)}";"${ag?.nom || v.agenceId}";"${(client?.nom || 'Client Comptoir').replace(/"/g, '""')}";"${client?.telephone || ''}";"${vendeur?.nom || 'Vendeur'}";${v.montantTotal.toFixed(2)};${v.montantCdf || Math.round(v.montantTotal * 2850)};"${v.estCredit ? 'OUI' : 'NON'}";"${v.statutCredit || 'AUCUN'}";"${v.statutAnnulation || 'VALIDE'}"\n`
+      }
+    })
+  } else if (type === 'tresorerie') {
+    filename = `journal-tresorerie-caisses.csv`
+    csv = 'RÉFÉRENCE INTERNE;DATE;AGENCE;COMPTE DE CAISSE;SENS / TYPE;MOTIF & LIBELLÉ;MONTANT;DEVISE;STATUT VALIDATION\n'
+    transactions.forEach((t) => {
+      if (!agenceId || t.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === t.agenceId)
+        const caisse = comptesCaisse.find((c) => c.id === t.caisseId)
+        csv += `"${t.referenceInterne || t.id}";"${(t.dateCreation || '').slice(0, 10)}";"${ag?.nom || t.agenceId}";"${caisse?.nom || 'Caisse'}";"${t.type}";"${(t.libelle || '').replace(/"/g, '""')}";${t.montant.toFixed(2)};"${t.devise}";"${t.statut}"\n`
+      }
+    })
+  } else if (type === 'etats-besoin') {
+    filename = `etats-de-besoin-requisitions.csv`
+    csv = 'N° ÉTAT DE BESOIN;DATE DEMANDE;AGENCE;SERVICE DEMANDEUR;DEMANDEUR;MOTIF & OBJET DU BESOIN;MONTANT;DEVISE;STATUT WORKFLOW;VALIDÉ PAR CHEF LE;DÉCAISSÉ PAR CAISSIER;PIÈCE DE CAISSE BDEC;JUSTIFICATIF DÉPOSÉ\n'
+    etatsBesoin.forEach((eb) => {
+      if (!agenceId || eb.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === eb.agenceId)
+        csv += `"${eb.numeroEB}";"${(eb.dateDemande || '').slice(0, 10)}";"${ag?.nom || eb.agenceId}";"${eb.serviceDemandeur}";"${eb.demandeurNom}";"${(eb.motif || '').replace(/"/g, '""')}";${eb.montant.toFixed(2)};"${eb.devise}";"${eb.statut}";"${eb.dateValidationChef ? eb.dateValidationChef.slice(0, 10) : '-'}";"${eb.caissierNom || '-'}";"${eb.numeroPieceCaisse || '-'}";"${eb.justificatifFourni ? 'OUI' : 'NON'}"\n`
+      }
+    })
+  } else if (type === 'maintenance') {
+    filename = `carnet-maintenance-technique.csv`
+    csv = 'N° INTERVENTION;DATE;AGENCE;TYPE MATÉRIEL;NOM DU MATÉRIEL;IMMATRICULATION / SÉRIE;TYPE MAINTENANCE;NATURE DES TRAVAUX;TECHNICIEN / ATELIER;COÛT PIÈCES USD;MAIN D OEUVRE USD;COÛT TOTAL USD;STATUT;PROCHAINE MAINTENANCE;ÉTAT DE BESOIN LIÉ\n'
+    entretiensTechniques.forEach((m) => {
+      if (!agenceId || m.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === m.agenceId)
+        csv += `"${m.numeroIntervention}";"${m.dateIntervention}";"${ag?.nom || m.agenceId}";"${m.typeEquipement}";"${m.nomEquipement.replace(/"/g, '""')}";"${m.immatriculationOuSerie || '-'}";"${m.typeMaintenance}";"${m.natureTravaux.replace(/"/g, '""')}";"${m.technicienOuGarage.replace(/"/g, '""')}";${m.coutPiecesUsd.toFixed(2)};${m.coutMainOeuvreUsd.toFixed(2)};${m.coutTotalUsd.toFixed(2)};"${m.statut}";"${m.prochaineMaintenancePrevue || '-'}";"${m.etatBesoinId ? `EB #${m.etatBesoinId}` : '-'}"\n`
+      }
+    })
+  } else {
+    return res.status(400).send('Type d export Excel inconnu')
+  }
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.send('\uFEFF' + csv)
+})
+
 
 // ----------------- DOCUMENTS & ÉDITIONS OFFICIELLES SUPPLÉMENTAIRES -----------------
 router.get('/rh/bulletins/:id/document', (req: Request, res: Response) => {
@@ -1836,6 +2001,143 @@ router.put('/flotte/vehicules/:id', (req: Request, res: Response) => {
   res.json({ message: 'Véhicule mis à jour', vehicule })
 })
 
+// ----------------- MODULE TECHNIQUE & ENTRETIEN (FLOTTE & MACHINES USINE) -----------------
+router.get('/maintenance/entretiens', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const statut = req.query.statut as string | undefined
+  const typeEquipement = req.query.typeEquipement as string | undefined
+
+  let list = entretiensTechniques.filter((m) => !agenceId || m.agenceId === agenceId)
+  if (statut) list = list.filter((m) => m.statut === statut)
+  if (typeEquipement) list = list.filter((m) => m.typeEquipement === typeEquipement)
+
+  res.json(list.map((m) => ({
+    ...m,
+    agence: agences.find((a) => a.id === m.agenceId),
+    etatBesoin: etatsBesoin.find((eb) => eb.id === m.etatBesoinId),
+  })))
+})
+
+router.post('/maintenance/entretiens', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const {
+    agenceId,
+    typeEquipement,
+    nomEquipement,
+    immatriculationOuSerie,
+    typeMaintenance,
+    natureTravaux,
+    dateIntervention,
+    prochaineMaintenancePrevue,
+    kilometrageOuHeures,
+    technicienOuGarage,
+    coutPiecesUsd,
+    coutMainOeuvreUsd,
+    statut,
+    observations,
+  } = req.body
+
+  if (!nomEquipement || !natureTravaux || !technicienOuGarage) {
+    return res.status(400).json({ message: 'Nom équipement, travaux et technicien/garage obligatoires' })
+  }
+
+  const pUsd = Number(coutPiecesUsd) || 0
+  const moUsd = Number(coutMainOeuvreUsd) || 0
+  const totalUsd = pUsd + moUsd
+
+  const nouvelEntretien = {
+    id: entretiensTechniques.length + 1,
+    numeroIntervention: `MAINT-2026-${String(entretiensTechniques.length + 1).padStart(4, '0')}`,
+    agenceId: toInt(agenceId) || 1,
+    typeEquipement: typeEquipement || 'VEHICULE',
+    nomEquipement: String(nomEquipement).trim(),
+    immatriculationOuSerie: immatriculationOuSerie ? String(immatriculationOuSerie).trim() : undefined,
+    typeMaintenance: typeMaintenance || 'PREVENTIF',
+    natureTravaux: String(natureTravaux).trim(),
+    dateIntervention: dateIntervention || new Date().toISOString().slice(0, 10),
+    prochaineMaintenancePrevue: prochaineMaintenancePrevue || undefined,
+    kilometrageOuHeures: kilometrageOuHeures ? Number(kilometrageOuHeures) : undefined,
+    technicienOuGarage: String(technicienOuGarage).trim(),
+    coutPiecesUsd: pUsd,
+    coutMainOeuvreUsd: moUsd,
+    coutTotalUsd: totalUsd,
+    statut: (statut || 'PLANIFIE') as 'PLANIFIE' | 'EN_COURS' | 'TERMINE',
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  entretiensTechniques.unshift(nouvelEntretien)
+  logAudit(currentUser.nom, 'CREATION_MAINTENANCE', `Intervention créée: ${nouvelEntretien.numeroIntervention} pour ${nouvelEntretien.nomEquipement}`, nouvelEntretien.agenceId)
+  res.json(nouvelEntretien)
+})
+
+router.put('/maintenance/entretiens/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const maint = entretiensTechniques.find((m) => m.id === toInt(req.params.id))
+  if (!maint) return res.status(404).json({ message: 'Intervention introuvable' })
+
+  const { statut, coutPiecesUsd, coutMainOeuvreUsd, observations, prochaineMaintenancePrevue, kilometrageOuHeures } = req.body
+  if (statut) maint.statut = statut
+  if (coutPiecesUsd !== undefined) maint.coutPiecesUsd = Number(coutPiecesUsd)
+  if (coutMainOeuvreUsd !== undefined) maint.coutMainOeuvreUsd = Number(coutMainOeuvreUsd)
+  maint.coutTotalUsd = maint.coutPiecesUsd + maint.coutMainOeuvreUsd
+  if (observations !== undefined) maint.observations = observations
+  if (prochaineMaintenancePrevue !== undefined) maint.prochaineMaintenancePrevue = prochaineMaintenancePrevue
+  if (kilometrageOuHeures !== undefined) maint.kilometrageOuHeures = Number(kilometrageOuHeures)
+
+  logAudit(currentUser.nom, 'MAJ_MAINTENANCE', `Intervention ${maint.numeroIntervention} mise à jour (Statut: ${maint.statut})`, maint.agenceId)
+  res.json(maint)
+})
+
+router.post('/maintenance/entretiens/:id/generer-etat-besoin', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const maint = entretiensTechniques.find((m) => m.id === toInt(req.params.id))
+  if (!maint) return res.status(404).json({ message: 'Intervention introuvable' })
+
+  if (maint.etatBesoinId) {
+    const existingEb = etatsBesoin.find((eb) => eb.id === maint.etatBesoinId)
+    if (existingEb) return res.json({ message: 'Un état de besoin est déjà rattaché à cette intervention', etatBesoin: existingEb })
+  }
+
+  const nouveauEB = {
+    id: etatsBesoin.length + 1,
+    numeroEB: `EB-2026-${String(etatsBesoin.length + 1).padStart(4, '0')}`,
+    agenceId: maint.agenceId,
+    serviceDemandeur: maint.typeEquipement === 'VEHICULE' ? 'Garage & Flotte Automobile' : 'Service Technique & Maintenance Usine',
+    demandeurNom: `${currentUser.nom} (Responsable Technique)`,
+    demandeurId: currentUser.id,
+    motif: `Frais intervention ${maint.numeroIntervention} (${maint.typeMaintenance}) sur ${maint.nomEquipement} : ${maint.natureTravaux}`,
+    montant: maint.coutTotalUsd > 0 ? maint.coutTotalUsd : 100,
+    devise: 'USD' as const,
+    compteImputation: '624',
+    dateDemande: new Date().toISOString(),
+    statut: 'SOUMIS' as const,
+    entretienTechniqueId: maint.id,
+    observations: `Généré automatiquement depuis le module technique pour ${maint.technicienOuGarage}`,
+  }
+
+  etatsBesoin.unshift(nouveauEB)
+  maint.etatBesoinId = nouveauEB.id
+
+  logAudit(currentUser.nom, 'GENERATION_ETAT_BESOIN_MAINTENANCE', `État de besoin ${nouveauEB.numeroEB} ($${nouveauEB.montant}) généré pour maintenance ${maint.numeroIntervention}`, maint.agenceId)
+  res.json({ message: 'État de besoin généré avec succès pour cette intervention technique', etatBesoin: nouveauEB })
+})
+
+router.get('/maintenance/entretiens/:id/fiche', (req: Request, res: Response) => {
+  const maint = entretiensTechniques.find((m) => m.id === toInt(req.params.id))
+  if (!maint) return res.status(404).send('Intervention technique introuvable')
+
+  const agence = agences.find((a) => a.id === maint.agenceId)
+  const html = renderFicheMaintenanceTechniqueHtml(maint, agence?.nom || 'Atelier Minoterie MVG', parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
 // ----------------- BONS DE LIVRAISON CLIENTS & LOGISTIQUE -----------------
 router.get('/logistique/livraisons', (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
@@ -1945,6 +2247,66 @@ router.put('/logistique/livraisons/:id/statut', (req: Request, res: Response) =>
 
   logAudit(currentUser.nom, 'STATUT_LIVRAISON', `Bordereau ${bl.numeroBL} passé au statut ${statut} par ${currentUser.nom}`, bl.agenceId)
   res.json({ message: 'Statut du bon de livraison mis à jour', bonLivraison: bl })
+})
+
+router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) => {
+  const bl = bonsLivraison.find((b) => b.id === toInt(req.params.id))
+  if (!bl) return res.status(404).send('Bon de livraison introuvable')
+
+  const agence = agences.find((a) => a.id === bl.agenceId)
+  let vente = bl.venteId ? ventes.find((v) => v.id === bl.venteId) : undefined
+  if (!vente) {
+    vente = {
+      id: bl.id,
+      referenceVente: bl.numeroBL,
+      agenceId: bl.agenceId,
+      clientId: 0,
+      vendeurId: 1,
+      dateVente: bl.dateCreation,
+      montantTotal: 0,
+      devise: 'USD' as const,
+      tauxApplique: 2850,
+      modePaiement: 'CASH_USD' as const,
+      statutCredit: 'AUCUN' as const,
+      estCredit: false,
+      details: [],
+    }
+  }
+
+  const client = {
+    id: 0,
+    nom: bl.clientNom,
+    telephone: bl.clientTelephone || 'Comptoir',
+    adresse: bl.adresseLivraison || 'Enlèvement dépôt',
+    agenceId: bl.agenceId,
+    soldeDette: 0,
+    plafondCredit: 0,
+    estBloque: false,
+  }
+
+  const defaultArt = articles[0] || { designation: 'Farine Extra Matabishi 25kg', uniteMesure: 'Sac 25kg' }
+  const details = [
+    {
+      articleId: defaultArt.id,
+      article: defaultArt,
+      quantite: bl.quantiteSacs || 1,
+      prixUnitaire: 0,
+      montantLigne: 0,
+      numeroLot: `LOT-BL-${bl.numeroBL.slice(-4)}`,
+    },
+  ]
+
+  const vehicule = bl.vehiculeId ? vehicules.find((v) => v.id === bl.vehiculeId) : undefined
+  const transportInfo = {
+    modeTransport: bl.modeTransport,
+    clientVehicule: bl.clientVehicule,
+    clientChauffeur: bl.clientChauffeur,
+    vehicule,
+  }
+
+  const html = renderBonLivraisonHtml(vente, agence, client, details, transportInfo, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
 })
 
 // ----------------- TRESORERIE -----------------
@@ -2363,6 +2725,205 @@ router.post('/tresorerie/rapprochements/:id/valider', (req: Request, res: Respon
   logAudit(currentUser.nom, 'VALIDATION_RAPPROCHEMENT_BANCAIRE', `Rapprochement #${rap.id} validé et clôturé. Écart final: ${rap.ecart} ${rap.devise}`, rap.agenceId)
 
   res.json({ message: 'État de rapprochement bancaire validé avec succès', rapprochement: rap })
+})
+
+// ----------------- ÉTATS DE BESOIN & DEMANDES DE FONDS -----------------
+router.get('/etats-besoin', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const statut = req.query.statut as string | undefined
+
+  let list = etatsBesoin.filter((eb) => !agenceId || eb.agenceId === agenceId)
+  if (statut) list = list.filter((eb) => eb.statut === statut)
+
+  res.json(list.map((eb) => ({
+    ...eb,
+    agence: agences.find((a) => a.id === eb.agenceId),
+  })))
+})
+
+router.post('/etats-besoin', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { agenceId, serviceDemandeur, motif, montant, devise, compteImputation, observations, entretienTechniqueId } = req.body
+  const numMontant = Number(montant)
+  if (!numMontant || numMontant <= 0 || !motif) {
+    return res.status(400).json({ message: 'Montant supérieur à 0 et motif requis' })
+  }
+
+  const nouveauEB = {
+    id: etatsBesoin.length + 1,
+    numeroEB: `EB-2026-${String(etatsBesoin.length + 1).padStart(4, '0')}`,
+    agenceId: toInt(agenceId) || currentUser.agenceId || 1,
+    serviceDemandeur: serviceDemandeur ? String(serviceDemandeur).trim() : 'Service Général',
+    demandeurNom: currentUser.nom,
+    demandeurId: currentUser.id,
+    motif: String(motif).trim(),
+    montant: numMontant,
+    devise: (devise === 'CDF' ? 'CDF' : 'USD') as 'USD' | 'CDF',
+    compteImputation: compteImputation ? String(compteImputation).trim() : '605',
+    dateDemande: new Date().toISOString(),
+    statut: 'SOUMIS' as const,
+    entretienTechniqueId: entretienTechniqueId ? toInt(entretienTechniqueId) : undefined,
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  etatsBesoin.unshift(nouveauEB)
+  logAudit(currentUser.nom, 'CREATION_ETAT_BESOIN', `État de besoin initié: ${nouveauEB.numeroEB} (${nouveauEB.montant} ${nouveauEB.devise}) par ${nouveauEB.demandeurNom}`, nouveauEB.agenceId)
+  res.json(nouveauEB)
+})
+
+router.post('/etats-besoin/:id/valider-chef', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const isAuthorized = currentUser.role === 'CHEF_AGENCE' || currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE'
+  if (!isAuthorized) {
+    return res.status(403).json({ message: 'Seul le Chef d Agence ou un Administrateur peut valider un état de besoin.' })
+  }
+
+  const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
+  if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
+
+  if (eb.statut !== 'SOUMIS') {
+    return res.status(400).json({ message: `Cet état de besoin ne peut plus être validé (statut actuel: ${eb.statut})` })
+  }
+
+  eb.statut = 'APPROUVE_CHEF'
+  eb.chefValidateurNom = `${currentUser.nom} (${currentUser.role})`
+  eb.dateValidationChef = new Date().toISOString()
+
+  logAudit(currentUser.nom, 'VALIDATION_CHEF_ETAT_BESOIN', `État de besoin ${eb.numeroEB} approuvé par ${currentUser.nom}. Transmis au guichet caisse pour décaissement.`, eb.agenceId)
+  res.json({ message: 'État de besoin validé par le Chef d Agence. Prêt pour décaissement en caisse.', etatBesoin: eb })
+})
+
+router.post('/etats-besoin/:id/decaissement', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
+  if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
+
+  if (eb.statut !== 'APPROUVE_CHEF' && currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(400).json({ message: 'L état de besoin doit d abord être approuvé par le Chef d Agence avant libération des fonds.' })
+  }
+
+  const { caisseId } = req.body
+  const numCaisseId = toInt(caisseId) || 1
+  const caisse = comptesCaisse.find((c) => c.id === numCaisseId)
+  if (!caisse) return res.status(404).json({ message: 'Compte de caisse sélectionné introuvable' })
+
+  if (eb.devise === 'USD') {
+    if (caisse.soldeUsd < eb.montant) {
+      return res.status(400).json({ message: `Solde insuffisant en caisse USD (Disponible: $${caisse.soldeUsd.toFixed(2)}, Requis: $${eb.montant.toFixed(2)})` })
+    }
+    caisse.soldeUsd -= eb.montant
+  } else {
+    if (caisse.soldeCdf < eb.montant) {
+      return res.status(400).json({ message: `Solde insuffisant en caisse CDF (Disponible: ${caisse.soldeCdf.toLocaleString('fr-FR')} CDF, Requis: ${eb.montant.toLocaleString('fr-FR')} CDF)` })
+    }
+    caisse.soldeCdf -= eb.montant
+  }
+
+  const refPiece = `BDEC-2026-${String(transactions.length + 1).padStart(4, '0')}`
+
+  eb.statut = 'DECAISSE'
+  eb.caisseId = caisse.id
+  eb.caisseNom = caisse.nom
+  eb.caissierNom = currentUser.nom
+  eb.dateDecaissement = new Date().toISOString()
+  eb.numeroPieceCaisse = refPiece
+
+  const nouvelleTx = {
+    id: `TX-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(transactions.length + 1).padStart(3, '0')}`,
+    referenceInterne: refPiece,
+    agenceId: eb.agenceId,
+    caisseId: caisse.id,
+    montant: eb.montant,
+    devise: eb.devise,
+    tauxApplique: 2850,
+    type: 'SORTIE' as const,
+    libelle: `Décaissement État de besoin ${eb.numeroEB} (${eb.serviceDemandeur}): ${eb.motif}`,
+    statut: 'VALIDE' as const,
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: eb.dateDecaissement,
+    dateValidation: eb.dateDecaissement,
+  }
+  transactions.unshift(nouvelleTx)
+
+  const compteCharge = eb.compteImputation || '605'
+  const compteCaisse = eb.devise === 'USD' ? '571' : '572'
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refPiece,
+      agenceId: eb.agenceId,
+      compteNumero: compteCharge,
+      sens: 'DEBIT',
+      montant: eb.montant,
+      devise: eb.devise,
+      tauxApplique: 2850,
+      libelle: `Charge - ${eb.motif}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'ETAT_BESOIN',
+      sourceId: String(eb.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: eb.dateDecaissement,
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refPiece,
+      agenceId: eb.agenceId,
+      compteNumero: compteCaisse,
+      sens: 'CREDIT',
+      montant: eb.montant,
+      devise: eb.devise,
+      tauxApplique: 2850,
+      libelle: `Décaissement Caisse - ${eb.numeroEB}`,
+      sourceModule: 'TRESORERIE',
+      sourceType: 'ETAT_BESOIN',
+      sourceId: String(eb.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: eb.dateDecaissement,
+    }
+  )
+
+  logAudit(currentUser.nom, 'DECAISSEMENT_ETAT_BESOIN', `Fonds libérés pour ${eb.numeroEB} (${eb.montant} ${eb.devise}) par le Caissier ${currentUser.nom} (Pièce: ${refPiece})`, eb.agenceId)
+
+  res.json({
+    message: 'Fonds décaissés avec succès. Bon de décaissement émis.',
+    etatBesoin: eb,
+    numeroPieceCaisse: refPiece,
+    soldeRestantCaisse: eb.devise === 'USD' ? caisse.soldeUsd : caisse.soldeCdf,
+  })
+})
+
+router.post('/etats-besoin/:id/rejeter', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
+  if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
+
+  const { motifRejet } = req.body
+  eb.statut = 'REJETE'
+  eb.motifRejet = motifRejet ? String(motifRejet).trim() : 'Non justifié par rapport au budget'
+
+  logAudit(currentUser.nom, 'REJET_ETAT_BESOIN', `État de besoin ${eb.numeroEB} rejeté. Motif: ${eb.motifRejet}`, eb.agenceId)
+  res.json({ message: 'État de besoin rejeté', etatBesoin: eb })
+})
+
+router.get('/etats-besoin/:id/bon-decaissement', (req: Request, res: Response) => {
+  const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
+  if (!eb) return res.status(404).send('État de besoin introuvable')
+
+  const agence = agences.find((a) => a.id === eb.agenceId)
+  const html = renderEtatBesoinBonDecaissementHtml(eb, agence?.nom || 'Agence Principale MVG', parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
 })
 
 // ----------------- COMPTABILITE OHADA -----------------
@@ -3627,16 +4188,202 @@ router.get('/admin/roles', (_req: Request, res: Response) => {
   ])
 })
 
+const permissionsCatalog = [
+  // 1. Tableau de Bord
+  { id: 1, code: 'dashboard.voir', module: 'Tableau de Bord', libelle: 'Consulter les indicateurs et KPIs globaux de performance' },
+
+  // 2. Ventes & Caisse POS
+  { id: 2, code: 'ventes.voir', module: 'Ventes & Caisse POS', libelle: 'Consulter l historique des ventes et factures' },
+  { id: 3, code: 'ventes.creer', module: 'Ventes & Caisse POS', libelle: 'Encaisser des ventes et imprimer les tickets/factures' },
+  { id: 4, code: 'ventes.annuler', module: 'Ventes & Caisse POS', libelle: 'Demander ou autoriser l annulation d une vente' },
+  { id: 5, code: 'credits.valider', module: 'Ventes & Caisse POS', libelle: 'Valider et débloquer les ventes à crédit client' },
+  { id: 6, code: 'clients.gerer', module: 'Ventes & Caisse POS', libelle: 'Créer, modifier et administrer les fiches clients' },
+  { id: 7, code: 'clients.credit_gerer', module: 'Ventes & Caisse POS', libelle: 'Gérer les plafonds de crédit et encaisser les dettes' },
+
+  // 3. Stocks & Entrepôt
+  { id: 8, code: 'stocks.voir', module: 'Stocks & Entrepôt', libelle: 'Consulter les stocks temps réel, lots FEFO et seuils d alerte' },
+  { id: 9, code: 'stocks.corriger', module: 'Stocks & Entrepôt', libelle: 'Initier un inventaire physique ou un ajustement d écart' },
+  { id: 10, code: 'stocks.valider_correction', module: 'Stocks & Entrepôt', libelle: 'Valider et entériner les régularisations d inventaire' },
+  { id: 11, code: 'articles.gerer', module: 'Stocks & Entrepôt', libelle: 'Créer et modifier les articles, types et conditionnements' },
+
+  // 4. Achats & Matières Premières
+  { id: 12, code: 'achats.gerer', module: 'Achats & Matières Premières', libelle: 'Consulter et enregistrer les achats de grains maïs/blé' },
+  { id: 13, code: 'achats.commandes', module: 'Achats & Matières Premières', libelle: 'Émettre et valider les bons de commande fournisseurs (BC)' },
+  { id: 14, code: 'achats.pont_bascule', module: 'Achats & Matières Premières', libelle: 'Effectuer les pesées pont-bascule et contrôles agréage' },
+
+  // 5. Logistique & Flotte
+  { id: 15, code: 'transferts.gerer', module: 'Logistique & Convois', libelle: 'Gérer les transferts inter-dépôts et feuilles de route convoi' },
+  { id: 16, code: 'flotte.gerer', module: 'Logistique & Convois', libelle: 'Administrer les camions, chauffeurs et disponibilités' },
+  { id: 17, code: 'livraisons.gerer', module: 'Logistique & Convois', libelle: 'Générer les bordereaux de livraison (BL) et visas' },
+
+  // 6. Production & Meunerie
+  { id: 18, code: 'production.gerer', module: 'Production & Meunerie', libelle: 'Lancer, suivre et clôturer les ordres de fabrication (OF)' },
+  { id: 19, code: 'production.qr_generer', module: 'Production & Meunerie', libelle: 'Générer et imprimer les étiquettes QR codes des sacs de farine' },
+  { id: 20, code: 'production.recettes', module: 'Production & Meunerie', libelle: 'Paramétrer les recettes de mouture et rendements d extraction' },
+
+  // 7. Trésorerie & Banque
+  { id: 21, code: 'tresorerie.voir', module: 'Trésorerie & Banques', libelle: 'Consulter les soldes des caisses comptoir et banques' },
+  { id: 22, code: 'tresorerie.demande', module: 'Trésorerie & Banques', libelle: 'Initier des demandes de décaissement pour dépenses' },
+  { id: 23, code: 'tresorerie.valider', module: 'Trésorerie & Banques', libelle: 'Approuver et payer les bons de décaissement de trésorerie' },
+  { id: 24, code: 'banque.rapprochement', module: 'Trésorerie & Banques', libelle: 'Effectuer le rapprochement bancaire (Rawbank / Equity BCDC)' },
+
+  // 8. Ressources Humaines & Paie
+  { id: 25, code: 'rh.gerer', module: 'Ressources Humaines & Paie', libelle: 'Administrer les fiches des agents, ouvriers et contrats' },
+  { id: 26, code: 'rh.bulletins', module: 'Ressources Humaines & Paie', libelle: 'Calculer et imprimer les bulletins de paie (IPR, CNSS, INPP)' },
+  { id: 27, code: 'rh.avances', module: 'Ressources Humaines & Paie', libelle: 'Accorder et comptabiliser les avances sur salaire' },
+
+  // 9. Comptabilité SYSCOHADA
+  { id: 28, code: 'comptabilite.plan_gerer', module: 'Comptabilité SYSCOHADA', libelle: 'Administrer le plan comptable général SYSCOHADA Révisé' },
+  { id: 29, code: 'comptabilite.ecritures_voir', module: 'Comptabilité SYSCOHADA', libelle: 'Consulter le journal général des écritures et le Grand Livre' },
+  { id: 30, code: 'comptabilite.od_creer', module: 'Comptabilité SYSCOHADA', libelle: 'Saisir des écritures manuelles d opérations diverses (OD)' },
+  { id: 31, code: 'comptabilite.cloture', module: 'Comptabilité SYSCOHADA', libelle: 'Exécuter la clôture annuelle des comptes et calcul du résultat' },
+  { id: 32, code: 'comptabilite.immo_gerer', module: 'Comptabilité SYSCOHADA', libelle: 'Gérer les immobilisations et passer les dotations aux amortissements' },
+
+  // 10. Reporting & États Financiers
+  { id: 33, code: 'reporting.voir', module: 'Reporting & Décisionnel', libelle: 'Consulter la balance, compte de résultat et états analytiques' },
+  { id: 34, code: 'reporting.exporter', module: 'Reporting & Décisionnel', libelle: 'Télécharger les bilans officiels et exports tabulaires CSV/PDF' },
+
+  // 11. Administration & Contrôle Siège
+  { id: 35, code: 'roles.gerer', module: 'Administration & Siège', libelle: 'Attribuer les fonctionnalités, permissions et gouvernance RBAC' },
+  { id: 36, code: 'utilisateurs.gerer', module: 'Administration & Siège', libelle: 'Créer, éditer, activer et bloquer les comptes utilisateurs' },
+  { id: 37, code: 'agences.gerer', module: 'Administration & Siège', libelle: 'Ouvrir de nouvelles agences, dépôts et fixer les paramètres' },
+  { id: 38, code: 'appareils.gerer', module: 'Administration & Siège', libelle: 'Autoriser ou révoquer les terminaux mobiles et tablettes terrain' },
+  { id: 39, code: 'audit.voir', module: 'Administration & Siège', libelle: 'Auditer le journal de traçabilité immuable de sécurité' },
+  { id: 40, code: 'backup.gerer', module: 'Administration & Siège', libelle: 'Sauvegarder et restaurer l intégralité de la base de données' },
+
+  // 12. Synchronisation Terrain
+  { id: 41, code: 'sync.voir', module: 'Synchronisation Terrain', libelle: 'Accéder à l outil de synchronisation des ventes hors-ligne' },
+  { id: 42, code: 'documents.gerer', module: 'Gestion Documentaire', libelle: 'Imprimer les 12 documents légaux avec logo et signatures officielles' },
+  { id: 43, code: 'maintenance.gerer', module: 'Logistique & Convois', libelle: 'Superviser les entretiens techniques des camions et machines usine' },
+]
+
+const rolesPermissionsMap: Record<string, string[]> = {
+  SUPER_ADMIN: permissionsCatalog.map((p) => p.code),
+  ADMIN_SIEGE: permissionsCatalog.filter((p) => !['sync.voir'].includes(p.code)).map((p) => p.code),
+  CHEF_AGENCE: [
+    'dashboard.voir', 'ventes.voir', 'ventes.creer', 'ventes.annuler', 'credits.valider', 'clients.gerer', 'clients.credit_gerer',
+    'stocks.voir', 'stocks.corriger', 'stocks.valider_correction', 'articles.gerer',
+    'achats.gerer', 'achats.commandes', 'achats.pont_bascule',
+    'transferts.gerer', 'flotte.gerer', 'livraisons.gerer', 'production.gerer',
+    'tresorerie.voir', 'tresorerie.demande', 'tresorerie.valider',
+    'rh.gerer', 'rh.avances', 'reporting.voir', 'reporting.exporter', 'sync.voir', 'documents.gerer'
+  ],
+  COMPTABLE_SENIOR: [
+    'dashboard.voir', 'ventes.voir', 'comptabilite.plan_gerer', 'comptabilite.ecritures_voir', 'comptabilite.od_creer',
+    'comptabilite.cloture', 'comptabilite.immo_gerer', 'tresorerie.voir', 'tresorerie.valider', 'banque.rapprochement',
+    'achats.gerer', 'achats.commandes', 'rh.gerer', 'rh.bulletins', 'reporting.voir', 'reporting.exporter',
+    'audit.voir', 'documents.gerer'
+  ],
+  COMPTABLE: [
+    'dashboard.voir', 'ventes.voir', 'comptabilite.ecritures_voir', 'comptabilite.od_creer', 'tresorerie.voir',
+    'banque.rapprochement', 'reporting.voir', 'achats.gerer', 'documents.gerer'
+  ],
+  VENDEUR: [
+    'dashboard.voir', 'ventes.voir', 'ventes.creer', 'clients.gerer', 'stocks.voir', 'sync.voir', 'livraisons.gerer'
+  ],
+  CAISSIER: [
+    'dashboard.voir', 'ventes.voir', 'tresorerie.voir', 'tresorerie.demande', 'clients.gerer', 'sync.voir'
+  ],
+  MAGASINIER: [
+    'dashboard.voir', 'stocks.voir', 'stocks.corriger', 'articles.gerer', 'transferts.gerer',
+    'livraisons.gerer', 'achats.pont_bascule', 'production.qr_generer', 'sync.voir'
+  ],
+  RESPONSABLE_ACHATS: [
+    'dashboard.voir', 'achats.gerer', 'achats.commandes', 'achats.pont_bascule', 'stocks.voir',
+    'articles.gerer', 'tresorerie.voir', 'tresorerie.demande', 'reporting.voir', 'documents.gerer'
+  ],
+  RESPONSABLE_RH: [
+    'dashboard.voir', 'rh.gerer', 'rh.bulletins', 'rh.avances', 'tresorerie.voir', 'tresorerie.demande',
+    'reporting.voir', 'documents.gerer'
+  ],
+  PRODUCTION: [
+    'dashboard.voir', 'production.gerer', 'production.qr_generer', 'production.recettes',
+    'stocks.voir', 'transferts.gerer', 'achats.pont_bascule', 'documents.gerer'
+  ],
+  AUDITEUR: [
+    'dashboard.voir', 'audit.voir', 'stocks.voir', 'ventes.voir', 'comptabilite.ecritures_voir',
+    'tresorerie.voir', 'reporting.voir', 'reporting.exporter', 'rh.bulletins', 'documents.gerer'
+  ],
+}
+
 router.get('/admin/roles/permissions', (_req: Request, res: Response) => {
-  const permCodes = [
-    'dashboard.voir', 'agences.gerer', 'utilisateurs.gerer', 'roles.gerer', 'appareils.gerer',
-    'audit.voir', 'articles.gerer', 'stocks.voir', 'stocks.corriger', 'stocks.valider_correction',
-    'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
-    'clients.credit_gerer', 'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir',
-    'production.gerer', 'production.qr_generer', 'comptabilite.plan_gerer', 'comptabilite.ecritures_voir',
-    'reporting.voir', 'reporting.exporter', 'sync.voir', 'documents.gerer',
-  ]
-  res.json(permCodes.map((code, idx) => ({ id: idx + 1, code, module: code.split('.')[0], libelle: code })))
+  res.json(permissionsCatalog)
+})
+
+router.get('/admin/roles/:role/permissions', (req: Request, res: Response) => {
+  const role = String(req.params.role)
+  const perms = (rolesPermissionsMap as Record<string, string[]>)[role] || []
+  res.json({ role, permissions: perms })
+})
+
+router.put('/admin/roles/:role/permissions', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
+    return res.status(403).json({ message: 'Seul un Administrateur peut modifier les habilitations des rôles.' })
+  }
+
+  const role = String(req.params.role)
+  const { permissions: newPerms } = req.body
+  if (!Array.isArray(newPerms)) {
+    return res.status(400).json({ message: 'Liste de permissions invalide.' })
+  }
+
+  ;(rolesPermissionsMap as Record<string, string[]>)[role] = newPerms
+
+  let updatedUsersCount = 0
+  users.forEach((u) => {
+    if (u.role === role) {
+      u.permissions = [...newPerms]
+      updatedUsersCount++
+    }
+  })
+
+  logAudit(
+    currentUser.nom,
+    'MAJ_PERMISSIONS_ROLE',
+    `Mise à jour des fonctionnalités pour le rôle ${role} (${newPerms.length} permissions attribuées à ${updatedUsersCount} utilisateurs)`,
+    1
+  )
+
+  res.json({ message: `Habilitations du rôle ${role} mises à jour avec succès.`, role, permissions: newPerms, updatedUsersCount })
+})
+
+router.get('/admin/users/:id/permissions', (req: Request, res: Response) => {
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+  res.json({ userId, permissions: targetUser.permissions || [] })
+})
+
+router.put('/admin/users/:id/permissions', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
+    return res.status(403).json({ message: 'Seul un Administrateur peut modifier les fonctionnalités d un utilisateur.' })
+  }
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  const { permissions: newPerms } = req.body
+  if (!Array.isArray(newPerms)) {
+    return res.status(400).json({ message: 'Liste de permissions invalide.' })
+  }
+
+  targetUser.permissions = newPerms
+
+  logAudit(
+    currentUser.nom,
+    'MAJ_PERMISSIONS_UTILISATEUR',
+    `Attribution manuelle des fonctionnalités pour l utilisateur ${targetUser.nom} (${targetUser.email}) : ${newPerms.length} permissions accordées.`,
+    targetUser.agenceId
+  )
+
+  res.json({
+    message: `Fonctionnalités accordées avec succès à ${targetUser.nom}.`,
+    userId,
+    permissions: targetUser.permissions,
+  })
 })
 
 router.get('/audit', (_req: Request, res: Response) => {

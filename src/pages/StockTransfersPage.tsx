@@ -16,6 +16,7 @@ export function StockTransfersPage() {
   const queryClient = useQueryClient()
   const token = useAppStore((state) => state.session?.token)
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [showNewTransfertModal, setShowNewTransfertModal] = useState(false)
   const [receptionTransfert, setReceptionTransfert] = useState<any | null>(null)
@@ -80,7 +81,7 @@ export function StockTransfersPage() {
         }),
       })
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
@@ -90,6 +91,15 @@ export function StockTransfersPage() {
       setQuantiteExpediee('10')
       setVoucherTransfert(data)
       setActionError(null)
+      if (data && data.id) {
+        setPrintProposal({
+          title: 'Transfert Inter-Agences Expédié !',
+          ref: data.numeroTransfert || `TRF-${data.id}`,
+          subtitle: `Le convoi inter-agences a été enregistré. Imprimez la Feuille de Route officielle pour le chauffeur :`,
+          primaryDocName: 'Feuille de Route & Bordereau de Transfert',
+          primaryDocUrl: `/api/transferts/${data.id}/document`,
+        })
+      }
     },
     onError: (err: any) => setActionError(err.message || 'Erreur lors de l expédition'),
   })

@@ -32,6 +32,8 @@ export type PermissionCode =
   | 'achats.gerer'
   | 'transferts.gerer'
   | 'rh.gerer'
+  | 'flotte.gerer'
+  | 'maintenance.gerer'
 
 export type UserSession = {
   token: string
@@ -356,6 +358,61 @@ export type DirectionKpis = {
     margeUsd: number
     tonnageT: number
   }>
+}
+
+export type StatutEtatBesoin = 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'
+
+export type EtatBesoin = {
+  id: number
+  numeroEB: string
+  agenceId: number
+  agence?: Agence
+  serviceDemandeur: string
+  demandeurNom: string
+  demandeurId?: number
+  motif: string
+  montant: number
+  devise: 'USD' | 'CDF'
+  compteImputation: string
+  dateDemande: string
+  statut: StatutEtatBesoin
+  chefValidateurNom?: string
+  dateValidationChef?: string
+  motifRejet?: string
+  caisseId?: number
+  caisseNom?: string
+  caissierNom?: string
+  dateDecaissement?: string
+  numeroPieceCaisse?: string
+  justificatifFourni?: boolean
+  dateApurement?: string
+  entretienTechniqueId?: number
+  observations?: string
+}
+
+export type TypeEquipementTechnique = 'VEHICULE' | 'MOULIN_BROYEUR' | 'SILO' | 'PONT_BASCULE' | 'GROUPE_ELECTROGENE' | 'AUTRE'
+export type TypeMaintenance = 'PREVENTIF' | 'CURATIF'
+export type StatutMaintenance = 'PLANIFIE' | 'EN_COURS' | 'TERMINE'
+
+export type EntretienTechnique = {
+  id: number
+  numeroIntervention: string
+  agenceId: number
+  typeEquipement: TypeEquipementTechnique
+  nomEquipement: string
+  immatriculationOuSerie?: string
+  typeMaintenance: TypeMaintenance
+  natureTravaux: string
+  dateIntervention: string
+  prochaineMaintenancePrevue?: string
+  kilometrageOuHeures?: number
+  technicienOuGarage: string
+  coutPiecesUsd: number
+  coutMainOeuvreUsd: number
+  coutTotalUsd: number
+  statut: StatutMaintenance
+  etatBesoinId?: number
+  observations?: string
 }
 
 
