@@ -73,14 +73,42 @@ export const users: DbUser[] = [
   {
     id: 3,
     email: 'chef.goma@mvg.cd',
-    nom: 'Kasereka Jean (Chef Agence Goma)',
+    nom: 'Kasereka Jean (Chef Siège Social Goma)',
     role: 'CHEF_AGENCE',
     agenceId: 1,
     permissions: [
       'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
       'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
       'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
-      'achats.gerer', 'transferts.gerer', 'rh.gerer',
+      'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
+    ],
+    actif: true,
+  },
+  {
+    id: 9,
+    email: 'chef.kinshasa@mvg.cd',
+    nom: 'Patrice Lumumba (Chef Agence Kinshasa)',
+    role: 'CHEF_AGENCE',
+    agenceId: 2,
+    permissions: [
+      'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
+      'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
+      'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
+      'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
+    ],
+    actif: true,
+  },
+  {
+    id: 10,
+    email: 'chef.bukavu@mvg.cd',
+    nom: 'Furaha Mireille (Chef Agence Bukavu)',
+    role: 'CHEF_AGENCE',
+    agenceId: 3,
+    permissions: [
+      'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
+      'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
+      'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
+      'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
     ],
     actif: true,
   },
@@ -642,6 +670,40 @@ export const ordresProduction: DbOrdreProduction[] = [
     dateCloture: '2026-09-28T16:00:00Z',
     lotCree: 'LOT-2609-01',
   },
+  {
+    id: 2,
+    codeOrdre: 'OP-KIN-202610-002',
+    agenceId: 2,
+    articleFiniId: 7, // Farine de Maïs Blanche 25kg
+    quantitePrevue: 80,
+    quantiteReelle: 80,
+    statut: 'TERMINE',
+    dateCreation: '2026-10-02T07:30:00Z',
+    dateCloture: '2026-10-02T15:00:00Z',
+    lotCree: 'LOT-KIN-2610-02',
+  },
+  {
+    id: 3,
+    codeOrdre: 'OP-BUK-202610-003',
+    agenceId: 3,
+    articleFiniId: 1, // Farine de Froment MVG Extra 25kg
+    quantitePrevue: 40,
+    quantiteReelle: 40,
+    statut: 'TERMINE',
+    dateCreation: '2026-10-04T08:15:00Z',
+    dateCloture: '2026-10-04T16:30:00Z',
+    lotCree: 'LOT-BUK-2610-01',
+  },
+  {
+    id: 4,
+    codeOrdre: 'OP-KIN-202610-004',
+    agenceId: 2,
+    articleFiniId: 8, // Son de Maïs pour Provende
+    quantitePrevue: 60,
+    quantiteReelle: 0,
+    statut: 'EN_COURS',
+    dateCreation: '2026-10-06T09:00:00Z',
+  },
 ]
 
 export const recettes: DbRecette[] = [
@@ -720,9 +782,16 @@ export const transfertsStock: DbTransfertStock[] = [
     referenceTransfert: 'TRF-GOM-KIN-001',
     agenceSourceId: 1, // Goma (Siège)
     agenceDestId: 2,   // Kinshasa
+    dateCreation: '2026-09-29T08:30:00Z',
     dateExpedition: '2026-09-29T10:00:00Z',
     statut: 'EN_TRANSIT',
-    initiateurNom: 'Kasereka Jean (Chef Goma)',
+    initiateurNom: 'Kasereka Jean (Chef Siège)',
+    validationSourceNom: 'Kasereka Jean (Chef Siège Social Goma)',
+    dateValidationSource: '2026-09-29T09:15:00Z',
+    visaSiegeNom: 'Direction Générale (Admin Siège)',
+    dateVisaSiege: '2026-09-29T09:45:00Z',
+    immatriculationCamion: '4512AB/19',
+    chauffeurNom: 'Bahati Kasereka',
     lignes: [
       {
         id: 1,
@@ -735,6 +804,54 @@ export const transfertsStock: DbTransfertStock[] = [
         articleId: 2, // Huile de Palme 20L
         quantite: 40,
         numeroLot: 'LOT-2609-02',
+      },
+    ],
+  },
+  {
+    id: 2,
+    referenceTransfert: 'TRF-KIN-BUK-002',
+    agenceSourceId: 2, // Kinshasa
+    agenceDestId: 3,   // Bukavu
+    dateCreation: '2026-10-06T11:00:00Z',
+    dateExpedition: '2026-10-06T11:00:00Z',
+    statut: 'EN_ATTENTE_VISA_SIEGE',
+    initiateurNom: 'Magasinier Agence Kinshasa',
+    validationSourceNom: 'Patrice Lumumba (Chef Agence Kinshasa)',
+    dateValidationSource: '2026-10-06T11:30:00Z',
+    immatriculationCamion: '8920AC/19',
+    chauffeurNom: 'Muhindo Faustin',
+    lignes: [
+      {
+        id: 1,
+        articleId: 7, // Farine de Maïs Extra Blanche 25kg
+        quantite: 150,
+        numeroLot: 'LOT-KIN-2610-02',
+      },
+    ],
+  },
+  {
+    id: 3,
+    referenceTransfert: 'TRF-GOM-BUK-003',
+    agenceSourceId: 1, // Goma (Siège)
+    agenceDestId: 3,   // Bukavu
+    dateCreation: '2026-09-26T07:00:00Z',
+    dateExpedition: '2026-09-26T08:00:00Z',
+    dateReception: '2026-09-27T14:30:00Z',
+    statut: 'RECU',
+    initiateurNom: 'Kasereka Jean (Chef Siège)',
+    validationSourceNom: 'Kasereka Jean (Chef Siège Social Goma)',
+    dateValidationSource: '2026-09-26T07:30:00Z',
+    visaSiegeNom: 'Direction Générale (Admin Siège)',
+    dateVisaSiege: '2026-09-26T07:50:00Z',
+    recepteurNom: 'Furaha Mireille (Chef Agence Bukavu)',
+    immatriculationCamion: '4512AB/19',
+    chauffeurNom: 'Bahati Kasereka',
+    lignes: [
+      {
+        id: 1,
+        articleId: 1,
+        quantite: 80,
+        numeroLot: 'LOT-2609-01',
       },
     ],
   },
@@ -857,6 +974,9 @@ export let parametresEntreprise: DbParametresEntreprise = {
   mentionsPiedFacture: 'Les marchandises vendues et retirées ne sont ni reprises ni échangées. Document certifié par Matabishi ERP.',
   mentionsPiedLivraison: 'Les sacs et emballages ont été vérifiés au départ de la minoterie. Le destinataire certifie la conformité qualitative et quantitative des sacs réceptionnés.',
   logoUrl: '',
+  plafondAutonomieEtatBesoinAgenceUsd: 200,
+  plafondDepenseDirecteAgenceUsd: 100,
+  doubleValidationTransfertObligatoire: true,
 }
 
 export const vehicules: DbVehicule[] = [
@@ -1168,9 +1288,11 @@ export interface DbEtatBesoin {
   devise: 'USD' | 'CDF'
   compteImputation: string
   dateDemande: string
-  statut: 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'
+  statut: 'SOUMIS' | 'APPROUVE_CHEF' | 'ATTENTE_VISA_SIEGE' | 'APPROUVE_SIEGE' | 'DECAISSE' | 'REJETE'
   chefValidateurNom?: string
   dateValidationChef?: string
+  visaSiegeNom?: string
+  dateVisaSiege?: string
   motifRejet?: string
   caisseId?: number
   caisseNom?: string
@@ -1413,6 +1535,98 @@ export const entretiensTechniques: DbEntretienTechnique[] = [
     coutTotalUsd: 100,
     statut: 'EN_COURS',
     observations: 'Opération en cours durant la pause de réception.',
+  },
+]
+
+export interface DbEquipementParc {
+  id: number
+  nom: string
+  type: string
+  immatriculationOuSerie: string
+  agenceId: number
+  marqueModele?: string
+  statut: 'OPERATIONNEL' | 'EN_MAINTENANCE' | 'HORS_SERVICE'
+  dateMiseEnService?: string
+  observations?: string
+}
+
+export const equipementsParc: DbEquipementParc[] = [
+  {
+    id: 1,
+    nom: 'Camion benne 20T',
+    type: 'VEHICULE',
+    immatriculationOuSerie: '0281AA/19',
+    agenceId: 1,
+    marqueModele: 'Mercedes Actros 3340',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2023-01-15',
+    observations: 'Affecté au transport des grains et livraisons régionales',
+  },
+  {
+    id: 2,
+    nom: 'Camion porteur 10T',
+    type: 'VEHICULE',
+    immatriculationOuSerie: '4512AB/19',
+    agenceId: 1,
+    marqueModele: 'Mitsubishi Fuso Canter',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2023-05-10',
+    observations: 'Distribution urbaine de sacs de farine',
+  },
+  {
+    id: 3,
+    nom: 'Moulin à cylindres principal',
+    type: 'MOULIN_BROYEUR',
+    immatriculationOuSerie: 'MDDK-250/1000-01',
+    agenceId: 1,
+    marqueModele: 'Bühler MDDK Quadrumat',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2022-09-01',
+    observations: 'Cœur de la meunerie',
+  },
+  {
+    id: 4,
+    nom: 'Groupe électrogène de secours 250 kVA',
+    type: 'GROUPE_ELECTROGENE',
+    immatriculationOuSerie: 'C250D5-SN-8821',
+    agenceId: 1,
+    marqueModele: 'Cummins Silent Power',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2022-07-20',
+    observations: 'Alimentation usine lors des coupures SNEL',
+  },
+  {
+    id: 5,
+    nom: 'Pont-Bascule Électronique 80T',
+    type: 'PONT_BASCULE',
+    immatriculationOuSerie: 'PB-METTLER-80T-01',
+    agenceId: 1,
+    marqueModele: 'Mettler Toledo Powercell',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2022-05-15',
+    observations: 'Pont d entrée usine pour réceptions grains',
+  },
+  {
+    id: 6,
+    nom: 'Moulin de mouture Agence Kinshasa',
+    type: 'MOULIN_BROYEUR',
+    immatriculationOuSerie: 'MKIN-2024-01',
+    agenceId: 2,
+    marqueModele: 'Alapala Simsek 50T/j',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2024-02-01',
+    observations: 'Ligne de broyage locale Kinshasa',
+  },
+  {
+    id: 7,
+    nom: 'Moulin de mouture Agence Bukavu',
+    type: 'MOULIN_BROYEUR',
+    immatriculationOuSerie: 'MBUK-2024-02',
+    agenceId: 3,
+    marqueModele: 'Bühler Compact Mill 30T/j',
+    statut: 'OPERATIONNEL',
+    dateMiseEnService: '2024-04-10',
+    observations: 'Ligne de broyage locale Bukavu',
   },
 ]
 

@@ -242,12 +242,18 @@ export interface DbTransfertStock {
   referenceTransfert: string
   agenceSourceId: number
   agenceDestId: number
+  dateCreation?: string
   dateExpedition: string
   dateReception?: string
-  statut: 'EN_TRANSIT' | 'RECU' | 'LITIGE'
+  statut: 'EN_ATTENTE_VALIDATION_SOURCE' | 'EN_ATTENTE_VISA_SIEGE' | 'APPROUVE_SIEGE' | 'EN_TRANSIT' | 'RECU' | 'LITIGE' | 'REFUSE'
   initiateurNom: string
+  validationSourceNom?: string
+  dateValidationSource?: string
+  visaSiegeNom?: string
+  dateVisaSiege?: string
   recepteurNom?: string
   motifEcart?: string
+  motifRefus?: string
   vehiculeId?: number
   immatriculationCamion?: string
   chauffeurNom?: string
@@ -323,6 +329,9 @@ export interface DbParametresEntreprise {
   mentionsPiedFacture: string
   mentionsPiedLivraison: string
   logoUrl?: string
+  plafondAutonomieEtatBesoinAgenceUsd?: number
+  plafondDepenseDirecteAgenceUsd?: number
+  doubleValidationTransfertObligatoire?: boolean
 }
 
 export interface DbVehicule {

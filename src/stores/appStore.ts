@@ -22,11 +22,13 @@ interface AppStore {
   language: 'fr' | 'sw' | 'en'
   sidebarOpen: boolean
   printProposal: PrintProposal | null
+  selectedAgenceId: number | 'CONSOLIDE'
   setSession: (session: SessionData | null) => void
   setTheme: (theme: 'light' | 'dark') => void
   setLanguage: (lang: 'fr' | 'sw' | 'en') => void
   setSidebarOpen: (open: boolean) => void
   setPrintProposal: (proposal: PrintProposal | null) => void
+  setSelectedAgenceId: (id: number | 'CONSOLIDE') => void
   can: (permission: string) => boolean
 }
 
@@ -45,10 +47,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   language: (localStorage.getItem('matabishi_lang') as 'fr' | 'sw' | 'en') || 'fr',
   sidebarOpen: true,
   printProposal: null,
+  selectedAgenceId: 'CONSOLIDE',
 
   setSession: (session) => {
     if (session) {
       localStorage.setItem('matabishi_session', JSON.stringify(session))
+      // If agency employee, lock selected agency to their own agency
+      if (session.role !== 'SUPER_ADMIN' && session.role !== 'ADMIN_SIEGE') {
+        set({ session, selectedAgenceId: session.agenceId || 1 })
+        return
+      }
     } else {
       localStorage.removeItem('matabishi_session')
     }
@@ -68,6 +76,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setPrintProposal: (printProposal) => set({ printProposal }),
+  setSelectedAgenceId: (selectedAgenceId) => set({ selectedAgenceId }),
 
   can: (permission) => {
     const { session } = get()

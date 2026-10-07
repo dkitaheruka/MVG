@@ -318,6 +318,14 @@ function AppShell() {
   const visibleNav = navItems.filter((item) => can(item.permission))
   const currentTitle = visibleNav.find((item) => location.pathname.startsWith(item.to))?.labelKey ?? 'dashboard'
 
+  const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
+  const setSelectedAgenceId = useAppStore((state) => state.setSelectedAgenceId)
+  const agencesQuery = useQuery({
+    queryKey: ['agences'],
+    queryFn: () => apiRequest<any[]>('/api/agences', { token: session?.token }),
+    enabled: Boolean(session?.token),
+  })
+
   return (
     <div className="app-shell">
       <aside className={clsx('sidebar', sidebarOpen && 'open')}>
@@ -370,6 +378,35 @@ function AppShell() {
             <h2>{t(currentTitle)}</h2>
           </div>
           <div className="topbar-actions">
+            {/* SÉLECTEUR D'AGENCE ACTIF (POUR ADMIN SIÈGE ET SUPER ADMIN) */}
+            {(session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE') ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <Buildings size={17} style={{ color: selectedAgenceId === 'CONSOLIDE' ? '#2563eb' : '#16a34a' }} />
+                <select
+                  value={selectedAgenceId}
+                  onChange={(e) => {
+                    const val = e.target.value === 'CONSOLIDE' ? 'CONSOLIDE' : Number(e.target.value)
+                    setSelectedAgenceId(val)
+                  }}
+                  style={{ padding: '3px 6px', fontSize: '0.78rem', border: 'none', background: 'transparent', fontWeight: 600, color: 'var(--text)' }}
+                  aria-label="Sélectionner l'agence de travail ou vue consolidée"
+                >
+                  <option value="CONSOLIDE">🌐 Vue Consolidée Siège (Toutes les Agences)</option>
+                  {(agencesQuery.data || []).map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.78rem', fontWeight: 600 }}>
+                <Buildings size={16} color="var(--primary)" />
+                <span>{(agencesQuery.data || []).find((a: any) => a.id === session?.agenceId)?.nom || 'Mon Agence'}</span>
+              </div>
+            )}
+
+            {/* SÉLECTEUR RAPIDE DE RÔLE SYSTÈME */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
               <UserCircleGear size={17} />
               <select
@@ -389,13 +426,15 @@ function AppShell() {
                 style={{ padding: '3px 6px', fontSize: '0.78rem', border: 'none', background: 'transparent' }}
                 aria-label="Changer de rôle actif"
               >
-                <option value="dkitaheruka@gmail.com">David (Super Admin)</option>
-                <option value="admin.siege@mvg.cd">Direction (Admin Siège)</option>
-                <option value="chef.goma@mvg.cd">Kasereka (Chef Goma)</option>
-                <option value="vendeur.goma@mvg.cd">Mwamba (Vendeur)</option>
-                <option value="caissier.goma@mvg.cd">Sophie (Caissière)</option>
-                <option value="magasinier.goma@mvg.cd">Baraka (Magasinier)</option>
-                <option value="comptable.senior@mvg.cd">Kambale (Comptable Sr)</option>
+                <option value="dkitaheruka@gmail.com">David Kitaheruka (Super Admin Unique - Tous les Systèmes)</option>
+                <option value="admin.siege@mvg.cd">Direction Générale (Admin Siège - Multi-Agences & Grandes Décisions)</option>
+                <option value="chef.goma@mvg.cd">Kasereka (Chef Agence Siège Social Goma)</option>
+                <option value="chef.kinshasa@mvg.cd">Patrice (Chef Agence Kinshasa)</option>
+                <option value="chef.bukavu@mvg.cd">Furaha (Chef Agence Bukavu)</option>
+                <option value="vendeur.goma@mvg.cd">Mwamba (Vendeur Agence)</option>
+                <option value="caissier.goma@mvg.cd">Sophie (Caissière Agence)</option>
+                <option value="magasinier.goma@mvg.cd">Baraka (Magasinier Agence)</option>
+                <option value="comptable.senior@mvg.cd">Kambale (Comptable Senior)</option>
                 <option value="comptable@mvg.cd">Claire (Comptable)</option>
               </select>
             </div>
@@ -510,9 +549,14 @@ function DashboardPage() {
     <section className="page-grid">
       <div className="hero-band">
         <div>
-          <p className="section-label">Vue siège</p>
+          <p className="section-label">Supervision Globale & Direction</p>
           <h1>Pilotage opérationnel multi-agences</h1>
-          <p>Suivez ventes, stock, caisse, production, crédits, audit et synchronisation depuis un tableau de bord unique.</p>
+          <p>Suivez ventes, stock, caisse, production locale, crédits, audit et synchronisation depuis un tableau de bord unique.</p>
+          <div style={{ marginTop: 12 }}>
+            <NavLink to="/reporting" className="primary-action" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 14px', fontSize: '0.85rem' }}>
+              <Buildings size={17} /> Suivre les transactions des agences (Agence par agence & Consolidé)
+            </NavLink>
+          </div>
         </div>
         <div className="hero-status">
           <Bell size={24} />
@@ -2522,11 +2566,13 @@ function StockPage() {
 function ProductionPage() {
   const token = useToken()
   const queryClient = useQueryClient()
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const session = useAppStore((state) => state.session)
+  const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const [activeTab, setActiveTab] = useState<'ordres' | 'recettes'>('ordres')
   const [showNewOrdreModal, setShowNewOrdreModal] = useState(false)
   const [showNewRecetteModal, setShowNewRecetteModal] = useState(false)
+  const [prodAgenceId, setProdAgenceId] = useState<number>(typeof selectedAgenceId === 'number' ? selectedAgenceId : (session?.agenceId ?? 1))
   const [newRecetteFiniId, setNewRecetteFiniId] = useState<number | ''>(7)
   const [newRecetteMatiereId, setNewRecetteMatiereId] = useState<number | ''>(9)
   const [newRecetteQte, setNewRecetteQte] = useState('0.032')
@@ -2539,9 +2585,20 @@ function ProductionPage() {
   const [generatedLotInfo, setGeneratedLotInfo] = useState<{ ordre: any; numeroLot: string } | null>(null)
   const [bonProductionOrdre, setBonProductionOrdre] = useState<any | null>(null)
 
+  const { data: agencesList } = useQuery({
+    queryKey: ['agences'],
+    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    enabled: Boolean(token),
+  })
+
   const { data: ordres, isLoading: ordresLoading } = useQuery({
-    queryKey: ['production-ordres'],
-    queryFn: () => apiRequest<any[]>('/api/production/ordres', { token }),
+    queryKey: ['production-ordres', selectedAgenceId],
+    queryFn: () => {
+      const url = selectedAgenceId && selectedAgenceId !== 'CONSOLIDE'
+        ? `/api/production/ordres?agenceId=${selectedAgenceId}`
+        : '/api/production/ordres'
+      return apiRequest<any[]>(url, { token })
+    },
     enabled: Boolean(token),
   })
 
@@ -2563,13 +2620,14 @@ function ProductionPage() {
         method: 'POST',
         token,
         body: JSON.stringify({
-          agenceId,
+          agenceId: prodAgenceId,
           articleFiniId: Number(articleFiniId),
           quantitePrevue: Number(quantitePrevue),
         }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['production-ordres'] })
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
       setShowNewOrdreModal(false)
     },
   })
@@ -2646,10 +2704,13 @@ function ProductionPage() {
 
       {activeTab === 'ordres' && (
         <DataTable
-          columns={['Réf. Ordre', 'Produit fabriqué', 'Quantité prévue', 'Quantité réelle', 'Statut', 'Lot généré', 'Date', 'Action']}
+          columns={['Réf. Ordre', 'Site / Agence', 'Produit fabriqué', 'Quantité prévue', 'Quantité réelle', 'Statut', 'Lot généré', 'Date', 'Action']}
           loading={ordresLoading}
           rows={(ordres ?? []).map((op: any) => [
             <strong key={'ref-' + op.id}>{op.codeOrdre}</strong>,
+            <span key={'ag-' + op.id} className="badge badge-info" style={{ fontSize: '0.78rem' }}>
+              {op.agence?.nom || (agencesList ?? []).find((a: any) => a.id === op.agenceId)?.nom || (op.agenceId === 1 ? 'Siège Social Goma' : `Agence #${op.agenceId}`)}
+            </span>,
             op.articleFini?.designation ?? 'Produit fini',
             `${op.quantitePrevue} ${op.articleFini?.uniteMesure ?? ''}`,
             op.quantiteReelle ? `${op.quantiteReelle} ${op.articleFini?.uniteMesure ?? ''}` : '-',
@@ -2723,10 +2784,20 @@ function ProductionPage() {
           <div className="modal-card">
             <h3>Lancer un ordre de fabrication</h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              La planification réserve les matières premières requises selon la recette homologuée.
+              La planification réserve les matières premières requises selon la recette homologuée. Même les agences disposent de lignes de production locales autonomes.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createOrdreMutation.mutate(); }}>
               <label>
+                Site / Agence de production (Minoterie ou Usine)
+                <select value={prodAgenceId} onChange={(e) => setProdAgenceId(Number(e.target.value))} required>
+                  {(agencesList ?? []).map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ marginTop: 12 }}>
                 Produit fini à fabriquer
                 <select value={articleFiniId} onChange={(e) => setArticleFiniId(Number(e.target.value))} required>
                   {(articlesList ?? [])
@@ -4840,6 +4911,16 @@ function AccountingPage() {
                 </select>
               </label>
             </div>
+
+            <a
+              href={`/api/export/excel/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
+              className="secondary-action"
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            >
+              <FileXls size={16} /> Exporter Compte de Résultat (.xlsx)
+            </a>
           </div>
 
           <div className="metric-grid" style={{ marginBottom: 20 }}>
@@ -5084,6 +5165,20 @@ function AccountingPage() {
           })()}
 
           {/* TABLE IMMOBILISATIONS */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, margin: '8px 0 4px' }}>
+            <span style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>
+              Registre légal des immobilisations corporelles et tableau d'amortissements SYSCOHADA
+            </span>
+            <a
+              href={`/api/export/excel/immobilisations?agenceId=${agenceId}&annee=${annee}`}
+              className="secondary-action"
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 12px' }}
+            >
+              <FileXls size={16} /> Exporter Tableau d'Amortissements (.xlsx)
+            </a>
+          </div>
           <DataTable
             columns={['Code', 'Désignation Actif', 'Compte', 'Mise en service', 'Durée / Mode', 'Valeur Acquisition', 'Amort. Cumulé', 'VNC Résiduelle', 'Emplacement']}
             loading={immosQuery.isLoading}
@@ -5449,11 +5544,20 @@ function AccountingPage() {
 
 function ReportingPage() {
   const token = useToken()
+  const globalSelectedAgenceId = useAppStore((state) => state.selectedAgenceId)
+  const session = useAppStore((state) => state.session)
   const agenceId = useAppStore((state) => state.session?.agenceId)
   const month = new Date().getMonth() + 1
   const year = new Date().getFullYear()
   const balancePath = `/api/reporting/export/balance?mois=${month}&annee=${year}${agenceId ? `&agenceId=${agenceId}` : ''}`
   const stockExportPath = `/api/stocks/export/inventaire${agenceId ? `?agenceId=${agenceId}` : ''}`
+
+  const [activeTab, setActiveTab] = useState<'kpis' | 'transactions'>('transactions')
+  const [selectedAgenceFiltre, setSelectedAgenceFiltre] = useState<string | number>(
+    globalSelectedAgenceId === 'CONSOLIDE' ? 'CONSOLIDE' : (globalSelectedAgenceId || 'CONSOLIDE')
+  )
+  const [selectedModuleFiltre, setSelectedModuleFiltre] = useState<string>('TOUS')
+  const [searchTerm, setSearchTerm] = useState('')
 
   const kpisQuery = useQuery({
     queryKey: ['direction-kpis', agenceId],
@@ -5462,170 +5566,535 @@ function ReportingPage() {
     enabled: Boolean(token),
   })
 
+  const agencesQuery = useQuery({
+    queryKey: ['agences'],
+    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    enabled: Boolean(token),
+  })
+
+  const multiAgencesTransactionsQuery = useQuery({
+    queryKey: ['transactions-multi-agences', selectedAgenceFiltre, selectedModuleFiltre],
+    queryFn: () => {
+      const pAg = selectedAgenceFiltre === 'CONSOLIDE' ? '' : `&agenceId=${selectedAgenceFiltre}`
+      const pMod = selectedModuleFiltre === 'TOUS' ? '' : `&type=${selectedModuleFiltre}`
+      return apiRequest<{ transactions: any[]; resumeAgences: any[]; totalTransactionsCount: number }>(
+        `/api/reporting/siege/transactions-multi-agences?t=1${pAg}${pMod}`,
+        { token }
+      )
+    },
+    enabled: Boolean(token),
+  })
+
   const kpis = kpisQuery.data
   const maxCa = Math.max(...(kpis?.evolutionVentes6Mois.map((m) => m.caUsd) ?? [30000]))
+
+  const rawTransactions = multiAgencesTransactionsQuery.data?.transactions ?? []
+  const filteredTransactions = rawTransactions.filter((tr) => {
+    if (!searchTerm) return true
+    const term = searchTerm.toLowerCase()
+    return (
+      tr.reference?.toLowerCase().includes(term) ||
+      tr.libelle?.toLowerCase().includes(term) ||
+      tr.agenceNom?.toLowerCase().includes(term) ||
+      tr.operateurNom?.toLowerCase().includes(term)
+    )
+  })
 
   return (
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader
-          title="Tableau de Bord Direction Générale & Reporting"
-          text="KPIs stratégiques de gestion, rentabilité de mouture, trésorerie nette et documents officiels."
+          title="Tableau de Bord Direction Générale & Supervision Siège"
+          text="Suivi des transactions agence par agence et consolidé, KPIs stratégiques, rentabilité de mouture et pièces officielles."
           icon={ChartLineUp}
         />
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a className="secondary-action" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
             <FilePdf size={17} /> Balance Générale (PDF)
           </a>
-          <a className="primary-action" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
+          <a className="secondary-action" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
             <Package size={17} /> Inventaire PMP (PDF)
+          </a>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/transactions-consolidees${selectedAgenceFiltre !== 'CONSOLIDE' ? `?agenceId=${selectedAgenceFiltre}` : ''}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <FileXls size={17} /> Journal Multi-Agences (.xlsx)
+          </a>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/balance${agenceId ? `?agenceId=${agenceId}` : ''}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <FileXls size={17} /> Balance (.xlsx)
+          </a>
+          <a
+            className="secondary-action"
+            href={`/api/export/excel/compte-resultat${agenceId ? `?agenceId=${agenceId}` : ''}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <FileXls size={17} /> Compte Résultat (.xlsx)
           </a>
         </div>
       </div>
 
-      {/* CARTES KPIs STRATÉGIQUES DIRECTION */}
-      <div className="metric-grid">
-        <article className="metric-card">
-          <CurrencyCircleDollar size={24} style={{ color: '#16a34a' }} />
-          <span>Chiffre d'Affaires Mensuel</span>
-          <strong style={{ fontSize: '1.35rem' }}>{money(kpis?.caMoisUsd ?? 0, 'USD')}</strong>
-          <small style={{ color: 'var(--muted)' }}>
-            + {((kpis?.caMoisCdf ?? 0) / 1000000).toFixed(1)} M CDF
-          </small>
-        </article>
-
-        <article className="metric-card">
-          <TrendUp size={24} style={{ color: '#2563eb' }} />
-          <span>Marge Brute Meunerie</span>
-          <strong style={{ fontSize: '1.35rem', color: '#16a34a' }}>
-            ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / sac
-          </strong>
-          <small style={{ color: 'var(--muted)' }}>
-            Taux de marge brute : <strong>{kpis?.tauxMargeMoyen ?? 34}%</strong>
-          </small>
-        </article>
-
-        <article className="metric-card">
-          <Package size={24} style={{ color: '#d97706' }} />
-          <span>Rendement Mouture Usine</span>
-          <strong style={{ fontSize: '1.35rem', color: '#d97706' }}>
-            {kpis?.rendementMeunerie ?? 78.4} %
-          </strong>
-          <small style={{ color: 'var(--muted)' }}>
-            Farine extraite / grains traités au moulin
-          </small>
-        </article>
-
-        <article className="metric-card">
-          <Bank size={24} style={{ color: '#9333ea' }} />
-          <span>Trésorerie Nette Consolidée</span>
-          <strong style={{ fontSize: '1.35rem' }}>
-            {money(kpis?.tresorerieNetteConsolideeUsd ?? 0, 'USD')}
-          </strong>
-          <small style={{ color: 'var(--muted)' }}>
-            Banque: {money(kpis?.totalBanqueUsd ?? 0, 'USD')} | Caisse: {money(kpis?.totalCaisseUsd ?? 0, 'USD')}
-          </small>
-        </article>
-
-        <article className="metric-card">
-          <WarningCircle size={24} style={{ color: '#dc2626' }} />
-          <span>Créances Clients & Dettes</span>
-          <strong style={{ fontSize: '1.35rem' }}>
-            {money(kpis?.creancesTotalUsd ?? 0, 'USD')}
-          </strong>
-          <small style={{ color: '#dc2626' }}>
-            dont <strong>{money(kpis?.creancesEchuesUsd ?? 0, 'USD')}</strong> échues (&gt; 30j)
-          </small>
-        </article>
+      {/* ONGLETS PRINCIPAUX REPORTING */}
+      <div className="tab-bar">
+        <button
+          className={clsx('tab-button', activeTab === 'transactions' && 'active')}
+          onClick={() => setActiveTab('transactions')}
+        >
+          <Buildings size={18} /> Supervision des Transactions Multi-Agences
+        </button>
+        <button
+          className={clsx('tab-button', activeTab === 'kpis' && 'active')}
+          onClick={() => setActiveTab('kpis')}
+        >
+          <ChartLineUp size={18} /> KPIs Stratégiques & Rentabilité
+        </button>
       </div>
 
-      {/* GRAPHIQUE ÉVOLUTION STRATÉGIQUE SUR 6 MOIS */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Évolution du Chiffre d'Affaires & de la Marge Brute (6 derniers mois)</h3>
-            <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-              Trajectoire de croissance commerciale et marge brute d'exploitation en USD.
-            </p>
+      {/* ================= ONGLET 1 : SUPERVISION MULTI-AGENCES (AGENCE PAR AGENCE & CONSOLIDÉ) ================= */}
+      {activeTab === 'transactions' && (
+        <div className="page-grid">
+          {/* BANDEAU EXPLICATIF RÔLE ADMIN SIÈGE VS CHEF SIÈGE */}
+          <div
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  background: 'rgba(37, 99, 235, 0.1)',
+                  color: '#2563eb',
+                  padding: 10,
+                  borderRadius: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Buildings size={28} />
+              </div>
+              <div>
+                <strong style={{ fontSize: '1rem', display: 'block' }}>
+                  Espace de Contrôle & Traçabilité Multi-Agences (Admin Siège & Direction)
+                </strong>
+                <span style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>
+                  Visualisez en temps réel toutes les transactions opérationnelles : agence par agence ou consolidé global. Les agences opèrent en autonomie (ventes, stocks, production locale) sous la supervision des grandes décisions du siège.
+                </span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                className="secondary-action"
+                onClick={() => multiAgencesTransactionsQuery.refetch()}
+                disabled={multiAgencesTransactionsQuery.isFetching}
+                style={{ fontSize: '0.82rem' }}
+              >
+                <ArrowsClockwise size={16} className={clsx(multiAgencesTransactionsQuery.isFetching && 'spin')} />
+                Actualiser les flux
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 14, fontSize: '0.82rem' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--primary)' }} />
-              Chiffre d'Affaires ($)
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 12, height: 12, borderRadius: 2, background: '#16a34a' }} />
-              Marge Brute ($)
-            </span>
-          </div>
-        </div>
 
-        <div style={{ height: 190, display: 'flex', alignItems: 'flex-end', gap: 24, padding: '10px 10px 0', borderBottom: '1px solid var(--border)' }}>
-          {(kpis?.evolutionVentes6Mois ?? []).map((item) => {
-            const hCa = Math.round((item.caUsd / maxCa) * 150)
-            const hMarge = Math.round((item.margeUsd / maxCa) * 150)
-            return (
-              <div key={item.mois} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, width: '100%', justifyContent: 'center' }}>
-                  <div
-                    style={{
-                      width: '42%',
-                      height: `${Math.max(15, hCa)}px`,
-                      background: 'var(--primary)',
-                      borderRadius: '4px 4px 0 0',
-                      transition: 'height 0.3s ease',
-                      position: 'relative',
-                    }}
-                    title={`CA: $${item.caUsd.toLocaleString()} USD`}
-                  />
-                  <div
-                    style={{
-                      width: '42%',
-                      height: `${Math.max(10, hMarge)}px`,
-                      background: '#16a34a',
-                      borderRadius: '4px 4px 0 0',
-                      transition: 'height 0.3s ease',
-                      position: 'relative',
-                    }}
-                    title={`Marge: $${item.margeUsd.toLocaleString()} USD`}
-                  />
+          {/* CARTES DE SYNTHÈSE PAR AGENCE */}
+          <div>
+            <h4 style={{ margin: '0 0 10px', fontSize: '0.92rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Statut Opérationnel par Agence (Cliquer pour filtrer) :
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+              {/* Carte globale "Tout consolidé" */}
+              <div
+                onClick={() => setSelectedAgenceFiltre('CONSOLIDE')}
+                style={{
+                  background: selectedAgenceFiltre === 'CONSOLIDE' ? 'rgba(37, 99, 235, 0.08)' : 'var(--surface)',
+                  border: `2px solid ${selectedAgenceFiltre === 'CONSOLIDE' ? '#2563eb' : 'var(--border)'}`,
+                  borderRadius: 10,
+                  padding: 14,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <strong style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
+                    🌐 TOUT CONSOLIDÉ
+                  </strong>
+                  <span className="badge badge-primary">{multiAgencesTransactionsQuery.data?.totalTransactionsCount ?? 0} flux</span>
                 </div>
-                <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>
-                  {item.mois}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
-                  ${(item.caUsd / 1000).toFixed(1)}k
+                <div style={{ fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Vision unifiée de l'ensemble du réseau (Siège + toutes les agences provinciales).
                 </div>
               </div>
-            )
-          })}
-        </div>
-      </div>
 
-      {/* RAPPORTS & ÉTATS DE SYNTHÈSE */}
-      <h3 style={{ margin: '14px 0 0' }}>Génération & Téléchargement des Documents Légaux</h3>
-      <div className="module-grid">
-        <a className="capability-card" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
-          <FilePdf size={25} />
-          <strong>Exporter Balance OHADA (PDF)</strong>
-          <span>Grand livre en partie double, comptes de résultat et balance bidevise certifiée.</span>
-        </a>
-        <a className="capability-card" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
-          <Package size={25} />
-          <strong>Exporter État des Stocks PMP (PDF)</strong>
-          <span>Inventaire valorisé par lot FEFO, DLUO et calcul automatique du coût moyen pondéré.</span>
-        </a>
-        <Capability
-          title="Bordereaux de Livraison (BL)"
-          text="Bons d'expédition avec décharges signées et affectation de la flotte de camions."
-          icon={Truck}
-        />
-        <Capability
-          title="États de Rapprochement Bancaire"
-          text="Relevés Rawbank / Equity rapprochés avec justification comptable des écarts."
-          icon={Bank}
-        />
-      </div>
+              {/* Cartes pour chaque agence */}
+              {(multiAgencesTransactionsQuery.data?.resumeAgences ?? []).map((ag: any) => {
+                const isSelected = selectedAgenceFiltre === ag.agenceId
+                return (
+                  <div
+                    key={ag.agenceId}
+                    onClick={() => setSelectedAgenceFiltre(ag.agenceId)}
+                    style={{
+                      background: isSelected ? 'rgba(22, 163, 74, 0.08)' : 'var(--surface)',
+                      border: `2px solid ${isSelected ? '#16a34a' : 'var(--border)'}`,
+                      borderRadius: 10,
+                      padding: 14,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {ag.estSiege ? '🏢' : '📍'} {ag.agenceNom}
+                      </strong>
+                      <span className={clsx('badge', ag.estSiege ? 'badge-primary' : 'badge-info')} style={{ fontSize: '0.72rem' }}>
+                        {ag.estSiege ? 'Siège Principal' : ag.ville}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, fontSize: '0.8rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Ventes :</span>
+                        <strong style={{ color: '#16a34a' }}>${ag.totalVentesUsd.toLocaleString()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Caisse dispo :</span>
+                        <strong>${ag.soldeCaisseUsd.toLocaleString()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Farine produite :</span>
+                        <strong>{ag.sacsProduits} sacs</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Attente visa :</span>
+                        <strong style={{ color: ag.validationsEnAttente > 0 ? '#ea580c' : '#16a34a' }}>
+                          {ag.validationsEnAttente} dossier(s)
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* BARRE DE FILTRAGE ET RECHERCHE */}
+          <div
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Agence :</span>
+                <select
+                  value={selectedAgenceFiltre}
+                  onChange={(e) => {
+                    const val = e.target.value === 'CONSOLIDE' ? 'CONSOLIDE' : Number(e.target.value)
+                    setSelectedAgenceFiltre(val)
+                  }}
+                  style={{ padding: '5px 10px', fontSize: '0.84rem' }}
+                >
+                  <option value="CONSOLIDE">🌐 Tout Consolidé (Toutes les Agences)</option>
+                  {(agencesQuery.data || []).map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Module :</span>
+                <select
+                  value={selectedModuleFiltre}
+                  onChange={(e) => setSelectedModuleFiltre(e.target.value)}
+                  style={{ padding: '5px 10px', fontSize: '0.84rem' }}
+                >
+                  <option value="TOUS">Tous les flux opérationnels</option>
+                  <option value="VENTES">🛒 Ventes & Facturation</option>
+                  <option value="TRESORERIE">💵 Caisse & Décaissements</option>
+                  <option value="ETAT_BESOIN">📋 États de Besoin & Réquisitions</option>
+                  <option value="ACHATS">⚖️ Achats & Pesées Pont-Bascule</option>
+                  <option value="PRODUCTION">⚙️ Production & Minoterie</option>
+                  <option value="LOGISTIQUE">🚚 Transferts & Convois</option>
+                  <option value="MAINTENANCE">🔧 Maintenance Technique</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Rechercher réf, client, agent, libellé..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ padding: '5px 10px', fontSize: '0.84rem', width: 240 }}
+              />
+              <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                {filteredTransactions.length} transaction(s)
+              </span>
+            </div>
+          </div>
+
+          {/* TABLEAU DES TRANSACTIONS MULTI-AGENCES */}
+          <DataTable
+            columns={[
+              'Réf. Transaction',
+              'Date & Heure',
+              'Agence',
+              'Module / Flux',
+              'Description & Détails',
+              'Montant',
+              'Opérateur',
+              'Statut',
+              'Action / Document',
+            ]}
+            loading={multiAgencesTransactionsQuery.isLoading}
+            rows={filteredTransactions.map((f: any) => [
+              <strong key={'ref-' + f.id} style={{ fontSize: '0.84rem' }}>
+                {f.reference}
+              </strong>,
+              f.date ? new Date(f.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-',
+              <span
+                key={'ag-' + f.id}
+                className={clsx('badge', f.agenceNom?.includes('Siège') ? 'badge-primary' : 'badge-info')}
+                style={{ fontSize: '0.78rem' }}
+              >
+                {f.agenceNom}
+              </span>,
+              <span key={'mod-' + f.id} className="badge badge-neutral" style={{ fontSize: '0.76rem' }}>
+                {f.module}: {f.typeFlux?.replace(/_/g, ' ')}
+              </span>,
+              <span key={'lib-' + f.id} style={{ fontSize: '0.84rem' }}>
+                {f.libelle}
+              </span>,
+              <strong
+                key={'mt-' + f.id}
+                style={{
+                  fontSize: '0.88rem',
+                  color: f.typeFlux?.includes('DECAISSEMENT') || f.module === 'MAINTENANCE' || f.module === 'ETAT_BESOIN'
+                    ? '#dc2626'
+                    : f.module === 'VENTES'
+                    ? '#16a34a'
+                    : 'inherit',
+                }}
+              >
+                {money(f.montant, f.devise || 'USD')}
+              </strong>,
+              f.operateurNom || '-',
+              <span
+                key={'st-' + f.id}
+                className={clsx(
+                  'badge',
+                  f.statut === 'VALIDE' || f.statut === 'TERMINE' || f.statut === 'CONFORME' || f.statut === 'RECU'
+                    ? 'badge-success'
+                    : f.statut === 'ANNULEE'
+                    ? 'badge-danger'
+                    : 'badge-warning'
+                )}
+                style={{ fontSize: '0.76rem' }}
+              >
+                {f.statut}
+              </span>,
+              f.documentUrl ? (
+                <a
+                  key={'doc-' + f.id}
+                  href={downloadUrl(f.documentUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-action"
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: '0.78rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    textDecoration: 'none',
+                  }}
+                >
+                  <Printer size={14} /> {f.documentNom || 'Ouvrir'}
+                </a>
+              ) : (
+                '-'
+              ),
+            ])}
+            emptyText="Aucune transaction trouvée pour les critères sélectionnés."
+          />
+        </div>
+      )}
+
+      {/* ================= ONGLET 2 : KPIS STRATÉGIQUES DIRECTION ================= */}
+      {activeTab === 'kpis' && (
+        <>
+          {/* CARTES KPIs STRATÉGIQUES DIRECTION */}
+          <div className="metric-grid">
+            <article className="metric-card">
+              <CurrencyCircleDollar size={24} style={{ color: '#16a34a' }} />
+              <span>Chiffre d'Affaires Mensuel</span>
+              <strong style={{ fontSize: '1.35rem' }}>{money(kpis?.caMoisUsd ?? 0, 'USD')}</strong>
+              <small style={{ color: 'var(--muted)' }}>
+                + {((kpis?.caMoisCdf ?? 0) / 1000000).toFixed(1)} M CDF
+              </small>
+            </article>
+
+            <article className="metric-card">
+              <TrendUp size={24} style={{ color: '#2563eb' }} />
+              <span>Marge Brute Meunerie</span>
+              <strong style={{ fontSize: '1.35rem', color: '#16a34a' }}>
+                ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / sac
+              </strong>
+              <small style={{ color: 'var(--muted)' }}>
+                Taux de marge brute : <strong>{kpis?.tauxMargeMoyen ?? 34}%</strong>
+              </small>
+            </article>
+
+            <article className="metric-card">
+              <Package size={24} style={{ color: '#d97706' }} />
+              <span>Rendement Mouture Usine</span>
+              <strong style={{ fontSize: '1.35rem', color: '#d97706' }}>
+                {kpis?.rendementMeunerie ?? 78.4} %
+              </strong>
+              <small style={{ color: 'var(--muted)' }}>
+                Farine extraite / grains traités au moulin
+              </small>
+            </article>
+
+            <article className="metric-card">
+              <Bank size={24} style={{ color: '#9333ea' }} />
+              <span>Trésorerie Nette Consolidée</span>
+              <strong style={{ fontSize: '1.35rem' }}>
+                {money(kpis?.tresorerieNetteConsolideeUsd ?? 0, 'USD')}
+              </strong>
+              <small style={{ color: 'var(--muted)' }}>
+                Banque: {money(kpis?.totalBanqueUsd ?? 0, 'USD')} | Caisse: {money(kpis?.totalCaisseUsd ?? 0, 'USD')}
+              </small>
+            </article>
+
+            <article className="metric-card">
+              <WarningCircle size={24} style={{ color: '#dc2626' }} />
+              <span>Créances Clients & Dettes</span>
+              <strong style={{ fontSize: '1.35rem' }}>
+                {money(kpis?.creancesTotalUsd ?? 0, 'USD')}
+              </strong>
+              <small style={{ color: '#dc2626' }}>
+                dont <strong>{money(kpis?.creancesEchuesUsd ?? 0, 'USD')}</strong> échues (&gt; 30j)
+              </small>
+            </article>
+          </div>
+
+          {/* GRAPHIQUE ÉVOLUTION STRATÉGIQUE SUR 6 MOIS */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Évolution du Chiffre d'Affaires & de la Marge Brute (6 derniers mois)</h3>
+                <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                  Trajectoire de croissance commerciale et marge brute d'exploitation en USD.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 14, fontSize: '0.82rem' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--primary)' }} />
+                  Chiffre d'Affaires ($)
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 2, background: '#16a34a' }} />
+                  Marge Brute ($)
+                </span>
+              </div>
+            </div>
+
+            <div style={{ height: 190, display: 'flex', alignItems: 'flex-end', gap: 24, padding: '10px 10px 0', borderBottom: '1px solid var(--border)' }}>
+              {(kpis?.evolutionVentes6Mois ?? []).map((item) => {
+                const hCa = Math.round((item.caUsd / maxCa) * 150)
+                const hMarge = Math.round((item.margeUsd / maxCa) * 150)
+                return (
+                  <div key={item.mois} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, width: '100%', justifyContent: 'center' }}>
+                      <div
+                        style={{
+                          width: '42%',
+                          height: `${Math.max(15, hCa)}px`,
+                          background: 'var(--primary)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.3s ease',
+                          position: 'relative',
+                        }}
+                        title={`CA: $${item.caUsd.toLocaleString()} USD`}
+                      />
+                      <div
+                        style={{
+                          width: '42%',
+                          height: `${Math.max(10, hMarge)}px`,
+                          background: '#16a34a',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.3s ease',
+                          position: 'relative',
+                        }}
+                        title={`Marge: $${item.margeUsd.toLocaleString()} USD`}
+                      />
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>
+                      {item.mois}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
+                      ${(item.caUsd / 1000).toFixed(1)}k
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* RAPPORTS & ÉTATS DE SYNTHÈSE */}
+          <h3 style={{ margin: '14px 0 0' }}>Génération & Téléchargement des Documents Légaux</h3>
+          <div className="module-grid">
+            <a className="capability-card" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
+              <FilePdf size={25} />
+              <strong>Exporter Balance OHADA (PDF)</strong>
+              <span>Grand livre en partie double, comptes de résultat et balance bidevise certifiée.</span>
+            </a>
+            <a className="capability-card" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
+              <Package size={25} />
+              <strong>Exporter État des Stocks PMP (PDF)</strong>
+              <span>Inventaire valorisé par lot FEFO, DLUO et calcul automatique du coût moyen pondéré.</span>
+            </a>
+            <Capability
+              title="Bordereaux de Livraison (BL)"
+              text="Bons d'expédition avec décharges signées et affectation de la flotte de camions."
+              icon={Truck}
+            />
+            <Capability
+              title="États de Rapprochement Bancaire"
+              text="Relevés Rawbank / Equity rapprochés avec justification comptable des écarts."
+              icon={Bank}
+            />
+          </div>
+        </>
+      )}
     </section>
   )
 }

@@ -360,7 +360,7 @@ export type DirectionKpis = {
   }>
 }
 
-export type StatutEtatBesoin = 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'
+export type StatutEtatBesoin = 'SOUMIS' | 'APPROUVE_CHEF' | 'ATTENTE_VISA_SIEGE' | 'APPROUVE_SIEGE' | 'DECAISSE' | 'REJETE'
 
 export type EtatBesoin = {
   id: number
@@ -378,6 +378,8 @@ export type EtatBesoin = {
   statut: StatutEtatBesoin
   chefValidateurNom?: string
   dateValidationChef?: string
+  visaSiegeNom?: string
+  dateVisaSiege?: string
   motifRejet?: string
   caisseId?: number
   caisseNom?: string
@@ -412,6 +414,18 @@ export type EntretienTechnique = {
   coutTotalUsd: number
   statut: StatutMaintenance
   etatBesoinId?: number
+  observations?: string
+}
+
+export type EquipementParc = {
+  id: number
+  nom: string
+  type: TypeEquipementTechnique | string
+  immatriculationOuSerie?: string
+  agenceId: number
+  marqueModele?: string
+  statut: 'OPERATIONNEL' | 'EN_MAINTENANCE' | 'HORS_SERVICE'
+  dateMiseEnService?: string
   observations?: string
 }
 

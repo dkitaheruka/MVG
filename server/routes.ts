@@ -35,6 +35,7 @@ import {
   immobilisations,
   etatsBesoin,
   entretiensTechniques,
+  equipementsParc,
 } from './seed'
 import {
   renderFactureHtml,
@@ -237,6 +238,247 @@ router.get('/reporting/siege/global', (_req: Request, res: Response) => {
     totalRecettesCdf: Math.round(totalRecettesCdf),
     totalConsolideUsd: Math.round(totalConsolideUsd * 100) / 100,
     nombreTransactions: transactions.length + ventes.length,
+  })
+})
+
+// ----------------- SUPERVISION TRANSACTIONS MULTI-AGENCES (POUR ADMIN SIÈGE & SUPER ADMIN) -----------------
+router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? (req.query.agenceId === 'CONSOLIDE' ? undefined : toInt(req.query.agenceId)) : undefined
+  const typeFiltre = req.query.type as string | undefined
+
+  const allFlux: any[] = []
+
+  // 1. Ventes
+  ventes.forEach((v) => {
+    if (!agenceId || v.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === v.agenceId)
+      const cli = clients.find((c) => c.id === v.clientId)
+      const ven = users.find((u) => u.id === v.vendeurId)
+      allFlux.push({
+        id: `VNT-${v.id}`,
+        reference: v.referenceVente || `VNT-${v.id}`,
+        date: v.dateVente || new Date().toISOString(),
+        agenceId: v.agenceId,
+        agenceNom: ag?.nom || `Agence #${v.agenceId}`,
+        module: 'VENTES',
+        typeFlux: v.estCredit ? 'VENTE_CREDIT' : 'VENTE_COMPTANT',
+        libelle: `Vente client ${cli?.nom || 'Comptoir'} (${v.details?.length || 1} article(s))`,
+        montant: v.montantTotal,
+        devise: v.devise,
+        operateurNom: ven?.nom || 'Vendeur',
+        statut: v.statutAnnulation === 'ANNULEE' ? 'ANNULEE' : (v.statutCredit === 'EN_ATTENTE' ? 'EN_ATTENTE_VISA' : 'VALIDE'),
+        documentUrl: `/api/ventes/${v.id}/facture`,
+        documentNom: 'Facture / Ticket',
+      })
+    }
+  })
+
+  // 2. Décaissements & Encaissements de caisse
+  transactions.forEach((t) => {
+    if (!agenceId || t.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === t.agenceId)
+      const cs = comptesCaisse.find((c) => c.id === t.caisseId)
+      const cr = users.find((u) => u.id === t.createurId)
+      allFlux.push({
+        id: `CAI-${t.id}`,
+        reference: t.referenceInterne || t.id,
+        date: t.dateCreation || new Date().toISOString(),
+        agenceId: t.agenceId,
+        agenceNom: ag?.nom || `Agence #${t.agenceId}`,
+        module: 'TRESORERIE',
+        typeFlux: t.type === 'SORTIE' ? 'DECAISSEMENT_CAISSE' : 'ENCAISSEMENT_CAISSE',
+        libelle: `${cs?.nom || 'Caisse'}: ${t.libelle || 'Opération caisse'}`,
+        montant: t.montant,
+        devise: t.devise,
+        operateurNom: cr?.nom || 'Caissier',
+        statut: t.statut,
+        documentUrl: `/api/export/excel/tresorerie?agenceId=${t.agenceId}`,
+        documentNom: 'Pièce Caisse',
+      })
+    }
+  })
+
+  // 3. États de besoin
+  etatsBesoin.forEach((eb) => {
+    if (!agenceId || eb.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === eb.agenceId)
+      allFlux.push({
+        id: `EB-${eb.id}`,
+        reference: eb.numeroEB,
+        date: eb.dateDemande || new Date().toISOString(),
+        agenceId: eb.agenceId,
+        agenceNom: ag?.nom || `Agence #${eb.agenceId}`,
+        module: 'ETAT_BESOIN',
+        typeFlux: 'DEMANDE_DE_FONDS',
+        libelle: `${eb.serviceDemandeur}: ${eb.motif}`,
+        montant: eb.montant,
+        devise: eb.devise,
+        operateurNom: eb.demandeurNom,
+        statut: eb.statut,
+        documentUrl: `/api/etats-besoin/${eb.id}/bon-decaissement`,
+        documentNom: 'Bon de Décaissement',
+      })
+    }
+  })
+
+  // 4. Ordres de production
+  ordresProduction.forEach((op) => {
+    if (!agenceId || op.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === op.agenceId)
+      const art = articles.find((a) => a.id === op.articleFiniId)
+      allFlux.push({
+        id: `OP-${op.id}`,
+        reference: op.codeOrdre,
+        date: op.dateCreation || new Date().toISOString(),
+        agenceId: op.agenceId,
+        agenceNom: ag?.nom || `Agence #${op.agenceId}`,
+        module: 'PRODUCTION',
+        typeFlux: 'ORDRE_MEUNERIE',
+        libelle: `Mouture ${art?.designation || 'Farine'}: ${op.quantiteReelle || op.quantitePrevue} sacs`,
+        montant: (op.quantiteReelle || op.quantitePrevue) * 20,
+        devise: 'USD',
+        operateurNom: 'Équipe Meunerie',
+        statut: op.statut,
+        documentUrl: `/api/production/ordres/${op.id}/fiche-a4`,
+        documentNom: 'Fiche Production',
+      })
+    }
+  })
+
+  // 5. Transferts convois inter-agences
+  transfertsStock.forEach((tr) => {
+    if (!agenceId || tr.agenceSourceId === agenceId || tr.agenceDestId === agenceId) {
+      const agSrc = agences.find((a) => a.id === tr.agenceSourceId)
+      const agDst = agences.find((a) => a.id === tr.agenceDestId)
+      allFlux.push({
+        id: `TRF-${tr.id}`,
+        reference: tr.referenceTransfert || `TRF-${tr.id}`,
+        date: tr.dateExpedition || new Date().toISOString(),
+        agenceId: tr.agenceSourceId,
+        agenceNom: `${agSrc?.nom || tr.agenceSourceId} ➔ ${agDst?.nom || tr.agenceDestId}`,
+        module: 'LOGISTIQUE',
+        typeFlux: 'TRANSFERT_INTER_AGENCES',
+        libelle: `Convoi Farine ${tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) || 0} sacs vers ${agDst?.nom}`,
+        montant: tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0) * 20, 0) || 0,
+        devise: 'USD',
+        operateurNom: tr.chauffeurNom || 'Chauffeur',
+        statut: tr.statut,
+        documentUrl: `/api/stocks/transferts/${tr.id}/feuille-route`,
+        documentNom: 'Feuille de Route',
+      })
+    }
+  })
+
+  // 6. Maintenance
+  entretiensTechniques.forEach((m) => {
+    if (!agenceId || m.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === m.agenceId)
+      allFlux.push({
+        id: `MNT-${m.id}`,
+        reference: m.numeroIntervention,
+        date: m.dateIntervention || new Date().toISOString(),
+        agenceId: m.agenceId,
+        agenceNom: ag?.nom || `Agence #${m.agenceId}`,
+        module: 'MAINTENANCE',
+        typeFlux: m.typeMaintenance === 'PREVENTIF' ? 'ENTRETIEN_PREVENTIF' : 'DEPANNAGE_CURATIF',
+        libelle: `${m.nomEquipement}: ${m.natureTravaux}`,
+        montant: m.coutTotalUsd,
+        devise: 'USD',
+        operateurNom: m.technicienOuGarage,
+        statut: m.statut,
+        documentUrl: `/api/maintenance/entretiens/${m.id}/fiche`,
+        documentNom: 'Fiche Technique',
+      })
+    }
+  })
+
+  // 7. Pesées Pont-Bascule & Réceptions grains
+  receptionsPontBascule.forEach((pb) => {
+    if (!agenceId || pb.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === pb.agenceId)
+      allFlux.push({
+        id: `PB-${pb.id}`,
+        reference: pb.numeroBR || `BR-${pb.id}`,
+        date: pb.datePeseeBrute || new Date().toISOString(),
+        agenceId: pb.agenceId,
+        agenceNom: ag?.nom || `Agence #${pb.agenceId}`,
+        module: 'ACHATS',
+        typeFlux: 'PESEE_PONT_BASCULE',
+        libelle: `Pesée Pont-Bascule: ${pb.poidsNetKg} kg ${pb.produit} (${pb.fournisseurNom || 'Fournisseur'})`,
+        montant: pb.montantTotalFactureUsd || pb.poidsNetKg * 0.35,
+        devise: 'USD',
+        operateurNom: pb.magasinierNom || 'Pont-Bascule',
+        statut: pb.statut || 'VALIDE',
+        documentUrl: `/api/achats/receptions/${pb.id}/document`,
+        documentNom: 'Ticket Pesée',
+      })
+    }
+  })
+
+  // 8. Commandes Fournisseurs
+  commandesAchat.forEach((cmd) => {
+    if (!agenceId || cmd.agenceId === agenceId) {
+      const ag = agences.find((a) => a.id === cmd.agenceId)
+      allFlux.push({
+        id: `CMD-${cmd.id}`,
+        reference: cmd.numeroBC,
+        date: cmd.dateCommande || new Date().toISOString(),
+        agenceId: cmd.agenceId,
+        agenceNom: ag?.nom || `Agence #${cmd.agenceId}`,
+        module: 'ACHATS',
+        typeFlux: 'COMMANDE_FOURNISSEUR',
+        libelle: `Bon de Commande ${cmd.fournisseurNom} (${cmd.produit || 'Matière'})`,
+        montant: cmd.montantTotalUsd,
+        devise: 'USD',
+        operateurNom: 'Responsable Achats',
+        statut: cmd.statut,
+        documentUrl: `/api/achats/commandes/${cmd.id}/document`,
+        documentNom: 'Bon de Commande',
+      })
+    }
+  })
+
+  // Tri antéchronologique
+  let filteredFlux = allFlux.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  if (typeFiltre && typeFiltre !== 'TOUS') {
+    filteredFlux = filteredFlux.filter((f) => f.module === typeFiltre)
+  }
+
+  // Synthèse par agence
+  const resumeAgences = agences.map((ag) => {
+    const vAg = ventes.filter((v) => v.agenceId === ag.id && v.statutAnnulation !== 'ANNULEE')
+    const tVentesUsd = vAg.filter((v) => v.devise === 'USD').reduce((s, v) => s + v.montantTotal, 0)
+    const tVentesCdf = vAg.filter((v) => v.devise === 'CDF').reduce((s, v) => s + (v.montantCdf || v.montantTotal), 0)
+    
+    const csAg = comptesCaisse.filter((c) => c.agenceId === ag.id)
+    const soldeUsd = csAg.reduce((s, c) => s + (c.soldeUsd || 0), 0)
+    const soldeCdf = csAg.reduce((s, c) => s + (c.soldeCdf || 0), 0)
+
+    const opAg = ordresProduction.filter((o) => o.agenceId === ag.id && o.statut === 'TERMINE')
+    const sacsProduits = opAg.reduce((s, o) => s + (o.quantiteReelle || 0), 0)
+
+    const ebEnAttente = etatsBesoin.filter((eb) => eb.agenceId === ag.id && eb.statut === 'SOUMIS').length
+    const creditsEnAttente = ventes.filter((v) => v.agenceId === ag.id && v.statutCredit === 'EN_ATTENTE').length
+
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      ville: ag.ville,
+      estSiege: ag.estSiege,
+      totalVentesUsd: Math.round(tVentesUsd * 100) / 100,
+      totalVentesCdf: Math.round(tVentesCdf),
+      nbVentes: vAg.length,
+      soldeCaisseUsd: Math.round(soldeUsd * 100) / 100,
+      soldeCaisseCdf: Math.round(soldeCdf),
+      sacsProduits,
+      validationsEnAttente: ebEnAttente + creditsEnAttente,
+    }
+  })
+
+  res.json({
+    transactions: filteredFlux,
+    resumeAgences,
+    totalTransactionsCount: allFlux.length,
   })
 })
 
@@ -1206,6 +1448,9 @@ router.put('/parametrage/entreprise', (req: Request, res: Response) => {
     tauxTvaPourcent,
     mentionsPiedFacture,
     mentionsPiedLivraison,
+    plafondAutonomieEtatBesoinAgenceUsd,
+    plafondDepenseDirecteAgenceUsd,
+    doubleValidationTransfertObligatoire,
   } = req.body
 
   if (nomSociete) parametresEntreprise.nomSociete = String(nomSociete).trim()
@@ -1221,15 +1466,18 @@ router.put('/parametrage/entreprise', (req: Request, res: Response) => {
   if (mentionsPiedFacture !== undefined) parametresEntreprise.mentionsPiedFacture = String(mentionsPiedFacture).trim()
   if (mentionsPiedLivraison !== undefined) parametresEntreprise.mentionsPiedLivraison = String(mentionsPiedLivraison).trim()
   if (req.body.logoUrl !== undefined) parametresEntreprise.logoUrl = String(req.body.logoUrl).trim()
+  if (plafondAutonomieEtatBesoinAgenceUsd !== undefined) parametresEntreprise.plafondAutonomieEtatBesoinAgenceUsd = Number(plafondAutonomieEtatBesoinAgenceUsd)
+  if (plafondDepenseDirecteAgenceUsd !== undefined) parametresEntreprise.plafondDepenseDirecteAgenceUsd = Number(plafondDepenseDirecteAgenceUsd)
+  if (doubleValidationTransfertObligatoire !== undefined) parametresEntreprise.doubleValidationTransfertObligatoire = Boolean(doubleValidationTransfertObligatoire)
 
   logAudit(
     currentUser.nom,
-    'MAJ_MENTIONS_LEGALES',
-    `Mise à jour des mentions légales et identité de société (${parametresEntreprise.nomSociete}, RCCM: ${parametresEntreprise.rccm}, NIF: ${parametresEntreprise.nif})`,
+    'MAJ_PARAMETRES_GOUVERNANCE',
+    `Mise à jour des paramètres et gouvernance siège (Plafond EB agences: $${parametresEntreprise.plafondAutonomieEtatBesoinAgenceUsd || 200} USD, Double validation transfert: ${parametresEntreprise.doubleValidationTransfertObligatoire ? 'OUI' : 'NON'})`,
     1
   )
 
-  res.json({ message: 'Mentions légales mises à jour avec succès', entreprise: parametresEntreprise })
+  res.json({ message: 'Paramètres et règles de gouvernance mis à jour avec succès', entreprise: parametresEntreprise })
 })
 
 // ----------------- BACKUP & EXPORTS COMPLETS -----------------
@@ -1566,6 +1814,63 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
       if (!agenceId || m.agenceId === agenceId) {
         const ag = agences.find((a) => a.id === m.agenceId)
         csv += `"${m.numeroIntervention}";"${m.dateIntervention}";"${ag?.nom || m.agenceId}";"${m.typeEquipement}";"${m.nomEquipement.replace(/"/g, '""')}";"${m.immatriculationOuSerie || '-'}";"${m.typeMaintenance}";"${m.natureTravaux.replace(/"/g, '""')}";"${m.technicienOuGarage.replace(/"/g, '""')}";${m.coutPiecesUsd.toFixed(2)};${m.coutMainOeuvreUsd.toFixed(2)};${m.coutTotalUsd.toFixed(2)};"${m.statut}";"${m.prochaineMaintenancePrevue || '-'}";"${m.etatBesoinId ? `EB #${m.etatBesoinId}` : '-'}"\n`
+      }
+    })
+  } else if (type === 'transactions-consolidees' || type === 'supervision-siege') {
+    filename = `transactions-multi-agences-${annee}-${mois}.csv`
+    csv = 'RÉFÉRENCE;DATE;AGENCE;MODULE;TYPE FLUX;LIBELLÉ / DÉSIGNATION;MONTANT;DEVISE;OPÉRATEUR / RESPONSABLE;STATUT\n'
+    // 1. Ventes
+    ventes.forEach((v) => {
+      if (!agenceId || v.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === v.agenceId)
+        const cli = clients.find((c) => c.id === v.clientId)
+        const ven = users.find((u) => u.id === v.vendeurId)
+        csv += `"${v.referenceVente || `VNT-${v.id}`}";"${(v.dateVente || '').slice(0, 10)}";"${ag?.nom || v.agenceId}";"VENTES";"${v.estCredit ? 'VENTE_CREDIT' : 'VENTE_COMPTANT'}";"Vente client ${cli?.nom || 'Comptoir'}";${v.montantTotal.toFixed(2)};"${v.devise}";"${ven?.nom || 'Vendeur'}";"${v.statutAnnulation === 'ANNULEE' ? 'ANNULEE' : 'VALIDE'}"\n`
+      }
+    })
+    // 2. Décaissements & Encaissements de caisse
+    transactions.forEach((t) => {
+      if (!agenceId || t.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === t.agenceId)
+        const cr = users.find((u) => u.id === t.createurId)
+        csv += `"${t.referenceInterne || `CAI-${t.id}`}";"${(t.dateCreation || '').slice(0, 10)}";"${ag?.nom || t.agenceId}";"TRESORERIE";"${t.type}";"${(t.libelle || 'Opération caisse').replace(/"/g, '""')}";${t.montant.toFixed(2)};"${t.devise}";"${cr?.nom || 'Caissier'}";"${t.statut}"\n`
+      }
+    })
+    // 3. États de besoin
+    etatsBesoin.forEach((eb) => {
+      if (!agenceId || eb.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === eb.agenceId)
+        csv += `"${eb.numeroEB}";"${(eb.dateDemande || '').slice(0, 10)}";"${ag?.nom || eb.agenceId}";"ETAT_BESOIN";"DEMANDE_DE_FONDS";"${(eb.serviceDemandeur + ': ' + (eb.motif || '')).replace(/"/g, '""')}";${eb.montant.toFixed(2)};"${eb.devise}";"${eb.demandeurNom}";"${eb.statut}"\n`
+      }
+    })
+    // 4. Production
+    ordresProduction.forEach((op) => {
+      if (!agenceId || op.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === op.agenceId)
+        const art = articles.find((a) => a.id === op.articleFiniId)
+        csv += `"${op.codeOrdre}";"${(op.dateCreation || '').slice(0, 10)}";"${ag?.nom || op.agenceId}";"PRODUCTION";"ORDRE_MEUNERIE";"Mouture ${art?.designation || 'Farine'} (${op.quantiteReelle || op.quantitePrevue} sacs)";${((op.quantiteReelle || op.quantitePrevue) * 20).toFixed(2)};"USD";"Équipe Meunerie";"${op.statut}"\n`
+      }
+    })
+    // 5. Transferts
+    transfertsStock.forEach((tr) => {
+      if (!agenceId || tr.agenceSourceId === agenceId || tr.agenceDestId === agenceId) {
+        const agSrc = agences.find((a) => a.id === tr.agenceSourceId)
+        const agDst = agences.find((a) => a.id === tr.agenceDestId)
+        csv += `"${tr.referenceTransfert || `TRF-${tr.id}`}";"${(tr.dateExpedition || '').slice(0, 10)}";"${agSrc?.nom || tr.agenceSourceId} -> ${agDst?.nom || tr.agenceDestId}";"LOGISTIQUE";"TRANSFERT_INTER_AGENCES";"Transfert de farine vers ${agDst?.nom}";${(tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) * 20).toFixed(2)};"USD";"${tr.chauffeurNom || 'Chauffeur'}";"${tr.statut}"\n`
+      }
+    })
+    // 6. Pont-Bascule
+    receptionsPontBascule.forEach((pb) => {
+      if (!agenceId || pb.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === pb.agenceId)
+        csv += `"${pb.numeroBR || `BR-${pb.id}`}";"${(pb.datePeseeBrute || '').slice(0, 10)}";"${ag?.nom || pb.agenceId}";"ACHATS";"PESEE_PONT_BASCULE";"Pesée ${pb.poidsNetKg} kg ${pb.produit}";${(pb.montantTotalFactureUsd || pb.poidsNetKg * 0.35).toFixed(2)};"USD";"${pb.magasinierNom || 'Pont-Bascule'}";"${pb.statut || 'VALIDE'}"\n`
+      }
+    })
+    // 7. Maintenance
+    entretiensTechniques.forEach((m) => {
+      if (!agenceId || m.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === m.agenceId)
+        csv += `"${m.numeroIntervention}";"${(m.dateIntervention || '').slice(0, 10)}";"${ag?.nom || m.agenceId}";"MAINTENANCE";"${m.typeMaintenance}";"${(m.nomEquipement + ': ' + m.natureTravaux).replace(/"/g, '""')}";${m.coutTotalUsd.toFixed(2)};"USD";"${m.technicienOuGarage}";"${m.statut}"\n`
       }
     })
   } else {
@@ -2002,6 +2307,73 @@ router.put('/flotte/vehicules/:id', (req: Request, res: Response) => {
 })
 
 // ----------------- MODULE TECHNIQUE & ENTRETIEN (FLOTTE & MACHINES USINE) -----------------
+router.get('/maintenance/equipements', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = equipementsParc
+    .filter((eq) => !agenceId || eq.agenceId === agenceId)
+    .map((eq) => ({
+      ...eq,
+      agence: agences.find((a) => a.id === eq.agenceId),
+    }))
+  res.json(list)
+})
+
+router.post('/maintenance/equipements', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { nom, type, immatriculationOuSerie, agenceId, marqueModele, statut, dateMiseEnService, observations } = req.body
+  if (!nom) return res.status(400).json({ message: 'Nom du matériel/équipement requis' })
+
+  const nouvelEquipement: any = {
+    id: equipementsParc.length + 1,
+    nom: String(nom).trim(),
+    type: type || 'AUTRE',
+    immatriculationOuSerie: immatriculationOuSerie ? String(immatriculationOuSerie).trim() : `EQ-${Date.now().toString().slice(-4)}`,
+    agenceId: toInt(agenceId) || currentUser.agenceId || 1,
+    marqueModele: marqueModele ? String(marqueModele).trim() : undefined,
+    statut: statut || 'OPERATIONNEL',
+    dateMiseEnService: dateMiseEnService || new Date().toISOString().slice(0, 10),
+    observations: observations ? String(observations).trim() : undefined,
+  }
+
+  equipementsParc.unshift(nouvelEquipement)
+  logAudit(currentUser.nom, 'CREATION_EQUIPEMENT_PARC', `Équipement ${nouvelEquipement.nom} (${nouvelEquipement.immatriculationOuSerie}) ajouté au parc`, nouvelEquipement.agenceId)
+  res.json(nouvelEquipement)
+})
+
+router.put('/maintenance/equipements/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const eq = equipementsParc.find((e) => e.id === toInt(req.params.id))
+  if (!eq) return res.status(404).json({ message: 'Équipement introuvable' })
+
+  const { nom, type, immatriculationOuSerie, agenceId, marqueModele, statut, observations } = req.body
+  if (nom) eq.nom = String(nom).trim()
+  if (type) eq.type = type
+  if (immatriculationOuSerie) eq.immatriculationOuSerie = String(immatriculationOuSerie).trim()
+  if (agenceId) eq.agenceId = toInt(agenceId)
+  if (marqueModele !== undefined) eq.marqueModele = marqueModele ? String(marqueModele).trim() : undefined
+  if (statut) eq.statut = statut
+  if (observations !== undefined) eq.observations = observations ? String(observations).trim() : undefined
+
+  res.json({ message: 'Équipement mis à jour', equipement: eq })
+})
+
+router.delete('/maintenance/equipements/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const id = toInt(req.params.id)
+  const idx = equipementsParc.findIndex((e) => e.id === id)
+  if (idx === -1) return res.status(404).json({ message: 'Équipement introuvable' })
+
+  const removed = equipementsParc.splice(idx, 1)[0]
+  logAudit(currentUser.nom, 'SUPPRESSION_EQUIPEMENT_PARC', `Équipement ${removed.nom} retiré du parc`, removed.agenceId)
+  res.json({ message: 'Équipement retiré avec succès' })
+})
+
 router.get('/maintenance/entretiens', (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
   const statut = req.query.statut as string | undefined
@@ -2254,7 +2626,7 @@ router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) 
   if (!bl) return res.status(404).send('Bon de livraison introuvable')
 
   const agence = agences.find((a) => a.id === bl.agenceId)
-  let vente = bl.venteId ? ventes.find((v) => v.id === bl.venteId) : undefined
+  let vente = bl.venteId ? (ventes.find((v) => v.id === bl.venteId) as any) : undefined
   if (!vente) {
     vente = {
       id: bl.id,
@@ -2265,12 +2637,11 @@ router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) 
       dateVente: bl.dateCreation,
       montantTotal: 0,
       devise: 'USD' as const,
-      tauxApplique: 2850,
       modePaiement: 'CASH_USD' as const,
       statutCredit: 'AUCUN' as const,
       estCredit: false,
       details: [],
-    }
+    } as any
   }
 
   const client = {
@@ -2284,11 +2655,11 @@ router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) 
     estBloque: false,
   }
 
-  const defaultArt = articles[0] || { designation: 'Farine Extra Matabishi 25kg', uniteMesure: 'Sac 25kg' }
+  const defaultArt = articles[0]
   const details = [
     {
-      articleId: defaultArt.id,
-      article: defaultArt,
+      articleId: defaultArt?.id || 1,
+      article: defaultArt || { id: 1, designation: 'Farine Extra Matabishi 25kg', uniteMesure: 'Sac 25kg' },
       quantite: bl.quantiteSacs || 1,
       prixUnitaire: 0,
       montantLigne: 0,
@@ -2296,11 +2667,12 @@ router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) 
     },
   ]
 
+  const blAny = bl as any
   const vehicule = bl.vehiculeId ? vehicules.find((v) => v.id === bl.vehiculeId) : undefined
   const transportInfo = {
-    modeTransport: bl.modeTransport,
-    clientVehicule: bl.clientVehicule,
-    clientChauffeur: bl.clientChauffeur,
+    modeTransport: blAny.modeTransport || 'ENLEVEMENT_MAGASIN',
+    clientVehicule: blAny.clientVehicule,
+    clientChauffeur: blAny.clientChauffeur,
     vehicule,
   }
 
@@ -2785,16 +3157,57 @@ router.post('/etats-besoin/:id/valider-chef', (req: Request, res: Response) => {
   const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
   if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
 
-  if (eb.statut !== 'SOUMIS') {
+  if (eb.statut !== 'SOUMIS' && eb.statut !== 'ATTENTE_VISA_SIEGE') {
     return res.status(400).json({ message: `Cet état de besoin ne peut plus être validé (statut actuel: ${eb.statut})` })
   }
 
-  eb.statut = 'APPROUVE_CHEF'
-  eb.chefValidateurNom = `${currentUser.nom} (${currentUser.role})`
+  const plafondUsd = parametresEntreprise.plafondAutonomieEtatBesoinAgenceUsd || 200
+  const montantEquivalentUsd = eb.devise === 'USD' ? eb.montant : eb.montant / 2850
+
+  // Si c'est l'Admin Siège ou Super Admin qui valide : visa accordé directement
+  if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE') {
+    eb.statut = 'APPROUVE_SIEGE'
+    eb.chefValidateurNom = eb.chefValidateurNom || `${currentUser.nom} (Admin Siège)`
+    eb.visaSiegeNom = `${currentUser.nom} (Admin Siège)`
+    eb.dateValidationChef = eb.dateValidationChef || new Date().toISOString()
+    eb.dateVisaSiege = new Date().toISOString()
+
+    logAudit(currentUser.nom, 'VISA_DIRECTION_ETAT_BESOIN', `État de besoin ${eb.numeroEB} (${eb.montant} ${eb.devise}) validé avec Visa Direction Siège. Transmis en caisse.`, eb.agenceId)
+    return res.json({ message: 'État de besoin approuvé avec Visa Direction Siège. Prêt pour décaissement au guichet caisse.', etatBesoin: eb })
+  }
+
+  // Si c'est un Chef d'Agence local :
+  eb.chefValidateurNom = `${currentUser.nom} (Chef Agence)`
   eb.dateValidationChef = new Date().toISOString()
 
-  logAudit(currentUser.nom, 'VALIDATION_CHEF_ETAT_BESOIN', `État de besoin ${eb.numeroEB} approuvé par ${currentUser.nom}. Transmis au guichet caisse pour décaissement.`, eb.agenceId)
-  res.json({ message: 'État de besoin validé par le Chef d Agence. Prêt pour décaissement en caisse.', etatBesoin: eb })
+  if (montantEquivalentUsd <= plafondUsd) {
+    eb.statut = 'APPROUVE_CHEF'
+    logAudit(currentUser.nom, 'VALIDATION_CHEF_ETAT_BESOIN', `État de besoin ${eb.numeroEB} sous le plafond d'autonomie ($${plafondUsd} USD) validé par le Chef d'Agence. Prêt pour décaissement.`, eb.agenceId)
+    res.json({ message: `État de besoin validé par le Chef d'Agence (Montant conforme au plafond d'autonomie de $${plafondUsd} USD). Prêt pour caisse.`, etatBesoin: eb })
+  } else {
+    eb.statut = 'ATTENTE_VISA_SIEGE'
+    logAudit(currentUser.nom, 'DEMANDE_VISA_SIEGE_ETAT_BESOIN', `État de besoin ${eb.numeroEB} ($${eb.montant} ${eb.devise}) excède le seuil de $${plafondUsd} USD. Transmis à l'Admin du Siège pour visa obligatoire.`, eb.agenceId)
+    res.json({ message: `État de besoin visé par le Chef d'Agence, mais transmis pour Visa obligatoire à l'Admin du Siège car le montant dépasse le seuil d'autonomie fixé à $${plafondUsd} USD.`, etatBesoin: eb })
+  }
+})
+
+router.post('/etats-besoin/:id/visa-siege', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE') {
+    return res.status(403).json({ message: 'Seul l Admin du Siège ou le Super Admin peut accorder le visa de direction générale.' })
+  }
+
+  const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
+  if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
+
+  eb.statut = 'APPROUVE_SIEGE'
+  eb.visaSiegeNom = `${currentUser.nom} (Admin Siège)`
+  eb.dateVisaSiege = new Date().toISOString()
+
+  logAudit(currentUser.nom, 'VISA_SIEGE_ETAT_BESOIN', `Visa Direction Siège accordé pour ${eb.numeroEB} (${eb.montant} ${eb.devise}). Autorisation de décaissement transmise à la caisse de l'agence.`, eb.agenceId)
+  res.json({ message: 'Visa de Direction Générale accordé avec succès. Les fonds peuvent être décaissés au guichet caisse.', etatBesoin: eb })
 })
 
 router.post('/etats-besoin/:id/decaissement', (req: Request, res: Response) => {
@@ -2804,8 +3217,14 @@ router.post('/etats-besoin/:id/decaissement', (req: Request, res: Response) => {
   const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
   if (!eb) return res.status(404).json({ message: 'État de besoin introuvable' })
 
-  if (eb.statut !== 'APPROUVE_CHEF' && currentUser.role !== 'SUPER_ADMIN') {
-    return res.status(400).json({ message: 'L état de besoin doit d abord être approuvé par le Chef d Agence avant libération des fonds.' })
+  if (eb.statut !== 'APPROUVE_CHEF' && eb.statut !== 'APPROUVE_SIEGE' && currentUser.role !== 'SUPER_ADMIN') {
+    if (eb.statut === 'ATTENTE_VISA_SIEGE') {
+      const plafondUsd = parametresEntreprise.plafondAutonomieEtatBesoinAgenceUsd || 200
+      return res.status(400).json({
+        message: `Ce montant excède le seuil d'autonomie d'agence ($${plafondUsd} USD). Le visa préalable de l'Admin du Siège est obligatoire avant tout décaissement en caisse.`,
+      })
+    }
+    return res.status(400).json({ message: 'L état de besoin doit d abord être approuvé avant libération des fonds.' })
   }
 
   const { caisseId } = req.body
@@ -3073,8 +3492,13 @@ router.get('/comptabilite/performance-services', (_req: Request, res: Response) 
 })
 
 // ----------------- PRODUCTION -----------------
-router.get('/production/ordres', (_req: Request, res: Response) => {
-  const enriched = ordresProduction.map((op) => ({
+router.get('/production/ordres', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  let list = ordresProduction
+  if (agenceId) {
+    list = list.filter((op) => op.agenceId === agenceId)
+  }
+  const enriched = list.map((op) => ({
     ...op,
     articleFini: articles.find((a) => a.id === op.articleFiniId),
     agence: agences.find((a) => a.id === op.agenceId),
@@ -3656,17 +4080,41 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
     return res.status(400).json({ message: 'L agence de destination doit être différente de l agence source.' })
   }
 
-  // Deduct from source agency
-  for (const ligne of (lignes || [])) {
-    const stock = stocksAgence.find((s) => s.agenceId === numSrc && s.articleId === Number(ligne.articleId) && s.numeroLot === ligne.numeroLot)
-    if (stock) {
-      stock.quantite = Math.max(0, stock.quantite - Number(ligne.quantite))
-    }
-  }
-
   const vehicule = vehiculeId ? vehicules.find((v) => v.id === Number(vehiculeId)) : undefined
-  if (vehicule) {
-    vehicule.statut = 'EN_COURSE'
+
+  // Déterminer le statut initial selon les règles de double validation
+  let statutInitial: 'EN_ATTENTE_VALIDATION_SOURCE' | 'EN_ATTENTE_VISA_SIEGE' | 'EN_TRANSIT' = 'EN_ATTENTE_VISA_SIEGE'
+  let valSourceNom: string | undefined = undefined
+  let dateValSource: string | undefined = undefined
+  let valSiegeNom: string | undefined = undefined
+  let dateValSiege: string | undefined = undefined
+
+  if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE') {
+    // Si initié directement par l'Admin Siège : visa immédiat et départ
+    statutInitial = 'EN_TRANSIT'
+    valSourceNom = `${currentUser.nom} (Admin Siège)`
+    dateValSource = new Date().toISOString()
+    valSiegeNom = `${currentUser.nom} (Admin Siège)`
+    dateValSiege = new Date().toISOString()
+
+    // Déduire directement le stock source
+    for (const ligne of (lignes || [])) {
+      const stock = stocksAgence.find((s) => s.agenceId === numSrc && s.articleId === Number(ligne.articleId) && s.numeroLot === ligne.numeroLot)
+      if (stock) {
+        stock.quantite = Math.max(0, stock.quantite - Number(ligne.quantite))
+      }
+    }
+    if (vehicule) {
+      vehicule.statut = 'EN_COURSE'
+    }
+  } else if (currentUser.role === 'CHEF_AGENCE') {
+    // Initié par le chef de l'agence source : 1ère validation acquise, en attente du Visa Siège
+    statutInitial = 'EN_ATTENTE_VISA_SIEGE'
+    valSourceNom = `${currentUser.nom} (Chef Agence Source)`
+    dateValSource = new Date().toISOString()
+  } else {
+    // Initié par un magasinier : nécessite la validation du chef d'agence source
+    statutInitial = 'EN_ATTENTE_VALIDATION_SOURCE'
   }
 
   const nouveauTransfert = {
@@ -3674,9 +4122,14 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
     referenceTransfert: `TRF-${numSrc}-${numDest}-${Date.now().toString().slice(-4)}`,
     agenceSourceId: numSrc,
     agenceDestId: numDest,
+    dateCreation: new Date().toISOString(),
     dateExpedition: new Date().toISOString(),
-    statut: 'EN_TRANSIT' as const,
+    statut: statutInitial,
     initiateurNom: currentUser.nom,
+    validationSourceNom: valSourceNom,
+    dateValidationSource: dateValSource,
+    visaSiegeNom: valSiegeNom,
+    dateVisaSiege: dateValSiege,
     vehiculeId: vehicule?.id,
     immatriculationCamion: vehicule?.plaqueImmatriculation,
     chauffeurNom: vehicule?.chauffeurNom,
@@ -3691,11 +4144,86 @@ router.post('/stocks/transferts', (req: Request, res: Response) => {
   transfertsStock.unshift(nouveauTransfert)
   logAudit(
     currentUser.nom,
-    'EXPEDITION_TRANSFERT_STOCK',
-    `Expédition transfert ${nouveauTransfert.referenceTransfert} vers agence #${numDest} (Camion: ${vehicule?.plaqueImmatriculation || 'Non spécifié'})`,
+    'INITIATION_TRANSFERT_STOCK',
+    `Demande de transfert ${nouveauTransfert.referenceTransfert} (Statut: ${statutInitial}) vers agence #${numDest}`,
     numSrc
   )
   res.json(nouveauTransfert)
+})
+
+router.post('/stocks/transferts/:id/valider-source', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
+  if (!transfert) return res.status(404).json({ message: 'Transfert non trouvé' })
+
+  if (transfert.statut !== 'EN_ATTENTE_VALIDATION_SOURCE') {
+    return res.status(400).json({ message: `Ce transfert ne peut pas être validé au départ (statut: ${transfert.statut})` })
+  }
+
+  transfert.statut = 'EN_ATTENTE_VISA_SIEGE'
+  transfert.validationSourceNom = `${currentUser.nom} (Chef Agence Source)`
+  transfert.dateValidationSource = new Date().toISOString()
+
+  logAudit(currentUser.nom, 'VALIDATION_SOURCE_TRANSFERT', `Transfert ${transfert.referenceTransfert} approuvé par l agence source. En attente du Visa de Direction Siège.`, transfert.agenceSourceId)
+  res.json({ message: 'Transfert validé par l agence source. Transmis pour Visa Direction Siège.', transfert })
+})
+
+router.post('/stocks/transferts/:id/visa-siege', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE') {
+    return res.status(403).json({ message: 'Seul l Admin du Siège ou le Super Admin peut accorder le visa de direction générale pour un convoi inter-agences.' })
+  }
+
+  const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
+  if (!transfert) return res.status(404).json({ message: 'Transfert non trouvé' })
+
+  if (transfert.statut !== 'EN_ATTENTE_VISA_SIEGE' && transfert.statut !== 'EN_ATTENTE_VALIDATION_SOURCE') {
+    return res.status(400).json({ message: `Ce convoi ne peut plus recevoir de visa siège (statut: ${transfert.statut})` })
+  }
+
+  // Déduire le stock de l'agence source au départ effectif validé
+  for (const ligne of (transfert.lignes || [])) {
+    const stock = stocksAgence.find((s) => s.agenceId === transfert.agenceSourceId && s.articleId === Number(ligne.articleId) && s.numeroLot === ligne.numeroLot)
+    if (stock) {
+      stock.quantite = Math.max(0, stock.quantite - Number(ligne.quantite))
+    }
+  }
+
+  if (transfert.vehiculeId) {
+    const vehicule = vehicules.find((v) => v.id === transfert.vehiculeId)
+    if (vehicule) vehicule.statut = 'EN_COURSE'
+  }
+
+  transfert.statut = 'EN_TRANSIT'
+  transfert.visaSiegeNom = `${currentUser.nom} (Admin Siège)`
+  transfert.dateVisaSiege = new Date().toISOString()
+  transfert.dateExpedition = new Date().toISOString()
+
+  logAudit(currentUser.nom, 'VISA_SIEGE_TRANSFERT', `Visa Direction Siège accordé pour le convoi ${transfert.referenceTransfert}. Convoi en transit vers agence #${transfert.agenceDestId}.`, 1)
+  res.json({ message: 'Visa de Direction Siège accordé. Convoi officiellement en transit avec lettre de voiture.', transfert })
+})
+
+router.post('/stocks/transferts/:id/refuser', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
+  if (!transfert) return res.status(404).json({ message: 'Transfert non trouvé' })
+
+  transfert.statut = 'REFUSE'
+  transfert.motifRefus = req.body.motif || 'Transfert refusé par la hiérarchie'
+
+  if (transfert.vehiculeId) {
+    const vehicule = vehicules.find((v) => v.id === transfert.vehiculeId)
+    if (vehicule) vehicule.statut = 'DISPONIBLE'
+  }
+
+  logAudit(currentUser.nom, 'REFUS_TRANSFERT_STOCK', `Transfert ${transfert.referenceTransfert} refusé: ${transfert.motifRefus}`, transfert.agenceSourceId)
+  res.json({ message: 'Transfert refusé.', transfert })
 })
 
 router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => {
@@ -3704,6 +4232,10 @@ router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => 
 
   const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
   if (!transfert) return res.status(404).json({ message: 'Transfert non trouvé' })
+
+  if (transfert.statut !== 'EN_TRANSIT' && transfert.statut !== 'LITIGE' && currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(400).json({ message: 'Le transfert doit obligatoirement être en transit pour être réceptionné contradictoirement.' })
+  }
 
   const { motifEcart, ecartConstate } = req.body
 
@@ -3738,7 +4270,7 @@ router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => 
   transfert.dateReception = new Date().toISOString()
   transfert.motifEcart = motifEcart
 
-  logAudit(currentUser.nom, 'RECEPTION_TRANSFERT_STOCK', `Réception ${transfert.referenceTransfert} par agence #${transfert.agenceDestId} (${transfert.statut})`, transfert.agenceDestId)
+  logAudit(currentUser.nom, 'RECEPTION_TRANSFERT_STOCK', `Réception contradictoire ${transfert.referenceTransfert} par agence #${transfert.agenceDestId} (${transfert.statut})`, transfert.agenceDestId)
   res.json(transfert)
 })
 

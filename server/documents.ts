@@ -620,18 +620,26 @@ export function renderFeuilleRouteTransfertHtml(
     Le chauffeur certifie avoir pris en charge la quantité de sacs mentionnée ci-dessus après comptage contradictoire et vérification de l'étanchéité de la bâche de transport. À l'arrivée, le chef de magasin récepteur procédera au déchargement et au visa de conformité.
   </div>
 
-  <div class="signatures">
+  <div class="signatures" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
     <div class="sig-box">
-      <strong>Magasinier Expéditeur (Départ) :</strong><br/>
-      <small>${transfert.initiateurNom} - Visa & Heure</small>
+      <strong>1. Visa Agence Expéditrice :</strong><br/>
+      <small style="color: #0369a1; font-weight: 600;">${transfert.validationSourceNom || transfert.initiateurNom || 'Chef Agence Source'}</small><br/>
+      <small style="color: #64748b;">${transfert.dateValidationSource ? new Date(transfert.dateValidationSource).toLocaleDateString('fr-FR') : 'Autorisé au départ'}</small>
     </div>
     <div class="sig-box">
-      <strong>Chauffeur Transporteur (Prise en charge) :</strong><br/>
-      <small>${chauffeur} - Visa & Signature</small>
+      <strong>2. Visa Direction Siège :</strong><br/>
+      <small style="color: #16a34a; font-weight: 600;">${transfert.visaSiegeNom || 'Direction Siège / Admin'}</small><br/>
+      <small style="color: #64748b;">${transfert.dateVisaSiege ? new Date(transfert.dateVisaSiege).toLocaleDateString('fr-FR') : 'Accordé'}</small>
     </div>
     <div class="sig-box">
-      <strong>Magasinier Récepteur (Arrivée) :</strong><br/>
-      <small>${transfert.recepteurNom || 'En attente de déchargement'} - Visa</small>
+      <strong>3. Chauffeur Transporteur :</strong><br/>
+      <small>${chauffeur}</small><br/>
+      <small style="color: #64748b;">Prise en charge convoi</small>
+    </div>
+    <div class="sig-box">
+      <strong>4. Réception Agence Dest. :</strong><br/>
+      <small style="color: ${transfert.statut === 'RECU' ? '#16a34a' : '#d97706'}; font-weight: 600;">${transfert.recepteurNom || 'En transit'}</small><br/>
+      <small style="color: #64748b;">${transfert.dateReception ? new Date(transfert.dateReception).toLocaleDateString('fr-FR') : 'Pointage à l arrivée'}</small>
     </div>
   </div>
 </body>
