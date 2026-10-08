@@ -7,6 +7,9 @@ import {
   Printer,
   CheckCircle,
   FilePdf,
+  ShieldCheck,
+  CheckSquare,
+  Prohibit,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest, downloadUrl } from '../lib/api'
@@ -14,16 +17,22 @@ import { useAppStore } from '../stores/appStore'
 
 export function StockTransfersPage() {
   const queryClient = useQueryClient()
-  const token = useAppStore((state) => state.session?.token)
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const session = useAppStore((state) => state.session)
+  const token = session?.token
+  const agenceId = session?.agenceId ?? 1
+  const userRole = session?.role
+  const isSuperAdminOrSiegeAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN_SIEGE'
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [showNewTransfertModal, setShowNewTransfertModal] = useState(false)
   const [receptionTransfert, setReceptionTransfert] = useState<any | null>(null)
+  const [refusTransfert, setRefusTransfert] = useState<any | null>(null)
+  const [motifRefus, setMotifRefus] = useState('')
   const [ecartConstate, setEcartConstate] = useState(false)
   const [motifEcart, setMotifEcart] = useState('')
   const [voucherTransfert, setVoucherTransfert] = useState<any | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   // Form states for initiating transfer
   const [agenceDestId, setAgenceDestId] = useState<number>(2) // Kinshasa by default
@@ -104,6 +113,57 @@ export function StockTransfersPage() {
     onError: (err: any) => setActionError(err.message || 'Erreur lors de l expédition'),
   })
 
+  const validerSourceMutation = useMutation({
+    mutationFn: (transfertId: number) =>
+      apiRequest(`/api/stocks/transferts/${transfertId}/valider-source`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
+      setActionSuccess(data.message || 'Transfert validé au départ par l agence source. Transmis pour Visa Direction Siège.')
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors de la validation source'),
+  })
+
+  const visaSiegeMutation = useMutation({
+    mutationFn: (transfertId: number) =>
+      apiRequest(`/api/stocks/transferts/${transfertId}/visa-siege`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
+      setActionSuccess(data.message || 'Visa de Direction Siège accordé. Le convoi est officiellement en transit.')
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors de l attribution du visa siège'),
+  })
+
+  const refuserMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/stocks/transferts/${refusTransfert.id}/refuser`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ motif: motifRefus }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
+      queryClient.invalidateQueries({ queryKey: ['stock'] })
+      queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
+      setRefusTransfert(null)
+      setMotifRefus('')
+      setActionSuccess(data.message || 'Transfert refusé.')
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors du refus du transfert'),
+  })
+
   const receptionMutation = useMutation({
     mutationFn: () =>
       apiRequest(`/api/stocks/transferts/${receptionTransfert.id}/recevoir`, {
@@ -114,7 +174,7 @@ export function StockTransfersPage() {
           motifEcart: ecartConstate ? motifEcart : undefined,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['transferts-stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['flotte-vehicules'] })
@@ -122,6 +182,7 @@ export function StockTransfersPage() {
       setReceptionTransfert(null)
       setEcartConstate(false)
       setMotifEcart('')
+      setActionSuccess('Réception physique enregistrée avec succès.')
       setActionError(null)
     },
     onError: (err: any) => setActionError(err.message || 'Erreur lors de la réception'),
@@ -148,6 +209,13 @@ export function StockTransfersPage() {
         </div>
       )}
 
+      {actionSuccess && (
+        <div className="notice success" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{actionSuccess}</span>
+          <button className="icon-button" onClick={() => setActionSuccess(null)} aria-label="Fermer"><X size={16} /></button>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -158,8 +226,8 @@ export function StockTransfersPage() {
               <th>Destination</th>
               <th>Articles & Lots</th>
               <th>Camion & Chauffeur</th>
-              <th>Statut</th>
-              <th>Initiateur / Récepteur</th>
+              <th>Statut Circuit</th>
+              <th>Circuit & Validations</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -167,6 +235,8 @@ export function StockTransfersPage() {
             {(transfertsQuery.data ?? []).map((t: any) => {
               const ligne = t.lignes?.[0]
               const isDestinataire = t.agenceDestId === agenceId
+              const isSource = t.agenceSourceId === agenceId
+              const canValiderSource = (userRole === 'CHEF_AGENCE' && isSource) || isSuperAdminOrSiegeAdmin
               return (
                 <tr key={t.id}>
                   <td><strong>{t.referenceTransfert}</strong></td>
@@ -188,13 +258,31 @@ export function StockTransfersPage() {
                     )}
                   </td>
                   <td>
-                    <span className={clsx('badge', t.statut === 'RECU' ? 'badge-success' : t.statut === 'LITIGE' ? 'badge-danger' : 'badge-warning')}>
-                      {t.statut === 'RECU' ? 'Réceptionné' : t.statut === 'LITIGE' ? 'Litige / Écart' : 'En transit'}
-                    </span>
+                    {t.statut === 'EN_ATTENTE_VALIDATION_SOURCE' && (
+                      <span className="badge" style={{ background: '#f97316', color: '#fff' }}>1. Attente Validation Source</span>
+                    )}
+                    {t.statut === 'EN_ATTENTE_VISA_SIEGE' && (
+                      <span className="badge" style={{ background: '#8b5cf6', color: '#fff' }}>2. Attente Visa Siège</span>
+                    )}
+                    {t.statut === 'EN_TRANSIT' && (
+                      <span className="badge" style={{ background: '#2563eb', color: '#fff' }}>🚚 En transit convoi</span>
+                    )}
+                    {t.statut === 'RECU' && (
+                      <span className="badge badge-success">✓ Réceptionné Conforme</span>
+                    )}
+                    {t.statut === 'LITIGE' && (
+                      <span className="badge badge-danger">⚠️ Litige / Écart</span>
+                    )}
+                    {t.statut === 'REFUSE' && (
+                      <span className="badge" style={{ background: '#ef4444', color: '#fff' }}>❌ Refusé</span>
+                    )}
                   </td>
-                  <td>
-                    <div>Expédié par : {t.initiateurNom}</div>
-                    {t.recepteurNom && <small style={{ color: 'var(--muted)' }}>Reçu par : {t.recepteurNom}</small>}
+                  <td style={{ fontSize: '0.8rem' }}>
+                    <div>Initié par : {t.initiateurNom}</div>
+                    {t.validationSourceNom && <div style={{ color: '#16a34a', marginTop: 2 }}>✓ Départ : {t.validationSourceNom}</div>}
+                    {t.visaSiegeNom && <div style={{ color: '#8b5cf6', marginTop: 2 }}>✓ Visa Siège : {t.visaSiegeNom}</div>}
+                    {t.recepteurNom && <div style={{ color: '#2563eb', marginTop: 2 }}>✓ Reçu par : {t.recepteurNom}</div>}
+                    {t.motifRefus && <div style={{ color: '#ef4444', marginTop: 2 }}>Motif refus : {t.motifRefus}</div>}
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -205,7 +293,7 @@ export function StockTransfersPage() {
                         target="_blank"
                         rel="noreferrer"
                       >
-                        <FilePdf size={15} /> Feuille de route
+                        <FilePdf size={15} /> Feuille route
                       </a>
                       <button
                         className="secondary-action"
@@ -214,13 +302,53 @@ export function StockTransfersPage() {
                       >
                         <Printer size={15} /> Aperçu
                       </button>
-                      {t.statut === 'EN_TRANSIT' && isDestinataire && (
+
+                      {/* Étape 1 : Validation départ par le Chef d'Agence source */}
+                      {t.statut === 'EN_ATTENTE_VALIDATION_SOURCE' && canValiderSource && (
+                        <button
+                          className="primary-action"
+                          style={{ padding: '4px 8px', fontSize: '0.8rem', background: '#f97316' }}
+                          onClick={() => validerSourceMutation.mutate(t.id)}
+                          disabled={validerSourceMutation.isPending}
+                        >
+                          <CheckSquare size={15} /> Valider départ (1/2)
+                        </button>
+                      )}
+
+                      {/* Étape 2 : Visa Siège obligatoire par l'Admin Siège ou Super Admin */}
+                      {t.statut === 'EN_ATTENTE_VISA_SIEGE' && isSuperAdminOrSiegeAdmin && (
+                        <button
+                          className="primary-action"
+                          style={{ padding: '4px 8px', fontSize: '0.8rem', background: '#8b5cf6' }}
+                          onClick={() => visaSiegeMutation.mutate(t.id)}
+                          disabled={visaSiegeMutation.isPending}
+                        >
+                          <ShieldCheck size={15} /> Visa Siège (2/2)
+                        </button>
+                      )}
+
+                      {/* Possibilité de refuser pour les validateurs */}
+                      {(t.statut === 'EN_ATTENTE_VALIDATION_SOURCE' || t.statut === 'EN_ATTENTE_VISA_SIEGE') && (canValiderSource || isSuperAdminOrSiegeAdmin) && (
+                        <button
+                          className="secondary-action"
+                          style={{ padding: '4px 8px', fontSize: '0.8rem', color: '#ef4444' }}
+                          onClick={() => {
+                            setRefusTransfert(t)
+                            setMotifRefus('')
+                          }}
+                        >
+                          <Prohibit size={15} /> Refuser
+                        </button>
+                      )}
+
+                      {/* Étape 3 : Réception contradictoire par l'Agence de destination */}
+                      {t.statut === 'EN_TRANSIT' && (isDestinataire || isSuperAdminOrSiegeAdmin) && (
                         <button
                           className="primary-action"
                           style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                           onClick={() => setReceptionTransfert(t)}
                         >
-                          <CheckCircle size={15} /> Réceptionner
+                          <CheckCircle size={15} /> 3. Réceptionner
                         </button>
                       )}
                     </div>
@@ -359,6 +487,35 @@ export function StockTransfersPage() {
                 <button type="button" className="secondary-action" onClick={() => setReceptionTransfert(null)}>Annuler</button>
                 <button type="submit" className="primary-action" disabled={receptionMutation.isPending}>
                   {receptionMutation.isPending ? 'Validation...' : 'Intégrer en stock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REFUS DU CONVOI / TRANSFERT */}
+      {refusTransfert && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3 style={{ color: '#ef4444' }}>Refuser la demande de transfert</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
+              Transfert : <strong>{refusTransfert.referenceTransfert}</strong>. Veuillez motiver le refus pour traçabilité dans l'audit.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); refuserMutation.mutate(); }}>
+              <label>
+                Motif du refus hiérarchique
+                <input
+                  value={motifRefus}
+                  onChange={(e) => setMotifRefus(e.target.value)}
+                  placeholder="ex: Stock requis pour commandes locales prioritaires..."
+                  required
+                />
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setRefusTransfert(null)}>Annuler</button>
+                <button type="submit" className="primary-action" style={{ background: '#ef4444' }} disabled={refuserMutation.isPending}>
+                  {refuserMutation.isPending ? 'Enregistrement...' : 'Confirmer le refus'}
                 </button>
               </div>
             </form>

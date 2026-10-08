@@ -50,6 +50,8 @@ import {
   Wrench,
   FileXls,
   Coins,
+  ChartBar,
+  Gear,
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -434,6 +436,8 @@ function AppShell() {
                 <option value="vendeur.goma@mvg.cd">Mwamba (Vendeur Agence)</option>
                 <option value="caissier.goma@mvg.cd">Sophie (Caissière Agence)</option>
                 <option value="magasinier.goma@mvg.cd">Baraka (Magasinier Agence)</option>
+                <option value="production@mvg.cd">Paluku (Chef Production & Usine)</option>
+                <option value="technicien@mvg.cd">Kavira (Technicien Maintenance & Parc)</option>
                 <option value="comptable.senior@mvg.cd">Kambale (Comptable Senior)</option>
                 <option value="comptable@mvg.cd">Claire (Comptable)</option>
               </select>
@@ -532,68 +536,334 @@ function AppShell() {
 
 function DashboardPage() {
   const token = useToken()
+  const session = useAppStore((state) => state.session)
+  const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
+  const [selectedService, setSelectedService] = useState<string>('')
+  const [activeDiagramViewIndex, setActiveDiagramViewIndex] = useState<number>(0)
+
+  const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const isChefAgence = session?.role === 'CHEF_AGENCE'
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['rapport-global'],
-    queryFn: () => apiRequest<RapportPerformance>('/api/reporting/siege/global', { token }),
+    queryKey: ['dashboard-service-summary', selectedAgenceId, selectedService],
+    queryFn: () => {
+      const pAg = selectedAgenceId && selectedAgenceId !== 'CONSOLIDE' ? `&agenceId=${selectedAgenceId}` : ''
+      const pSrv = selectedService ? `&service=${selectedService}` : ''
+      return apiRequest<any>(`/api/dashboard/service-summary?t=1${pAg}${pSrv}`, { token })
+    },
     enabled: Boolean(token),
   })
 
-  const metrics = [
-    { label: 'Recettes USD', value: money(data?.totalRecettesUsd), icon: CurrencyCircleDollar },
-    { label: 'Recettes CDF', value: money(data?.totalRecettesCdf, 'CDF'), icon: Calculator },
-    { label: 'Consolidé USD', value: money(data?.totalConsolideUsd), icon: TrendUp },
-    { label: 'Transactions', value: data?.nombreTransactions ?? 0, icon: ClipboardText },
+  const getIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Gear': return Gear
+      case 'Package': return Package
+      case 'ChartBar': return ChartBar
+      case 'CheckCircle': return CheckCircle
+      case 'Truck': return Truck
+      case 'Receipt': return Receipt
+      case 'CurrencyCircleDollar': return CurrencyCircleDollar
+      case 'Wallet': return Wallet
+      case 'Coins': return Coins
+      case 'Wrench': return Wrench
+      case 'ClockCounterClockwise': return ClockCounterClockwise
+      case 'ShieldCheck': return ShieldCheck
+      case 'Bell': return Bell
+      default: return ChartLineUp
+    }
+  }
+
+  const availableViews = [
+    { titre: data?.diagramme?.titre || 'Diagramme d Activité', series: data?.diagramme?.series || [] },
+    ...(data?.diagramme?.vuesSecondaires || []),
   ]
+  const currentView = availableViews[activeDiagramViewIndex] || availableViews[0] || { titre: 'Activité', series: [] }
+  const series = currentView.series || []
+  const maxVal = Math.max(...series.map((s: any) => s.valeur || 0), 1)
 
   return (
     <section className="page-grid">
+      {/* BANDEAU SUPÉRIEUR DYNAMIQUE SELON LE SERVICE & LE RÔLE */}
       <div className="hero-band">
         <div>
-          <p className="section-label">Supervision Globale & Direction</p>
-          <h1>Pilotage opérationnel multi-agences</h1>
-          <p>Suivez ventes, stock, caisse, production locale, crédits, audit et synchronisation depuis un tableau de bord unique.</p>
-          <div style={{ marginTop: 12 }}>
-            <NavLink to="/reporting" className="primary-action" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 14px', fontSize: '0.85rem' }}>
-              <Buildings size={17} /> Suivre les transactions des agences (Agence par agence & Consolidé)
-            </NavLink>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span className="badge badge-primary" style={{ fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Service : {data?.serviceLibelle || 'Tableau de bord'}
+            </span>
+            <span className="badge badge-neutral" style={{ fontSize: '0.76rem' }}>
+              📍 {data?.agenceNom || 'Mon Agence'}
+            </span>
+            {data?.activeService === 'PRODUCTION' && (
+              <span className="badge" style={{ background: 'rgba(234, 88, 12, 0.15)', color: '#ea580c', fontSize: '0.75rem' }}>
+                🔒 Métriques Industrielles (Confidentialité financière préservée)
+              </span>
+            )}
           </div>
+
+          <h1 style={{ fontSize: '1.6rem', margin: '4px 0 8px' }}>
+            {data?.serviceLibelle || 'Pilotage Opérationnel'}
+          </h1>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem', maxWidth: 680 }}>
+            {data?.activeService === 'PRODUCTION'
+              ? 'Indicateurs de fabrication, suivi des ordres de travail, cadence des machines et matières premières consommées.'
+              : data?.activeService === 'STOCKS'
+              ? 'Niveaux de stocks physiques, alertes de réapprovisionnement, lots sous contrôle et transferts inter-agences.'
+              : data?.activeService === 'VENTES'
+              ? 'Activité commerciale, facturation comptoir, répartition des règlements et créances clients.'
+              : data?.activeService === 'TRESORERIE'
+              ? 'Disponibilité physique des caisses, flux d encaissements et décaissements avec visas préalables.'
+              : data?.activeService === 'MAINTENANCE'
+              ? 'Disponibilité du parc matériel, entretien préventif et curatif des machines et camions.'
+              : 'Supervision globale de l ensemble du réseau multi-agences et grandes décisions stratégiques.'}
+          </p>
+
+          {/* SÉLECTEUR DE PERSPECTIVE MÉTIER (POUR LES SUPERVISEURS ET CHEFS D'AGENCE) */}
+          {data?.canSwitchService && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600 }}>Changer de vue métier :</span>
+              {[
+                { code: '', label: isSuperOrAdminSiege ? '🌐 Direction Consolidée' : '🏢 Mon Agence' },
+                { code: 'PRODUCTION', label: '⚙️ Production' },
+                { code: 'STOCKS', label: '📦 Stocks' },
+                { code: 'VENTES', label: '🛒 Ventes' },
+                { code: 'TRESORERIE', label: '💵 Caisse' },
+                { code: 'MAINTENANCE', label: '🔧 Maintenance' },
+              ].map((s) => {
+                const isActive = (selectedService === s.code) || (!selectedService && s.code === '')
+                return (
+                  <button
+                    key={s.code}
+                    type="button"
+                    className={clsx('tab-button', isActive && 'active')}
+                    style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: 20 }}
+                    onClick={() => setSelectedService(s.code)}
+                  >
+                    {s.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
-        <div className="hero-status">
-          <Bell size={24} />
-          <strong>3 validations à surveiller</strong>
-          <span>Crédits, sorties de caisse, stocks négatifs</span>
+
+        <div className="hero-status" style={{ minWidth: 220 }}>
+          {data?.activeService === 'PRODUCTION' ? (
+            <>
+              <Gear size={26} color="#2563eb" />
+              <strong>Atelier Opérationnel</strong>
+              <span>Lignes de fabrication actives</span>
+            </>
+          ) : data?.activeService === 'STOCKS' ? (
+            <>
+              <Package size={26} color="#16a34a" />
+              <strong>Gestion des Magasins</strong>
+              <span>Contrôle FEFO & Lots</span>
+            </>
+          ) : isSuperOrAdminSiege ? (
+            <>
+              <ShieldCheck size={26} color="#8b5cf6" />
+              <strong>Gouvernance Siège</strong>
+              <span>{data?.kpis?.find((k: any) => k.label.includes('Visa'))?.valeur || 0} visas à surveiller</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle size={26} color="#16a34a" />
+              <strong>Poste Opérationnel</strong>
+              <span>Données synchronisées</span>
+            </>
+          )}
         </div>
       </div>
 
-      {error && <Notice type="warning" text="Le backend ne répond pas encore pour le reporting. L’interface reste prête à consommer l’API." />}
+      {error && <Notice type="warning" text="Impossible de charger le résumé du service. Données locales temporaires." />}
 
+      {/* CARTES DE KPIS SPÉCIFIQUES AU SERVICE */}
       <div className="metric-grid">
-        {metrics.map((metric) => {
-          const Icon = metric.icon
+        {(data?.kpis || []).map((kpi: any) => {
+          const Icon = getIcon(kpi.icon)
           return (
-            <article className="metric-card" key={metric.label}>
-              <Icon size={23} />
-              <span>{metric.label}</span>
-              <strong>{isLoading ? '...' : metric.value}</strong>
+            <article className="metric-card" key={kpi.label} style={{ borderLeft: `4px solid ${kpi.color || '#2563eb'}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Icon size={24} style={{ color: kpi.color || 'var(--primary)' }} />
+                {kpi.detail && <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>{kpi.detail}</span>}
+              </div>
+              <span style={{ marginTop: 8, fontSize: '0.84rem' }}>{kpi.label}</span>
+              <strong style={{ fontSize: '1.4rem' }}>{isLoading ? '...' : kpi.valeur}</strong>
             </article>
           )
         })}
       </div>
 
-      <div className="two-column">
-        <Panel title="Flux de validation" icon={ShieldCheck}>
-          <WorkflowRow label="Vente crédit" value="Chef agence" status="En attente" />
-          <WorkflowRow label="Sortie caisse" value="Chef agence" status="Contrôle solde" />
-          <WorkflowRow label="Stock négatif offline" value="Chef agence" status="Correction" />
-          <WorkflowRow label="Prix agence" value="Admin siège" status="Historisé" />
-        </Panel>
-        <Panel title="Architecture terrain" icon={DeviceMobile}>
-          <div className="feature-list">
-            <Feature icon={WifiSlash} text="Vente hors ligne jusqu’à deux semaines avec file locale IndexedDB." />
-            <Feature icon={QrCode} text="QR lot signé, sans prix embarqué, prix récupéré par agence." />
-            <Feature icon={WarningCircle} text="Rappel simple si expiration inférieure à deux mois, sans blocage." />
+      {/* SECTION CENTRALE : DIAGRAMME DYNAMIQUE DU SERVICE & DERNIÈRES OPÉRATIONS */}
+      <div className="two-column" style={{ gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
+        {/* 1. DIAGRAMME DYNAMIQUE DU SERVICE */}
+        <div className="panel" style={{ background: 'var(--surface)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ChartBar size={20} color="#2563eb" />
+                {currentView.titre}
+              </h3>
+              <small style={{ color: 'var(--muted)' }}>
+                {data?.activeService === 'PRODUCTION'
+                  ? 'Visualisation des indicateurs industriels (recettes et données financières strictement masquées)'
+                  : 'Visualisation graphique en temps réel selon les flux du département'}
+              </small>
+            </div>
+            <span className="badge badge-neutral" style={{ fontSize: '0.74rem' }}>
+              {series.length} indicateurs
+            </span>
           </div>
-        </Panel>
+
+          {availableViews.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>Vue graphique :</span>
+              {availableViews.map((v: any, i: number) => (
+                <button
+                  key={v.titre}
+                  type="button"
+                  className={clsx('tab-button', activeDiagramViewIndex === i && 'active')}
+                  style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: 16 }}
+                  onClick={() => setActiveDiagramViewIndex(i)}
+                >
+                  {v.titre}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* REPRÉSENTATION DU DIAGRAMME EN BARRES INTERACTIVES */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {series.map((item: any, idx: number) => {
+              const pct = maxVal > 0 ? Math.round(((item.valeur || 0) / maxVal) * 100) : 0
+              const barColors = ['#2563eb', '#16a34a', '#8b5cf6', '#ea580c', '#0284c7', '#d97706']
+              const color = barColors[idx % barColors.length]
+              return (
+                <div key={item.label || idx}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600 }}>{item.label}</span>
+                    <strong>
+                      {typeof item.valeur === 'number' ? item.valeur.toLocaleString() : item.valeur}{' '}
+                      <small style={{ color: 'var(--muted)', fontWeight: 400 }}>{item.unite || ''}</small>
+                    </strong>
+                  </div>
+                  <div style={{ width: '100%', height: 10, background: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.max(pct, 4)}%`,
+                        height: '100%',
+                        background: color,
+                        borderRadius: 6,
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+            {series.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--muted)', fontSize: '0.88rem' }}>
+                Aucune donnée à modéliser pour ce filtre.
+              </div>
+            )}
+          </div>
+
+          {/* RACCROCHEMENT AUX ACTIONS MÉTIER */}
+          <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {data?.activeService === 'PRODUCTION' && (
+              <>
+                <NavLink to="/production" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Gear size={16} /> Lancer un Ordre de Fabrication
+                </NavLink>
+                <NavLink to="/stock" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Package size={16} /> Vérifier les Matières Premières
+                </NavLink>
+              </>
+            )}
+            {data?.activeService === 'STOCKS' && (
+              <>
+                <NavLink to="/stock" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Package size={16} /> Consulter l Inventaire
+                </NavLink>
+                <NavLink to="/transferts" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Truck size={16} /> Suivre les Convois
+                </NavLink>
+              </>
+            )}
+            {data?.activeService === 'VENTES' && (
+              <>
+                <NavLink to="/ventes" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Receipt size={16} /> Nouvelle Vente Comptoir
+                </NavLink>
+              </>
+            )}
+            {data?.activeService === 'TRESORERIE' && (
+              <>
+                <NavLink to="/tresorerie" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Coins size={16} /> Nouvel État de Besoin
+                </NavLink>
+              </>
+            )}
+            {data?.activeService === 'MAINTENANCE' && (
+              <>
+                <NavLink to="/maintenance" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                  <Wrench size={16} /> Planifier une Intervention
+                </NavLink>
+              </>
+            )}
+            {(data?.activeService === 'DIRECTION_SIEGE' || isSuperOrAdminSiege) && (
+              <NavLink to="/reporting" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
+                <Buildings size={16} /> Supervision Multi-Agences
+              </NavLink>
+            )}
+          </div>
+        </div>
+
+        {/* 2. DERNIÈRES OPÉRATIONS & FLUX DU MÉTIER */}
+        <div className="panel" style={{ background: 'var(--surface)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ClockCounterClockwise size={20} color="#8b5cf6" />
+              Activités & Enregistrements Récents
+            </h3>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(data?.recents || []).map((item: any) => (
+              <div
+                key={item.id || item.reference}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '10px 12px',
+                  background: 'var(--surface-2)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '0.85rem', display: 'block' }}>{item.reference}</strong>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{item.titre}</span>
+                  {item.date && <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 2 }}>{item.date}</div>}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <strong style={{ fontSize: '0.85rem', display: 'block', color: 'var(--accent-strong)' }}>
+                    {item.quantite}
+                  </strong>
+                  <span className="badge" style={{ fontSize: '0.7rem' }}>
+                    {item.statut}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {(data?.recents || []).length === 0 && (
+              <div style={{ textAlign: 'center', padding: 20, color: 'var(--muted)', fontSize: '0.84rem' }}>
+                Aucune opération récente dans ce département.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -2978,6 +3248,9 @@ function TreasuryPage() {
   const can = useAppStore((state) => state.can)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
+  const sessionRole = useAppStore((state) => state.session?.role)
+  const isSiegeOrSuperAdmin = sessionRole === 'SUPER_ADMIN' || sessionRole === 'ADMIN_SIEGE'
+
   const [activeTab, setActiveTab] = useState<'caisses' | 'etats-besoin' | 'demandes' | 'historique' | 'rapprochement'>('etats-besoin')
   const [showNewDemandeModal, setShowNewDemandeModal] = useState(false)
   const [showNewCaisseModal, setShowNewCaisseModal] = useState(false)
@@ -3000,7 +3273,7 @@ function TreasuryPage() {
   const [ebDevise, setEbDevise] = useState<'USD' | 'CDF'>('USD')
   const [ebCompte, setEbCompte] = useState('605')
   const [ebObservations, setEbObservations] = useState('')
-  const [ebFilter, setEbFilter] = useState<'TOUS' | 'SOUMIS' | 'APPROUVE_CHEF' | 'DECAISSE' | 'REJETE'>('TOUS')
+  const [ebFilter, setEbFilter] = useState<'TOUS' | 'SOUMIS' | 'ATTENTE_VISA_SIEGE' | 'APPROUVE' | 'DECAISSE' | 'REJETE'>('TOUS')
 
   // Requête États de Besoin
   const etatsBesoinQuery = useQuery({
@@ -3054,6 +3327,19 @@ function TreasuryPage() {
       setActionError(null)
     },
     onError: (err: any) => setActionError(err.message || 'Erreur lors de la validation hiérarchique'),
+  })
+
+  const visaSiegeEBMutation = useMutation({
+    mutationFn: (ebId: number) =>
+      apiRequest<{ message: string; etatBesoin: EtatBesoin }>(`/api/etats-besoin/${ebId}/visa-siege`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['etats-besoin'] })
+      setActionError(null)
+    },
+    onError: (err: any) => setActionError(err.message || "Erreur lors de l'octroi du visa de direction siège"),
   })
 
   const decaissementEBMutation = useMutation({
@@ -3464,7 +3750,7 @@ function TreasuryPage() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {(['TOUS', 'SOUMIS', 'APPROUVE_CHEF', 'DECAISSE', 'REJETE'] as const).map((st) => (
+              {(['TOUS', 'SOUMIS', 'ATTENTE_VISA_SIEGE', 'APPROUVE', 'DECAISSE', 'REJETE'] as const).map((st) => (
                 <button
                   key={st}
                   type="button"
@@ -3472,17 +3758,31 @@ function TreasuryPage() {
                   style={{ fontSize: '0.76rem', padding: '3px 8px' }}
                   onClick={() => setEbFilter(st)}
                 >
-                  {st === 'TOUS' ? 'Tous' : st === 'SOUMIS' ? 'En attente Chef' : st === 'APPROUVE_CHEF' ? 'Prêts à décaisser' : st === 'DECAISSE' ? 'Décaissés' : 'Rejetés'}
+                  {st === 'TOUS'
+                    ? 'Tous'
+                    : st === 'SOUMIS'
+                    ? 'En attente Chef'
+                    : st === 'ATTENTE_VISA_SIEGE'
+                    ? 'Attente Visa Siège'
+                    : st === 'APPROUVE'
+                    ? 'Prêts à décaisser'
+                    : st === 'DECAISSE'
+                    ? 'Décaissés'
+                    : 'Rejetés'}
                 </button>
               ))}
             </div>
           </div>
 
           <DataTable
-            columns={['N° EB / Date', 'Service & Demandeur', 'Motif / Justification', 'Montant', 'Compte', 'Statut', 'Pièce Caisse', 'Actions']}
+            columns={['N° EB / Date', 'Service & Demandeur', 'Motif / Justification', 'Montant', 'Compte', 'Statut Circuit', 'Pièce Caisse', 'Actions']}
             loading={etatsBesoinQuery.isLoading}
             rows={(etatsBesoinQuery.data ?? [])
-              .filter((eb) => ebFilter === 'TOUS' || eb.statut === ebFilter)
+              .filter((eb) => {
+                if (ebFilter === 'TOUS') return true
+                if (ebFilter === 'APPROUVE') return eb.statut === 'APPROUVE_CHEF' || eb.statut === 'APPROUVE_SIEGE'
+                return eb.statut === ebFilter
+              })
               .map((eb) => [
                 <div key={eb.id + '-ref'}>
                   <strong>{eb.numeroEB}</strong>
@@ -3508,19 +3808,39 @@ function TreasuryPage() {
                   {money(eb.montant, eb.devise)}
                 </strong>,
                 <code key={eb.id + '-cpt'} style={{ fontSize: '0.75rem' }}>{eb.compteImputation || '605'}</code>,
-                <span
-                  key={eb.id + '-stat'}
-                  className={clsx(
-                    'badge',
-                    eb.statut === 'DECAISSE' && 'badge-success',
-                    eb.statut === 'APPROUVE_CHEF' && 'badge-neutral',
-                    eb.statut === 'SOUMIS' && 'badge-warning',
-                    eb.statut === 'REJETE' && 'badge-danger'
+                <div key={eb.id + '-stat'}>
+                  <span
+                    className={clsx(
+                      'badge',
+                      eb.statut === 'DECAISSE' && 'badge-success',
+                      eb.statut === 'APPROUVE_CHEF' && 'badge-neutral',
+                      eb.statut === 'APPROUVE_SIEGE' && 'badge-success',
+                      eb.statut === 'SOUMIS' && 'badge-warning',
+                      eb.statut === 'REJETE' && 'badge-danger'
+                    )}
+                    style={{
+                      fontSize: '0.74rem',
+                      ...(eb.statut === 'ATTENTE_VISA_SIEGE' ? { background: '#8b5cf6', color: '#fff' } : {}),
+                    }}
+                  >
+                    {eb.statut === 'DECAISSE'
+                      ? 'Décaissé en Caisse'
+                      : eb.statut === 'APPROUVE_CHEF'
+                      ? 'Validé Chef Agence'
+                      : eb.statut === 'APPROUVE_SIEGE'
+                      ? 'Visé Direction Siège'
+                      : eb.statut === 'ATTENTE_VISA_SIEGE'
+                      ? 'Attente Visa Siège'
+                      : eb.statut === 'SOUMIS'
+                      ? 'En attente Chef'
+                      : 'Rejeté'}
+                  </span>
+                  {eb.visaSiegeNom && (
+                    <div style={{ fontSize: '0.7rem', color: '#8b5cf6', marginTop: 2 }}>
+                      ✓ {eb.visaSiegeNom}
+                    </div>
                   )}
-                  style={{ fontSize: '0.74rem' }}
-                >
-                  {eb.statut === 'DECAISSE' ? 'Décaissé' : eb.statut === 'APPROUVE_CHEF' ? 'Validé Chef' : eb.statut === 'SOUMIS' ? 'En attente Chef' : 'Rejeté'}
-                </span>,
+                </div>,
                 <div key={eb.id + '-pcs'} style={{ fontSize: '0.8rem' }}>
                   {eb.numeroPieceCaisse ? <strong>{eb.numeroPieceCaisse}</strong> : '-'}
                   {eb.caissierNom && <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{eb.caissierNom}</div>}
@@ -3553,7 +3873,36 @@ function TreasuryPage() {
                     </>
                   )}
 
-                  {eb.statut === 'APPROUVE_CHEF' && (
+                  {eb.statut === 'ATTENTE_VISA_SIEGE' && (
+                    <>
+                      {isSiegeOrSuperAdmin && (
+                        <button
+                          type="button"
+                          className="primary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.74rem', background: '#8b5cf6' }}
+                          onClick={() => visaSiegeEBMutation.mutate(eb.id)}
+                          disabled={visaSiegeEBMutation.isPending}
+                          title="Accorder le visa de direction générale siège obligatoire (> seuil)"
+                        >
+                          <ShieldCheck size={14} /> Visa Siège
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="secondary-action"
+                        style={{ padding: '3px 8px', fontSize: '0.74rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                        onClick={() => {
+                          const r = prompt('Motif du rejet du visa siège :')
+                          if (r) rejeterEBMutation.mutate({ ebId: eb.id, motifRejet: r })
+                        }}
+                        title="Rejeter la demande"
+                      >
+                        <XCircle size={14} /> Refuser
+                      </button>
+                    </>
+                  )}
+
+                  {(eb.statut === 'APPROUVE_CHEF' || eb.statut === 'APPROUVE_SIEGE') && (
                     <button
                       type="button"
                       className="primary-action"
@@ -5546,23 +5895,33 @@ function ReportingPage() {
   const token = useToken()
   const globalSelectedAgenceId = useAppStore((state) => state.selectedAgenceId)
   const session = useAppStore((state) => state.session)
-  const agenceId = useAppStore((state) => state.session?.agenceId)
+  const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const agenceId = session?.agenceId
   const month = new Date().getMonth() + 1
   const year = new Date().getFullYear()
-  const balancePath = `/api/reporting/export/balance?mois=${month}&annee=${year}${agenceId ? `&agenceId=${agenceId}` : ''}`
-  const stockExportPath = `/api/stocks/export/inventaire${agenceId ? `?agenceId=${agenceId}` : ''}`
 
   const [activeTab, setActiveTab] = useState<'kpis' | 'transactions'>('transactions')
   const [selectedAgenceFiltre, setSelectedAgenceFiltre] = useState<string | number>(
-    globalSelectedAgenceId === 'CONSOLIDE' ? 'CONSOLIDE' : (globalSelectedAgenceId || 'CONSOLIDE')
+    isSuperOrAdminSiege
+      ? (globalSelectedAgenceId === 'CONSOLIDE' ? 'CONSOLIDE' : (globalSelectedAgenceId || 'CONSOLIDE'))
+      : (agenceId ?? 1)
   )
   const [selectedModuleFiltre, setSelectedModuleFiltre] = useState<string>('TOUS')
   const [searchTerm, setSearchTerm] = useState('')
 
+  const effectiveReportingAgenceId = isSuperOrAdminSiege
+    ? (selectedAgenceFiltre === 'CONSOLIDE' ? undefined : selectedAgenceFiltre)
+    : agenceId
+
+  const balancePath = `/api/reporting/export/balance?mois=${month}&annee=${year}${effectiveReportingAgenceId ? `&agenceId=${effectiveReportingAgenceId}` : ''}`
+  const stockExportPath = `/api/stocks/export/inventaire${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`
+
   const kpisQuery = useQuery({
-    queryKey: ['direction-kpis', agenceId],
-    queryFn: () =>
-      apiRequest<DirectionKpis>(`/api/reporting/direction-kpis${agenceId ? `?agenceId=${agenceId}` : ''}`, { token }),
+    queryKey: ['direction-kpis', effectiveReportingAgenceId],
+    queryFn: () => {
+      const pAg = effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''
+      return apiRequest<DirectionKpis>(`/api/reporting/direction-kpis${pAg}`, { token })
+    },
     enabled: Boolean(token),
   })
 
@@ -5575,7 +5934,9 @@ function ReportingPage() {
   const multiAgencesTransactionsQuery = useQuery({
     queryKey: ['transactions-multi-agences', selectedAgenceFiltre, selectedModuleFiltre],
     queryFn: () => {
-      const pAg = selectedAgenceFiltre === 'CONSOLIDE' ? '' : `&agenceId=${selectedAgenceFiltre}`
+      const pAg = isSuperOrAdminSiege
+        ? (selectedAgenceFiltre === 'CONSOLIDE' ? '' : `&agenceId=${selectedAgenceFiltre}`)
+        : `&agenceId=${agenceId}`
       const pMod = selectedModuleFiltre === 'TOUS' ? '' : `&type=${selectedModuleFiltre}`
       return apiRequest<{ transactions: any[]; resumeAgences: any[]; totalTransactionsCount: number }>(
         `/api/reporting/siege/transactions-multi-agences?t=1${pAg}${pMod}`,
@@ -5604,8 +5965,8 @@ function ReportingPage() {
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader
-          title="Tableau de Bord Direction Générale & Supervision Siège"
-          text="Suivi des transactions agence par agence et consolidé, KPIs stratégiques, rentabilité de mouture et pièces officielles."
+          title={isSuperOrAdminSiege ? "Tableau de Bord Direction Générale & Supervision Siège" : "Journal des Opérations & Reporting de l'Agence"}
+          text={isSuperOrAdminSiege ? "Suivi des transactions agence par agence et consolidé, KPIs stratégiques, rentabilité de production et pièces officielles." : "Consultez l'historique et les pièces comptables officielles de votre agence locale."}
           icon={ChartLineUp}
         />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -5617,16 +5978,16 @@ function ReportingPage() {
           </a>
           <a
             className="secondary-action"
-            href={`/api/export/excel/transactions-consolidees${selectedAgenceFiltre !== 'CONSOLIDE' ? `?agenceId=${selectedAgenceFiltre}` : ''}`}
+            href={`/api/export/excel/transactions-consolidees${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`}
             target="_blank"
             rel="noreferrer"
             style={{ textDecoration: 'none' }}
           >
-            <FileXls size={17} /> Journal Multi-Agences (.xlsx)
+            <FileXls size={17} /> {isSuperOrAdminSiege ? "Journal Multi-Agences (.xlsx)" : "Journal des Opérations (.xlsx)"}
           </a>
           <a
             className="secondary-action"
-            href={`/api/export/excel/balance${agenceId ? `?agenceId=${agenceId}` : ''}`}
+            href={`/api/export/excel/balance${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`}
             target="_blank"
             rel="noreferrer"
             style={{ textDecoration: 'none' }}
@@ -5635,7 +5996,7 @@ function ReportingPage() {
           </a>
           <a
             className="secondary-action"
-            href={`/api/export/excel/compte-resultat${agenceId ? `?agenceId=${agenceId}` : ''}`}
+            href={`/api/export/excel/compte-resultat${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`}
             target="_blank"
             rel="noreferrer"
             style={{ textDecoration: 'none' }}
@@ -5651,7 +6012,7 @@ function ReportingPage() {
           className={clsx('tab-button', activeTab === 'transactions' && 'active')}
           onClick={() => setActiveTab('transactions')}
         >
-          <Buildings size={18} /> Supervision des Transactions Multi-Agences
+          <Buildings size={18} /> {isSuperOrAdminSiege ? "Supervision des Transactions Multi-Agences" : "Journal des Transactions de l'Agence"}
         </button>
         <button
           className={clsx('tab-button', activeTab === 'kpis' && 'active')}
@@ -5664,7 +6025,7 @@ function ReportingPage() {
       {/* ================= ONGLET 1 : SUPERVISION MULTI-AGENCES (AGENCE PAR AGENCE & CONSOLIDÉ) ================= */}
       {activeTab === 'transactions' && (
         <div className="page-grid">
-          {/* BANDEAU EXPLICATIF RÔLE ADMIN SIÈGE VS CHEF SIÈGE */}
+          {/* BANDEAU EXPLICATIF */}
           <div
             style={{
               background: 'var(--surface)',
@@ -5694,10 +6055,14 @@ function ReportingPage() {
               </div>
               <div>
                 <strong style={{ fontSize: '1rem', display: 'block' }}>
-                  Espace de Contrôle & Traçabilité Multi-Agences (Admin Siège & Direction)
+                  {isSuperOrAdminSiege
+                    ? "Espace de Contrôle & Traçabilité Multi-Agences (Admin Siège & Direction)"
+                    : "Espace de Traçabilité des Opérations de l'Agence"}
                 </strong>
                 <span style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>
-                  Visualisez en temps réel toutes les transactions opérationnelles : agence par agence ou consolidé global. Les agences opèrent en autonomie (ventes, stocks, production locale) sous la supervision des grandes décisions du siège.
+                  {isSuperOrAdminSiege
+                    ? "Visualisez en temps réel toutes les transactions opérationnelles : agence par agence ou consolidé global. Les agences opèrent en autonomie (ventes, stocks, production locale) sous la supervision des grandes décisions du siège."
+                    : "Visualisez en temps réel l'ensemble des transactions et flux enregistrés au sein de votre agence locale."}
                 </span>
               </div>
             </div>
@@ -5717,31 +6082,33 @@ function ReportingPage() {
           {/* CARTES DE SYNTHÈSE PAR AGENCE */}
           <div>
             <h4 style={{ margin: '0 0 10px', fontSize: '0.92rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Statut Opérationnel par Agence (Cliquer pour filtrer) :
+              {isSuperOrAdminSiege ? "Statut Opérationnel par Agence (Cliquer pour filtrer) :" : "Statut Opérationnel de votre Agence :"}
             </h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-              {/* Carte globale "Tout consolidé" */}
-              <div
-                onClick={() => setSelectedAgenceFiltre('CONSOLIDE')}
-                style={{
-                  background: selectedAgenceFiltre === 'CONSOLIDE' ? 'rgba(37, 99, 235, 0.08)' : 'var(--surface)',
-                  border: `2px solid ${selectedAgenceFiltre === 'CONSOLIDE' ? '#2563eb' : 'var(--border)'}`,
-                  borderRadius: 10,
-                  padding: 14,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <strong style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
-                    🌐 TOUT CONSOLIDÉ
-                  </strong>
-                  <span className="badge badge-primary">{multiAgencesTransactionsQuery.data?.totalTransactionsCount ?? 0} flux</span>
+              {/* Carte globale "Tout consolidé" - STRICTEMENT RÉSERVÉE À L'ADMIN DU SIÈGE ET SUPER ADMIN */}
+              {isSuperOrAdminSiege && (
+                <div
+                  onClick={() => setSelectedAgenceFiltre('CONSOLIDE')}
+                  style={{
+                    background: selectedAgenceFiltre === 'CONSOLIDE' ? 'rgba(37, 99, 235, 0.08)' : 'var(--surface)',
+                    border: `2px solid ${selectedAgenceFiltre === 'CONSOLIDE' ? '#2563eb' : 'var(--border)'}`,
+                    borderRadius: 10,
+                    padding: 14,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
+                      🌐 TOUT CONSOLIDÉ
+                    </strong>
+                    <span className="badge badge-primary">{multiAgencesTransactionsQuery.data?.totalTransactionsCount ?? 0} flux</span>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                    Vision unifiée de l'ensemble du réseau (Siège + toutes les agences provinciales).
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Vision unifiée de l'ensemble du réseau (Siège + toutes les agences provinciales).
-                </div>
-              </div>
+              )}
 
               {/* Cartes pour chaque agence */}
               {(multiAgencesTransactionsQuery.data?.resumeAgences ?? []).map((ag: any) => {
@@ -5749,13 +6116,15 @@ function ReportingPage() {
                 return (
                   <div
                     key={ag.agenceId}
-                    onClick={() => setSelectedAgenceFiltre(ag.agenceId)}
+                    onClick={() => {
+                      if (isSuperOrAdminSiege) setSelectedAgenceFiltre(ag.agenceId)
+                    }}
                     style={{
                       background: isSelected ? 'rgba(22, 163, 74, 0.08)' : 'var(--surface)',
                       border: `2px solid ${isSelected ? '#16a34a' : 'var(--border)'}`,
                       borderRadius: 10,
                       padding: 14,
-                      cursor: 'pointer',
+                      cursor: isSuperOrAdminSiege ? 'pointer' : 'default',
                       transition: 'all 0.2s ease',
                     }}
                   >
@@ -5777,8 +6146,8 @@ function ReportingPage() {
                         <strong>${ag.soldeCaisseUsd.toLocaleString()}</strong>
                       </div>
                       <div>
-                        <span style={{ color: 'var(--muted)', display: 'block' }}>Farine produite :</span>
-                        <strong>{ag.sacsProduits} sacs</strong>
+                        <span style={{ color: 'var(--muted)', display: 'block' }}>Produits fabriqués :</span>
+                        <strong>{ag.sacsProduits} unités/sacs</strong>
                       </div>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Attente visa :</span>
@@ -5810,21 +6179,27 @@ function ReportingPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Agence :</span>
-                <select
-                  value={selectedAgenceFiltre}
-                  onChange={(e) => {
-                    const val = e.target.value === 'CONSOLIDE' ? 'CONSOLIDE' : Number(e.target.value)
-                    setSelectedAgenceFiltre(val)
-                  }}
-                  style={{ padding: '5px 10px', fontSize: '0.84rem' }}
-                >
-                  <option value="CONSOLIDE">🌐 Tout Consolidé (Toutes les Agences)</option>
-                  {(agencesQuery.data || []).map((ag: any) => (
-                    <option key={ag.id} value={ag.id}>
-                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
-                    </option>
-                  ))}
-                </select>
+                {isSuperOrAdminSiege ? (
+                  <select
+                    value={selectedAgenceFiltre}
+                    onChange={(e) => {
+                      const val = e.target.value === 'CONSOLIDE' ? 'CONSOLIDE' : Number(e.target.value)
+                      setSelectedAgenceFiltre(val)
+                    }}
+                    style={{ padding: '5px 10px', fontSize: '0.84rem' }}
+                  >
+                    <option value="CONSOLIDE">🌐 Tout Consolidé (Toutes les Agences)</option>
+                    {(agencesQuery.data || []).map((ag: any) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="badge badge-primary" style={{ padding: '5px 10px', fontSize: '0.84rem' }}>
+                    🏢 {(agencesQuery.data || []).find((a: any) => a.id === agenceId)?.nom || 'Mon Agence'}
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -7075,10 +7450,103 @@ function AdminPage() {
               </div>
             </div>
 
+            {/* SECTION GOUVERNANCE SIÈGE & RÈGLES DE VALIDATION */}
+            <div
+              style={{
+                marginTop: 16,
+                padding: 16,
+                background: 'rgba(37, 99, 235, 0.05)',
+                borderRadius: 10,
+                border: '1px solid rgba(37, 99, 235, 0.25)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <ShieldCheck size={24} style={{ color: '#2563eb' }} />
+                <div>
+                  <strong style={{ fontSize: '1rem', color: 'var(--text)' }}>
+                    Règles de Gouvernance Siège & Seuils de Validation des Agences
+                  </strong>
+                  <p style={{ margin: '2px 0 0', color: 'var(--muted)', fontSize: '0.82rem' }}>
+                    Paramétré par l'Administrateur du Siège. Les agences opèrent en autonomie courante mais les décisions majeures excédant ces montants requièrent obligatoirement le visa du siège.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <label>
+                  Plafond d'autonomie des États de Besoin en Agence (USD) :
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="10"
+                      value={formEntreprise.plafondAutonomieEtatBesoinAgenceUsd ?? 200}
+                      onChange={(e) =>
+                        setFormEntreprise({
+                          ...formEntreprise,
+                          plafondAutonomieEtatBesoinAgenceUsd: Number(e.target.value),
+                        })
+                      }
+                      required
+                    />
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>USD</span>
+                  </div>
+                  <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+                    Toute réquisition locale supérieure à ce montant déclenche automatiquement le circuit de <strong>Visa Obligatoire par l'Admin du Siège</strong> avant décaissement en caisse.
+                  </small>
+                </label>
+
+                <label>
+                  Plafond des Dépenses Directes Caisses Agence (USD) :
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="10"
+                      value={formEntreprise.plafondDepenseDirecteAgenceUsd ?? 150}
+                      onChange={(e) =>
+                        setFormEntreprise({
+                          ...formEntreprise,
+                          plafondDepenseDirecteAgenceUsd: Number(e.target.value),
+                        })
+                      }
+                      required
+                    />
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>USD</span>
+                  </div>
+                  <small style={{ color: 'var(--muted)', display: 'block', marginTop: 4 }}>
+                    Plafond autorisé pour menues dépenses directes sans état de besoin préalable.
+                  </small>
+                </label>
+              </div>
+
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(37, 99, 235, 0.15)' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    style={{ marginTop: 3 }}
+                    checked={formEntreprise.doubleValidationTransfertObligatoire ?? true}
+                    onChange={(e) =>
+                      setFormEntreprise({
+                        ...formEntreprise,
+                        doubleValidationTransfertObligatoire: e.target.checked,
+                      })
+                    }
+                  />
+                  <div>
+                    <strong>Exiger systématiquement la Double Validation pour les transferts de stock</strong>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: 2 }}>
+                      Circuit rigoureux : 1. Validation de départ par le Chef d'Agence expéditrice → 2. Visa de Direction / Admin du Siège autorisant le convoi → 3. Réception contradictoire par l'Agence réceptrice.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
               <button className="primary-action" type="submit" disabled={updateEntrepriseMutation.isPending}>
                 <CheckCircle size={18} />
-                {updateEntrepriseMutation.isPending ? 'Enregistrement...' : 'Enregistrer les Mentions Légales'}
+                {updateEntrepriseMutation.isPending ? 'Enregistrement...' : 'Enregistrer les Mentions Légales & Paramètres'}
               </button>
             </div>
           </form>

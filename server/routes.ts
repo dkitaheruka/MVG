@@ -241,11 +241,420 @@ router.get('/reporting/siege/global', (_req: Request, res: Response) => {
   })
 })
 
+// ----------------- TABLEAU DE BORD DYNAMIQUE SELON LES SERVICES & GOUVERNANCE -----------------
+router.get('/dashboard/service-summary', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const isSuperOrAdminSiege = currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE'
+  const isChefAgence = currentUser.role === 'CHEF_AGENCE'
+
+  // Détermination du service actif
+  let requestedService = (req.query.service as string) || ''
+  let activeService = 'DIRECTION_SIEGE'
+
+  if (currentUser.role === 'RESPONSABLE_PRODUCTION' || (!currentUser.permissions.includes('ventes.voir') && currentUser.permissions.includes('production.gerer'))) {
+    activeService = 'PRODUCTION'
+  } else if (currentUser.role === 'TECHNICIEN_MAINTENANCE' || (!currentUser.permissions.includes('ventes.voir') && currentUser.permissions.includes('flotte.gerer'))) {
+    activeService = 'MAINTENANCE'
+  } else if (currentUser.role === 'MAGASINIER' || (!currentUser.permissions.includes('ventes.voir') && currentUser.permissions.includes('stocks.voir'))) {
+    activeService = 'STOCKS'
+  } else if (currentUser.role === 'CAISSIER' || (!currentUser.permissions.includes('ventes.voir') && currentUser.permissions.includes('tresorerie.voir'))) {
+    activeService = 'TRESORERIE'
+  } else if (currentUser.role === 'VENDEUR') {
+    activeService = 'VENTES'
+  } else if (currentUser.role === 'CHEF_AGENCE') {
+    activeService = (requestedService && ['PRODUCTION', 'VENTES', 'STOCKS', 'TRESORERIE', 'MAINTENANCE', 'AGENCE'].includes(requestedService))
+      ? requestedService
+      : 'AGENCE'
+  } else if (isSuperOrAdminSiege) {
+    activeService = requestedService || 'DIRECTION_SIEGE'
+  }
+
+  // Agence autorisée : Seul l'Admin Siège et Super Admin peuvent interroger les autres agences ou le consolidé
+  const agenceId = isSuperOrAdminSiege
+    ? (req.query.agenceId && req.query.agenceId !== 'CONSOLIDE' ? toInt(req.query.agenceId) : undefined)
+    : currentUser.agenceId
+
+  const userAgence = agences.find((a) => a.id === currentUser.agenceId)
+  const currentAgence = agenceId ? agences.find((a) => a.id === agenceId) : null
+
+  // Payload selon le métier du collaborateur (Respect strict de la confidentialité)
+  if (activeService === 'PRODUCTION') {
+    const ordres = ordresProduction.filter((o) => !agenceId || o.agenceId === agenceId)
+    const ordresActifs = ordres.filter((o) => o.statut !== 'TERMINE').length
+    const ordresTermines = ordres.filter((o) => o.statut === 'TERMINE').length
+    const quantiteFabriquee = ordres.filter((o) => o.statut === 'TERMINE').reduce((sum, o) => sum + (o.quantiteReelle || o.quantitePrevue || 0), 0)
+    const matieresConsommeesKg = ordres.filter((o) => o.statut === 'TERMINE').reduce((sum, o) => sum + (o.quantitePrevue || 0) * 32, 0)
+
+    // Calcul de répartition par produit fabriqué
+    const prodMap: Record<string, number> = {}
+    ordres.forEach((o) => {
+      const art = articles.find((a) => a.id === o.articleFiniId)
+      const nom = art?.designation || `Produit #${o.articleFiniId}`
+      prodMap[nom] = (prodMap[nom] || 0) + (o.quantiteReelle || o.quantitePrevue || 0)
+    })
+    const diagrammeProduits = Object.entries(prodMap).map(([nom, quantite]) => ({
+      label: nom,
+      valeur: quantite,
+      unite: 'unités/sacs',
+    }))
+
+    const machinesProd = equipementsParc.filter((e) => (!agenceId || e.agenceId === agenceId) && (e.type === 'MOULIN_BROYEUR' || e.type === 'SILO' || e.type === 'PONT_BASCULE'))
+    const machinesDispo = machinesProd.filter((e) => e.statut === 'OPERATIONNEL').length
+    const machinesPanne = machinesProd.filter((e) => e.statut !== 'OPERATIONNEL').length
+
+    return res.json({
+      activeService: 'PRODUCTION',
+      serviceLibelle: 'Atelier de Production & Transformation Industrielle',
+      agenceNom: currentAgence?.nom || userAgence?.nom || 'Site de Production',
+      isConsolide: !agenceId,
+      canSwitchService: isSuperOrAdminSiege || isChefAgence,
+      kpis: [
+        { label: 'Ordres de fabrication actifs', valeur: ordresActifs, icon: 'Gear', color: '#2563eb', detail: 'En cours d exécution' },
+        { label: 'Produits finis fabriqués', valeur: `${quantiteFabriquee.toLocaleString()} unités/sacs`, icon: 'Package', color: '#16a34a', detail: 'Conformes et stockés' },
+        { label: 'Matières premières consommées', valeur: `${Math.round(matieresConsommeesKg / 1000)} T`, icon: 'ChartBar', color: '#ea580c', detail: 'Transformées' },
+        { label: 'Machines opérationnelles', valeur: `${machinesDispo} / ${machinesProd.length || 1}`, icon: 'CheckCircle', color: machinesPanne > 0 ? '#ea580c' : '#16a34a', detail: `${machinesPanne} en révision` },
+      ],
+      diagramme: {
+        titre: 'Répartition des Fabrications par Produit Fini',
+        type: 'BAR',
+        series: diagrammeProduits.length > 0 ? diagrammeProduits : [{ label: 'Production générale', valeur: quantiteFabriquee || 10, unite: 'unités' }],
+        vuesSecondaires: [
+          {
+            titre: 'Statut des Ordres de Travail (En cours, Planifié, Terminé)',
+            series: [
+              { label: 'En cours d exécution', valeur: ordres.filter((o) => o.statut === 'EN_COURS').length, unite: 'ordres' },
+              { label: 'Planifiés en attente', valeur: ordres.filter((o) => o.statut === 'PLANIFIE').length, unite: 'ordres' },
+              { label: 'Terminés & Stockés', valeur: ordresTermines, unite: 'ordres' },
+              { label: 'Annulés / Rejetés', valeur: ordres.filter((o) => o.statut === 'ANNULE').length, unite: 'ordres' },
+            ],
+          },
+        ],
+      },
+      recents: ordres.slice(0, 5).map((o) => {
+        const art = articles.find((a) => a.id === o.articleFiniId)
+        return {
+          id: o.id,
+          reference: o.codeOrdre,
+          titre: art?.designation || 'Fabrication',
+          date: (o.dateCreation || '').slice(0, 10),
+          statut: o.statut,
+          quantite: `${o.quantiteReelle || o.quantitePrevue} ${art?.uniteMesure || 'unités'}`,
+        }
+      }),
+    })
+  }
+
+  if (activeService === 'STOCKS') {
+    const stList = stocksAgence.filter((s) => !agenceId || s.agenceId === agenceId)
+    const alertes = stList.filter((s) => s.quantite <= s.seuilAlerte)
+    const qteTotale = stList.reduce((acc, s) => acc + s.quantite, 0)
+    const convois = transfertsStock.filter((t) => t.statut === 'EN_TRANSIT' && (!agenceId || t.agenceSourceId === agenceId || t.agenceDestId === agenceId)).length
+
+    const stockGroup: Record<string, number> = {}
+    stList.forEach((s) => {
+      const art = articles.find((a) => a.id === s.articleId)
+      const cat = art?.type === 'PRODUIT_FINI' ? 'Produits Finis' : 'Matières Premières'
+      stockGroup[cat] = (stockGroup[cat] || 0) + s.quantite
+    })
+
+    return res.json({
+      activeService: 'STOCKS',
+      serviceLibelle: 'Magasin Général & Gestion des Stocks',
+      agenceNom: currentAgence?.nom || userAgence?.nom || 'Dépôt',
+      isConsolide: !agenceId,
+      canSwitchService: isSuperOrAdminSiege || isChefAgence,
+      kpis: [
+        { label: 'Articles enregistrés', valeur: stList.length, icon: 'Package', color: '#2563eb', detail: 'Références gérées' },
+        { label: 'Volume total en stock', valeur: `${qteTotale.toLocaleString()} unités`, icon: 'ChartBar', color: '#16a34a', detail: 'Physique disponible' },
+        { label: 'Alertes stock critique', valeur: alertes.length, icon: 'Warning', color: alertes.length > 0 ? '#dc2626' : '#16a34a', detail: 'À réapprovisionner' },
+        { label: 'Convois en transit', valeur: convois, icon: 'Truck', color: '#8b5cf6', detail: 'Transferts en route' },
+      ],
+      diagramme: {
+        titre: 'Répartition des Volumes par Catégorie de Stock',
+        type: 'PIE',
+        series: Object.entries(stockGroup).map(([label, valeur]) => ({ label, valeur, unite: 'unités' })),
+      },
+      recents: alertes.slice(0, 5).map((s) => {
+        const art = articles.find((a) => a.id === s.articleId)
+        return {
+          id: s.id,
+          reference: s.numeroLot,
+          titre: art?.designation || 'Article',
+          date: s.dateExpiration || '2026-12-31',
+          statut: s.quantite === 0 ? 'RUPTURE' : 'CRITIQUE',
+          quantite: `${s.quantite} dispo (Seuil: ${s.seuilAlerte})`,
+        }
+      }),
+    })
+  }
+
+  if (activeService === 'VENTES') {
+    const vList = ventes.filter((v) => (!agenceId || v.agenceId === agenceId) && v.statutAnnulation !== 'ANNULEE')
+    const totalCaUsd = vList.reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    const comptantUsd = vList.filter((v) => !v.estCredit).reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    const creditUsd = vList.filter((v) => v.estCredit).reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    const creditsEnAttente = vList.filter((v) => v.statutCredit === 'EN_ATTENTE').length
+
+    return res.json({
+      activeService: 'VENTES',
+      serviceLibelle: 'Pôle Commercial & Facturation',
+      agenceNom: currentAgence?.nom || userAgence?.nom || 'Comptoir Ventes',
+      isConsolide: !agenceId,
+      canSwitchService: isSuperOrAdminSiege || isChefAgence,
+      kpis: [
+        { label: 'Factures & Ventes émises', valeur: vList.length, icon: 'Receipt', color: '#2563eb', detail: 'Transactions comptoir' },
+        { label: 'Chiffre d affaires réalisé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Equivalent USD' },
+        { label: 'Ventes au comptant (Cash)', valeur: `$${Math.round(comptantUsd).toLocaleString()}`, icon: 'Wallet', color: '#16a34a', detail: 'Encaissé en caisse' },
+        { label: 'Crédits accordés', valeur: `$${Math.round(creditUsd).toLocaleString()}`, icon: 'WarningCircle', color: '#ea580c', detail: `${creditsEnAttente} en attente visa` },
+      ],
+      diagramme: {
+        titre: 'Répartition des Ventes : Comptant vs Vente à Crédit',
+        type: 'PIE',
+        series: [
+          { label: 'Comptant (Cash)', valeur: Math.round(comptantUsd), unite: 'USD' },
+          { label: 'Vente à Crédit', valeur: Math.round(creditUsd), unite: 'USD' },
+        ],
+      },
+      recents: vList.slice(0, 5).map((v) => {
+        const cli = clients.find((c) => c.id === v.clientId)
+        return {
+          id: v.id,
+          reference: v.referenceVente,
+          titre: cli?.nom || 'Client Comptoir',
+          date: (v.dateVente || '').slice(0, 10),
+          statut: v.estCredit ? (v.statutCredit === 'VALIDE' ? 'CRÉDIT VALIDÉ' : 'EN ATTENTE VISA') : 'PAYÉ CASH',
+          quantite: `$${v.montantTotal.toFixed(2)} ${v.devise}`,
+        }
+      }),
+    })
+  }
+
+  if (activeService === 'TRESORERIE') {
+    const csList = comptesCaisse.filter((c) => !agenceId || c.agenceId === agenceId)
+    const soldeUsd = csList.reduce((s, c) => s + (c.soldeUsd || 0), 0)
+    const soldeCdf = csList.reduce((s, c) => s + (c.soldeCdf || 0), 0)
+    const ebPrets = etatsBesoin.filter((eb) => (!agenceId || eb.agenceId === agenceId) && (eb.statut === 'APPROUVE_CHEF' || eb.statut === 'APPROUVE_SIEGE')).length
+    const decaissementsJour = transactions.filter((t) => (!agenceId || t.agenceId === agenceId) && t.type === 'SORTIE').reduce((s, t) => s + (t.devise === 'USD' ? t.montant : t.montant / 2850), 0)
+    const encaissementsJour = transactions.filter((t) => (!agenceId || t.agenceId === agenceId) && t.type === 'ENTREE').reduce((s, t) => s + (t.devise === 'USD' ? t.montant : t.montant / 2850), 0)
+
+    return res.json({
+      activeService: 'TRESORERIE',
+      serviceLibelle: 'Guichet Caisse & Trésorerie Bidevise',
+      agenceNom: currentAgence?.nom || userAgence?.nom || 'Caisse Agence',
+      isConsolide: !agenceId,
+      canSwitchService: isSuperOrAdminSiege || isChefAgence,
+      kpis: [
+        { label: 'Solde Disponible USD', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Espèces physiques' },
+        { label: 'Solde Disponible CDF', valeur: `${Math.round(soldeCdf).toLocaleString()} FC`, icon: 'Coins', color: '#2563eb', detail: 'Francs Congolais' },
+        { label: 'États de besoin prêts à payer', valeur: ebPrets, icon: 'CheckCircle', color: ebPrets > 0 ? '#ea580c' : '#16a34a', detail: 'Visas hiérarchiques reçus' },
+        { label: 'Décaissements de la période', valeur: `$${Math.round(decaissementsJour).toLocaleString()}`, icon: 'Wallet', color: '#dc2626', detail: 'Sorties de fonds' },
+      ],
+      diagramme: {
+        titre: 'Mouvements de Caisse : Encaissements vs Décaissements',
+        type: 'BAR',
+        series: [
+          { label: 'Encaissements (Entrées)', valeur: Math.round(encaissementsJour), unite: 'USD' },
+          { label: 'Décaissements (Sorties)', valeur: Math.round(decaissementsJour), unite: 'USD' },
+        ],
+      },
+      recents: transactions.slice(0, 5).map((t) => ({
+        id: t.id,
+        reference: t.referenceInterne || `TX-${t.id}`,
+        titre: t.libelle,
+        date: (t.dateCreation || '').slice(0, 10),
+        statut: t.type === 'SORTIE' ? 'DÉCAISSEMENT' : 'ENCAISSEMENT',
+        quantite: `${t.montant.toFixed(2)} ${t.devise}`,
+      })),
+    })
+  }
+
+  if (activeService === 'MAINTENANCE') {
+    const eqList = equipementsParc.filter((e) => !agenceId || e.agenceId === agenceId)
+    const opCount = eqList.filter((e) => e.statut === 'OPERATIONNEL').length
+    const panCount = eqList.filter((e) => e.statut !== 'OPERATIONNEL').length
+    const intList = entretiensTechniques.filter((m) => !agenceId || m.agenceId === agenceId)
+    const intPlanifiees = intList.filter((m) => m.statut === 'PLANIFIE').length
+
+    const groupTypes: Record<string, number> = {}
+    eqList.forEach((e) => {
+      groupTypes[e.type] = (groupTypes[e.type] || 0) + 1
+    })
+
+    return res.json({
+      activeService: 'MAINTENANCE',
+      serviceLibelle: 'Parc Matériel & Maintenance Technique',
+      agenceNom: currentAgence?.nom || userAgence?.nom || 'Atelier Technique',
+      isConsolide: !agenceId,
+      canSwitchService: isSuperOrAdminSiege || isChefAgence,
+      kpis: [
+        { label: 'Équipements du parc', valeur: eqList.length, icon: 'Wrench', color: '#2563eb', detail: 'Machines et flotte' },
+        { label: 'Matériel opérationnel', valeur: opCount, icon: 'CheckCircle', color: '#16a34a', detail: 'Disponibles 100%' },
+        { label: 'En panne / immobilisés', valeur: panCount, icon: 'WarningCircle', color: panCount > 0 ? '#dc2626' : '#16a34a', detail: 'Intervention requise' },
+        { label: 'Interventions planifiées', valeur: intPlanifiees, icon: 'ClockCounterClockwise', color: '#ea580c', detail: 'Carnet d atelier' },
+      ],
+      diagramme: {
+        titre: 'Répartition du Parc d Équipements par Type',
+        type: 'PIE',
+        series: Object.entries(groupTypes).map(([type, cnt]) => ({
+          label: type.replace('_', ' '),
+          valeur: cnt,
+          unite: 'engins',
+        })),
+      },
+      recents: intList.slice(0, 5).map((m) => ({
+        id: m.id,
+        reference: m.numeroIntervention,
+        titre: `${m.nomEquipement} (${m.natureTravaux})`,
+        date: (m.dateIntervention || '').slice(0, 10),
+        statut: m.statut,
+        quantite: `$${m.coutTotalUsd.toFixed(2)} USD`,
+      })),
+    })
+  }
+
+  if (activeService === 'AGENCE') {
+    const agId = currentUser.agenceId
+    const ag = agences.find((a) => a.id === agId)
+    const vAg = ventes.filter((v) => v.agenceId === agId && v.statutAnnulation !== 'ANNULEE')
+    const tVentesUsd = vAg.reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    const csAg = comptesCaisse.filter((c) => c.agenceId === agId)
+    const soldeUsd = csAg.reduce((s, c) => s + (c.soldeUsd || 0), 0)
+    const opAg = ordresProduction.filter((o) => o.agenceId === agId && o.statut === 'TERMINE')
+    const sacsProduits = opAg.reduce((s, o) => s + (o.quantiteReelle || 0), 0)
+    const ebAttente = etatsBesoin.filter((eb) => eb.agenceId === agId && (eb.statut === 'SOUMIS' || eb.statut === 'ATTENTE_VISA_SIEGE')).length
+    const creditAttente = ventes.filter((v) => v.agenceId === agId && v.statutCredit === 'EN_ATTENTE').length
+
+    return res.json({
+      activeService: 'AGENCE',
+      serviceLibelle: `Pilotage Agence Locale (${ag?.nom || 'Mon Agence'})`,
+      agenceNom: ag?.nom || 'Agence Locale',
+      isConsolide: false,
+      canSwitchService: true,
+      kpis: [
+        { label: 'Ventes locales de l agence', valeur: `$${Math.round(tVentesUsd).toLocaleString()}`, icon: 'Receipt', color: '#16a34a', detail: `${vAg.length} factures` },
+        { label: 'Caisse physique disponible', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'Wallet', color: '#2563eb', detail: 'Fonds en caisse' },
+        { label: 'Production locale réalisée', valeur: `${sacsProduits.toLocaleString()} sacs`, icon: 'Package', color: '#8b5cf6', detail: 'Produits finis' },
+        { label: 'Validations en attente', valeur: ebAttente + creditAttente, icon: 'Bell', color: (ebAttente + creditAttente) > 0 ? '#ea580c' : '#16a34a', detail: 'Dossiers à viser' },
+      ],
+      diagramme: {
+        titre: 'Indicateurs d Activité de l Agence',
+        type: 'BAR',
+        series: [
+          { label: 'Ventes Agence', valeur: Math.round(tVentesUsd), unite: 'USD' },
+          { label: 'Caisse Locale', valeur: Math.round(soldeUsd), unite: 'USD' },
+          { label: 'Sacs Fabriqués', valeur: sacsProduits, unite: 'sacs' },
+        ],
+      },
+      recents: vAg.slice(0, 5).map((v) => ({
+        id: v.id,
+        reference: v.referenceVente,
+        titre: `Vente #${v.id}`,
+        date: (v.dateVente || '').slice(0, 10),
+        statut: v.estCredit ? 'CRÉDIT' : 'PAYÉ',
+        quantite: `$${v.montantTotal.toFixed(2)}`,
+      })),
+    })
+  }
+
+  // DIRECTION_SIEGE (Admin Siège & Super Admin)
+  let totalCaUsd = 0
+  ventes.forEach((v) => {
+    if (v.statutAnnulation !== 'ANNULEE') {
+      totalCaUsd += v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850
+    }
+  })
+  const totalTresorerie = comptesCaisse.reduce((s, c) => s + (c.soldeUsd || 0), 0)
+  const totalProd = ordresProduction.filter((o) => o.statut === 'TERMINE').reduce((s, o) => s + (o.quantiteReelle || 0), 0)
+  const dossiersSiege = etatsBesoin.filter((eb) => eb.statut === 'ATTENTE_VISA_SIEGE').length + transfertsStock.filter((t) => t.statut === 'EN_ATTENTE_VISA_SIEGE').length
+
+  const seriesAgences = agences.map((ag) => {
+    const vAg = ventes.filter((v) => v.agenceId === ag.id && v.statutAnnulation !== 'ANNULEE')
+    const ca = vAg.reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    return {
+      label: ag.nom,
+      valeur: Math.round(ca),
+      unite: 'USD',
+    }
+  })
+
+  const seriesProdAgences = agences.map((ag) => {
+    const opAg = ordresProduction.filter((o) => o.agenceId === ag.id && o.statut === 'TERMINE')
+    const total = opAg.reduce((s, o) => s + (o.quantiteReelle || 0), 0)
+    return {
+      label: ag.nom,
+      valeur: total,
+      unite: 'unités/sacs',
+    }
+  })
+
+  const seriesTresorAgences = agences.map((ag) => {
+    const csAg = comptesCaisse.filter((c) => c.agenceId === ag.id)
+    const solde = csAg.reduce((s, c) => s + (c.soldeUsd || 0), 0)
+    return {
+      label: ag.nom,
+      valeur: Math.round(solde),
+      unite: 'USD',
+    }
+  })
+
+  return res.json({
+    activeService: 'DIRECTION_SIEGE',
+    serviceLibelle: 'Supervision Stratégique & Direction Générale',
+    agenceNom: currentAgence?.nom || 'Réseau Consolidé Siège',
+    isConsolide: !agenceId,
+    canSwitchService: true,
+    kpis: [
+      { label: 'Chiffre d affaires consolidé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Toutes agences' },
+      { label: 'Trésorerie nette du réseau', valeur: `$${Math.round(totalTresorerie).toLocaleString()}`, icon: 'Wallet', color: '#2563eb', detail: 'Caisses + Banques' },
+      { label: 'Production globale du groupe', valeur: `${totalProd.toLocaleString()} sacs`, icon: 'Package', color: '#8b5cf6', detail: 'Tous sites' },
+      { label: 'Dossiers en attente Visa Siège', valeur: dossiersSiege, icon: 'ShieldCheck', color: dossiersSiege > 0 ? '#ea580c' : '#16a34a', detail: 'Grandes décisions' },
+    ],
+    diagramme: {
+      titre: 'Chiffre d Affaires par Agence (Comparatif Réseau)',
+      type: 'BAR',
+      series: seriesAgences,
+      vuesSecondaires: [
+        {
+          titre: 'Production Industrielle par Agence (Volume)',
+          series: seriesProdAgences,
+        },
+        {
+          titre: 'Disponibilité de Trésorerie par Agence (USD)',
+          series: seriesTresorAgences,
+        },
+      ],
+    },
+    recents: agences.map((ag) => {
+      const vAg = ventes.filter((v) => v.agenceId === ag.id && v.statutAnnulation !== 'ANNULEE')
+      const ca = vAg.reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+      return {
+        id: ag.id,
+        reference: `AG-${ag.id}`,
+        titre: `${ag.nom} (${ag.ville})`,
+        date: ag.estSiege ? 'Siège Principal' : 'Succursale',
+        statut: 'ACTIF',
+        quantite: `$${Math.round(ca).toLocaleString()} USD`,
+      }
+    }),
+  })
+})
+
 // ----------------- SUPERVISION TRANSACTIONS MULTI-AGENCES (POUR ADMIN SIÈGE & SUPER ADMIN) -----------------
 router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Response) => {
-  const agenceId = req.query.agenceId ? (req.query.agenceId === 'CONSOLIDE' ? undefined : toInt(req.query.agenceId)) : undefined
-  const typeFiltre = req.query.type as string | undefined
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
+  // RÈGLE STRICTE DE CONFIDENTIALITÉ & ISOLATION :
+  // Seul l'Admin du Siège et le Super Admin ont le droit de voir toutes les agences et le consolidé.
+  // Les autres utilisateurs (Chefs d'agence locale, vendeurs, etc.) sont STRICTEMENT limités à leur propre agence.
+  const isSuperOrAdminSiege = currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE'
+  const agenceId = isSuperOrAdminSiege
+    ? (req.query.agenceId ? (req.query.agenceId === 'CONSOLIDE' ? undefined : toInt(req.query.agenceId)) : undefined)
+    : currentUser.agenceId
+
+  const typeFiltre = req.query.type as string | undefined
   const allFlux: any[] = []
 
   // 1. Ventes
@@ -333,11 +742,11 @@ router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Re
         agenceId: op.agenceId,
         agenceNom: ag?.nom || `Agence #${op.agenceId}`,
         module: 'PRODUCTION',
-        typeFlux: 'ORDRE_MEUNERIE',
-        libelle: `Mouture ${art?.designation || 'Farine'}: ${op.quantiteReelle || op.quantitePrevue} sacs`,
-        montant: (op.quantiteReelle || op.quantitePrevue) * 20,
+        typeFlux: 'ORDRE_FABRICATION',
+        libelle: `Fabrication ${art?.designation || 'Produits Finis'}: ${op.quantiteReelle || op.quantitePrevue} ${art?.uniteMesure || 'unités/sacs'}`,
+        montant: (op.quantiteReelle || op.quantitePrevue) * (art?.prixVenteStandard || 20),
         devise: 'USD',
-        operateurNom: 'Équipe Meunerie',
+        operateurNom: 'Équipe Production',
         statut: op.statut,
         documentUrl: `/api/production/ordres/${op.id}/fiche-a4`,
         documentNom: 'Fiche Production',
@@ -350,6 +759,9 @@ router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Re
     if (!agenceId || tr.agenceSourceId === agenceId || tr.agenceDestId === agenceId) {
       const agSrc = agences.find((a) => a.id === tr.agenceSourceId)
       const agDst = agences.find((a) => a.id === tr.agenceDestId)
+      const totalColis = tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) || 0
+      const firstArt = tr.lignes?.[0]?.articleId ? articles.find((a) => a.id === tr.lignes[0].articleId) : null
+      const libelleLigne = firstArt?.designation ? `${firstArt.designation} (${totalColis} unités)` : `${totalColis} articles/colis`
       allFlux.push({
         id: `TRF-${tr.id}`,
         reference: tr.referenceTransfert || `TRF-${tr.id}`,
@@ -358,7 +770,7 @@ router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Re
         agenceNom: `${agSrc?.nom || tr.agenceSourceId} ➔ ${agDst?.nom || tr.agenceDestId}`,
         module: 'LOGISTIQUE',
         typeFlux: 'TRANSFERT_INTER_AGENCES',
-        libelle: `Convoi Farine ${tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) || 0} sacs vers ${agDst?.nom}`,
+        libelle: `Convoi Marchandises : ${libelleLigne} vers ${agDst?.nom}`,
         montant: tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0) * 20, 0) || 0,
         devise: 'USD',
         operateurNom: tr.chauffeurNom || 'Chauffeur',
@@ -475,10 +887,15 @@ router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Re
     }
   })
 
+  const resumeAgencesFiltre = isSuperOrAdminSiege
+    ? resumeAgences
+    : resumeAgences.filter((ag) => ag.agenceId === currentUser.agenceId)
+
   res.json({
     transactions: filteredFlux,
-    resumeAgences,
-    totalTransactionsCount: allFlux.length,
+    resumeAgences: resumeAgencesFiltre,
+    totalTransactionsCount: filteredFlux.length,
+    isSuperOrAdminSiege,
   })
 })
 
@@ -1363,23 +1780,28 @@ router.get('/stocks/export/inventaire', (req: Request, res: Response) => {
   res.send(html)
 })
 
-// ----------------- TABLEAU DE BORD DIRECTION GÉNÉRALE (KPIs CONSOLIDÉS) -----------------
+// ----------------- TABLEAU DE BORD DIRECTION GÉNÉRALE & REPORTING AGENCES -----------------
 router.get('/reporting/direction-kpis', (req: Request, res: Response) => {
-  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const currentUser = getUserFromToken(req)
+  const isSuperOrAdminSiege = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN_SIEGE'
+  // Seul le Super Admin et l'Admin du Siège peuvent demander le consolidé ou une autre agence
+  const agenceId = isSuperOrAdminSiege
+    ? (req.query.agenceId ? toInt(req.query.agenceId) : undefined)
+    : (currentUser?.agenceId ?? 1)
 
-  // 1. Chiffre d'Affaires consolidé
+  // 1. Chiffre d'Affaires consolidé ou agence
   const ventesAg = ventes.filter((v) => (!agenceId || v.agenceId === agenceId) && v.statutAnnulation !== 'ANNULEE')
   const caMoisUsd = ventesAg.reduce((acc, v) => acc + (v.montantTotal || 0), 0)
   const caMoisCdf = ventesAg.reduce((acc, v) => acc + (v.montantCdf || ((v.montantTotal || 0) * 2850)), 0)
 
-  // 2. Marge Brute Meunerie par sac
+  // 2. Marge Brute par sac / unité
   const sacsVendus = ventesAg.reduce((acc, v) => {
     return acc + (v.details || []).reduce((sum: number, d: any) => sum + (d.quantite || 0), 0)
   }, 0)
   const margeBruteParSacUsd = 7.30
   const tauxMargeMoyen = 34.0
 
-  // 3. Tonnage et Rendement Usine
+  // 3. Tonnage et Rendement Usine / Atelier
   const prodAg = ordresProduction.filter((p) => (!agenceId || p.agenceId === agenceId) && p.statut === 'TERMINE')
   const farineExtraiteKg = prodAg.reduce((acc, p) => acc + (p.quantiteReelle || 0) * 25, 0)
   const maisConsommeKg = prodAg.reduce((acc, p) => acc + (p.quantitePrevue || 0) * 32, 0)
@@ -1684,7 +2106,11 @@ router.get('/admin/export/csv/:type', (req: Request, res: Response) => {
 // ----------------- EXPORTS EXCEL OFFICIELS (.CSV UTF-8 BOM POUR TABLEUR) -----------------
 router.get('/export/excel/:type', (req: Request, res: Response) => {
   const type = req.params.type
-  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const currentUser = getUserFromToken(req)
+  const isSuperOrAdminSiege = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN_SIEGE'
+  const agenceId = isSuperOrAdminSiege
+    ? (req.query.agenceId ? toInt(req.query.agenceId) : undefined)
+    : (currentUser?.agenceId ?? (req.query.agenceId ? toInt(req.query.agenceId) : 1))
   const annee = req.query.annee ? toInt(req.query.annee) : new Date().getFullYear()
   const mois = req.query.mois ? toInt(req.query.mois) : new Date().getMonth() + 1
   let csv = ''

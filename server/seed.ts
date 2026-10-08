@@ -157,6 +157,24 @@ export const users: DbUser[] = [
     permissions: ['dashboard.voir', 'comptabilite.ecritures_voir', 'reporting.voir'],
     actif: true,
   },
+  {
+    id: 11,
+    email: 'production@mvg.cd',
+    nom: 'Paluku Joseph (Chef Production & Usine)',
+    role: 'RESPONSABLE_PRODUCTION',
+    agenceId: 1,
+    permissions: ['dashboard.voir', 'production.gerer', 'production.qr_generer', 'stocks.voir', 'flotte.gerer'],
+    actif: true,
+  },
+  {
+    id: 12,
+    email: 'technicien@mvg.cd',
+    nom: 'Kavira Gloire (Technicien Maintenance & Parc)',
+    role: 'TECHNICIEN_MAINTENANCE',
+    agenceId: 1,
+    permissions: ['dashboard.voir', 'flotte.gerer', 'stocks.voir'],
+    actif: true,
+  },
 ]
 
 export const articles: DbArticle[] = [
