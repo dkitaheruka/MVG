@@ -317,6 +317,7 @@ export interface DbSyncOperation {
 
 export interface DbParametresEntreprise {
   nomSociete: string
+  sigle?: string
   slogan: string
   rccm: string
   idNat: string
@@ -329,6 +330,10 @@ export interface DbParametresEntreprise {
   mentionsPiedFacture: string
   mentionsPiedLivraison: string
   logoUrl?: string
+  logoDroiteUrl?: string
+  logoFiligraneUrl?: string
+  filigraneOpacite?: number
+  filigraneTexte?: string
   plafondAutonomieEtatBesoinAgenceUsd?: number
   plafondDepenseDirecteAgenceUsd?: number
   doubleValidationTransfertObligatoire?: boolean

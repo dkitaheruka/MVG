@@ -21,12 +21,18 @@ interface AppStore {
   theme: 'light' | 'dark'
   language: 'fr' | 'sw' | 'en'
   sidebarOpen: boolean
+  sidebarCollapsed: boolean
+  sidebarHidden: boolean
   printProposal: PrintProposal | null
   selectedAgenceId: number | 'CONSOLIDE'
   setSession: (session: SessionData | null) => void
   setTheme: (theme: 'light' | 'dark') => void
   setLanguage: (lang: 'fr' | 'sw' | 'en') => void
   setSidebarOpen: (open: boolean) => void
+  setSidebarCollapsed: (collapsed: boolean) => void
+  toggleSidebarCollapsed: () => void
+  setSidebarHidden: (hidden: boolean) => void
+  toggleSidebarHidden: () => void
   setPrintProposal: (proposal: PrintProposal | null) => void
   setSelectedAgenceId: (id: number | 'CONSOLIDE') => void
   can: (permission: string) => boolean
@@ -46,6 +52,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   theme: (localStorage.getItem('matabishi_theme') as 'light' | 'dark') || 'light',
   language: (localStorage.getItem('matabishi_lang') as 'fr' | 'sw' | 'en') || 'fr',
   sidebarOpen: true,
+  sidebarCollapsed: localStorage.getItem('matabishi_sidebar_collapsed') === 'true',
+  sidebarHidden: localStorage.getItem('matabishi_sidebar_hidden') === 'true',
   printProposal: null,
   selectedAgenceId: 'CONSOLIDE',
 
@@ -75,6 +83,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    localStorage.setItem('matabishi_sidebar_collapsed', String(sidebarCollapsed))
+    set({ sidebarCollapsed })
+  },
+  toggleSidebarCollapsed: () => {
+    const next = !get().sidebarCollapsed
+    localStorage.setItem('matabishi_sidebar_collapsed', String(next))
+    set({ sidebarCollapsed: next })
+  },
+  setSidebarHidden: (sidebarHidden) => {
+    localStorage.setItem('matabishi_sidebar_hidden', String(sidebarHidden))
+    set({ sidebarHidden })
+  },
+  toggleSidebarHidden: () => {
+    const next = !get().sidebarHidden
+    localStorage.setItem('matabishi_sidebar_hidden', String(next))
+    set({ sidebarHidden: next })
+  },
   setPrintProposal: (printProposal) => set({ printProposal }),
   setSelectedAgenceId: (selectedAgenceId) => set({ selectedAgenceId }),
 

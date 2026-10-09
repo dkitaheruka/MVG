@@ -311,10 +311,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: !agenceId,
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
-        { label: 'Ordres de fabrication actifs', valeur: ordresActifs, icon: 'Gear', color: '#2563eb', detail: 'En cours d exécution' },
-        { label: 'Produits finis fabriqués', valeur: `${quantiteFabriquee.toLocaleString()} unités/sacs`, icon: 'Package', color: '#16a34a', detail: 'Conformes et stockés' },
-        { label: 'Matières premières consommées', valeur: `${Math.round(matieresConsommeesKg / 1000)} T`, icon: 'ChartBar', color: '#ea580c', detail: 'Transformées' },
-        { label: 'Machines opérationnelles', valeur: `${machinesDispo} / ${machinesProd.length || 1}`, icon: 'CheckCircle', color: machinesPanne > 0 ? '#ea580c' : '#16a34a', detail: `${machinesPanne} en révision` },
+        { label: 'Ordres de fabrication actifs', valeur: ordresActifs, icon: 'Gear', color: '#059669', detail: 'En cours d exécution' },
+        { label: 'Produits finis fabriqués', valeur: `${quantiteFabriquee.toLocaleString()} unités/sacs`, icon: 'Package', color: '#059669', detail: 'Conformes et stockés' },
+        { label: 'Matières premières consommées', valeur: `${Math.round(matieresConsommeesKg / 1000)} T`, icon: 'ChartBar', color: '#059669', detail: 'Transformées' },
+        { label: 'Machines opérationnelles', valeur: `${machinesDispo} / ${machinesProd.length || 1}`, icon: 'CheckCircle', color: '#059669', detail: `${machinesPanne} en révision` },
       ],
       diagramme: {
         titre: 'Répartition des Fabrications par Produit Fini',
@@ -366,10 +366,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: !agenceId,
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
-        { label: 'Articles enregistrés', valeur: stList.length, icon: 'Package', color: '#2563eb', detail: 'Références gérées' },
-        { label: 'Volume total en stock', valeur: `${qteTotale.toLocaleString()} unités`, icon: 'ChartBar', color: '#16a34a', detail: 'Physique disponible' },
-        { label: 'Alertes stock critique', valeur: alertes.length, icon: 'Warning', color: alertes.length > 0 ? '#dc2626' : '#16a34a', detail: 'À réapprovisionner' },
-        { label: 'Convois en transit', valeur: convois, icon: 'Truck', color: '#8b5cf6', detail: 'Transferts en route' },
+        { label: 'Articles enregistrés', valeur: stList.length, icon: 'Package', color: '#059669', detail: 'Références gérées' },
+        { label: 'Volume total en stock', valeur: `${qteTotale.toLocaleString()} unités`, icon: 'ChartBar', color: '#059669', detail: 'Physique disponible' },
+        { label: 'Alertes stock critique', valeur: alertes.length, icon: 'Warning', color: '#059669', detail: 'À réapprovisionner' },
+        { label: 'Convois en transit', valeur: convois, icon: 'Truck', color: '#059669', detail: 'Transferts en route' },
       ],
       diagramme: {
         titre: 'Répartition des Volumes par Catégorie de Stock',
@@ -404,10 +404,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: !agenceId,
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
-        { label: 'Factures & Ventes émises', valeur: vList.length, icon: 'Receipt', color: '#2563eb', detail: 'Transactions comptoir' },
-        { label: 'Chiffre d affaires réalisé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Equivalent USD' },
-        { label: 'Ventes au comptant (Cash)', valeur: `$${Math.round(comptantUsd).toLocaleString()}`, icon: 'Wallet', color: '#16a34a', detail: 'Encaissé en caisse' },
-        { label: 'Crédits accordés', valeur: `$${Math.round(creditUsd).toLocaleString()}`, icon: 'WarningCircle', color: '#ea580c', detail: `${creditsEnAttente} en attente visa` },
+        { label: 'Factures & Ventes émises', valeur: vList.length, icon: 'Receipt', color: '#059669', detail: 'Transactions comptoir' },
+        { label: 'Chiffre d affaires réalisé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#059669', detail: 'Equivalent USD' },
+        { label: 'Ventes au comptant (Cash)', valeur: `$${Math.round(comptantUsd).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Encaissé en caisse' },
+        { label: 'Crédits accordés', valeur: `$${Math.round(creditUsd).toLocaleString()}`, icon: 'WarningCircle', color: '#059669', detail: `${creditsEnAttente} en attente visa` },
       ],
       diagramme: {
         titre: 'Répartition des Ventes : Comptant vs Vente à Crédit',
@@ -446,10 +446,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: !agenceId,
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
-        { label: 'Solde Disponible USD', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Espèces physiques' },
-        { label: 'Solde Disponible CDF', valeur: `${Math.round(soldeCdf).toLocaleString()} FC`, icon: 'Coins', color: '#2563eb', detail: 'Francs Congolais' },
-        { label: 'États de besoin prêts à payer', valeur: ebPrets, icon: 'CheckCircle', color: ebPrets > 0 ? '#ea580c' : '#16a34a', detail: 'Visas hiérarchiques reçus' },
-        { label: 'Décaissements de la période', valeur: `$${Math.round(decaissementsJour).toLocaleString()}`, icon: 'Wallet', color: '#dc2626', detail: 'Sorties de fonds' },
+        { label: 'Solde Disponible USD', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#059669', detail: 'Espèces physiques' },
+        { label: 'Solde Disponible CDF', valeur: `${Math.round(soldeCdf).toLocaleString()} FC`, icon: 'Coins', color: '#059669', detail: 'Francs Congolais' },
+        { label: 'États de besoin prêts à payer', valeur: ebPrets, icon: 'CheckCircle', color: '#059669', detail: 'Visas hiérarchiques reçus' },
+        { label: 'Décaissements de la période', valeur: `$${Math.round(decaissementsJour).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Sorties de fonds' },
       ],
       diagramme: {
         titre: 'Mouvements de Caisse : Encaissements vs Décaissements',
@@ -489,10 +489,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: !agenceId,
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
-        { label: 'Équipements du parc', valeur: eqList.length, icon: 'Wrench', color: '#2563eb', detail: 'Machines et flotte' },
-        { label: 'Matériel opérationnel', valeur: opCount, icon: 'CheckCircle', color: '#16a34a', detail: 'Disponibles 100%' },
-        { label: 'En panne / immobilisés', valeur: panCount, icon: 'WarningCircle', color: panCount > 0 ? '#dc2626' : '#16a34a', detail: 'Intervention requise' },
-        { label: 'Interventions planifiées', valeur: intPlanifiees, icon: 'ClockCounterClockwise', color: '#ea580c', detail: 'Carnet d atelier' },
+        { label: 'Équipements du parc', valeur: eqList.length, icon: 'Wrench', color: '#059669', detail: 'Machines et flotte' },
+        { label: 'Matériel opérationnel', valeur: opCount, icon: 'CheckCircle', color: '#059669', detail: 'Disponibles 100%' },
+        { label: 'En panne / immobilisés', valeur: panCount, icon: 'WarningCircle', color: '#059669', detail: 'Intervention requise' },
+        { label: 'Interventions planifiées', valeur: intPlanifiees, icon: 'ClockCounterClockwise', color: '#059669', detail: 'Carnet d atelier' },
       ],
       diagramme: {
         titre: 'Répartition du Parc d Équipements par Type',
@@ -533,10 +533,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       isConsolide: false,
       canSwitchService: true,
       kpis: [
-        { label: 'Ventes locales de l agence', valeur: `$${Math.round(tVentesUsd).toLocaleString()}`, icon: 'Receipt', color: '#16a34a', detail: `${vAg.length} factures` },
-        { label: 'Caisse physique disponible', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'Wallet', color: '#2563eb', detail: 'Fonds en caisse' },
-        { label: 'Production locale réalisée', valeur: `${sacsProduits.toLocaleString()} sacs`, icon: 'Package', color: '#8b5cf6', detail: 'Produits finis' },
-        { label: 'Validations en attente', valeur: ebAttente + creditAttente, icon: 'Bell', color: (ebAttente + creditAttente) > 0 ? '#ea580c' : '#16a34a', detail: 'Dossiers à viser' },
+        { label: 'Ventes locales de l agence', valeur: `$${Math.round(tVentesUsd).toLocaleString()}`, icon: 'Receipt', color: '#059669', detail: `${vAg.length} factures` },
+        { label: 'Caisse physique disponible', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Fonds en caisse' },
+        { label: 'Production locale réalisée', valeur: `${sacsProduits.toLocaleString()} sacs`, icon: 'Package', color: '#059669', detail: 'Produits finis' },
+        { label: 'Validations en attente', valeur: ebAttente + creditAttente, icon: 'Bell', color: '#059669', detail: 'Dossiers à viser' },
       ],
       diagramme: {
         titre: 'Indicateurs d Activité de l Agence',
@@ -606,10 +606,10 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
     isConsolide: !agenceId,
     canSwitchService: true,
     kpis: [
-      { label: 'Chiffre d affaires consolidé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#16a34a', detail: 'Toutes agences' },
-      { label: 'Trésorerie nette du réseau', valeur: `$${Math.round(totalTresorerie).toLocaleString()}`, icon: 'Wallet', color: '#2563eb', detail: 'Caisses + Banques' },
-      { label: 'Production globale du groupe', valeur: `${totalProd.toLocaleString()} sacs`, icon: 'Package', color: '#8b5cf6', detail: 'Tous sites' },
-      { label: 'Dossiers en attente Visa Siège', valeur: dossiersSiege, icon: 'ShieldCheck', color: dossiersSiege > 0 ? '#ea580c' : '#16a34a', detail: 'Grandes décisions' },
+      { label: 'Chiffre d affaires consolidé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#059669', detail: 'Toutes agences' },
+      { label: 'Trésorerie nette du réseau', valeur: `$${Math.round(totalTresorerie).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Caisses + Banques' },
+      { label: 'Production globale du groupe', valeur: `${totalProd.toLocaleString()} sacs`, icon: 'Package', color: '#059669', detail: 'Tous sites' },
+      { label: 'Dossiers en attente Visa Siège', valeur: dossiersSiege, icon: 'ShieldCheck', color: '#059669', detail: 'Grandes décisions' },
     ],
     diagramme: {
       titre: 'Chiffre d Affaires par Agence (Comparatif Réseau)',
@@ -1851,6 +1851,10 @@ router.get('/parametrage/entreprise', (_req: Request, res: Response) => {
   res.json(parametresEntreprise)
 })
 
+router.get('/entreprise', (_req: Request, res: Response) => {
+  res.json(parametresEntreprise)
+})
+
 router.put('/parametrage/entreprise', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
@@ -1876,6 +1880,7 @@ router.put('/parametrage/entreprise', (req: Request, res: Response) => {
   } = req.body
 
   if (nomSociete) parametresEntreprise.nomSociete = String(nomSociete).trim()
+  if (req.body.sigle !== undefined) parametresEntreprise.sigle = String(req.body.sigle).trim()
   if (slogan !== undefined) parametresEntreprise.slogan = String(slogan).trim()
   if (rccm) parametresEntreprise.rccm = String(rccm).trim()
   if (idNat) parametresEntreprise.idNat = String(idNat).trim()
@@ -1888,6 +1893,10 @@ router.put('/parametrage/entreprise', (req: Request, res: Response) => {
   if (mentionsPiedFacture !== undefined) parametresEntreprise.mentionsPiedFacture = String(mentionsPiedFacture).trim()
   if (mentionsPiedLivraison !== undefined) parametresEntreprise.mentionsPiedLivraison = String(mentionsPiedLivraison).trim()
   if (req.body.logoUrl !== undefined) parametresEntreprise.logoUrl = String(req.body.logoUrl).trim()
+  if (req.body.logoDroiteUrl !== undefined) parametresEntreprise.logoDroiteUrl = String(req.body.logoDroiteUrl).trim()
+  if (req.body.logoFiligraneUrl !== undefined) parametresEntreprise.logoFiligraneUrl = String(req.body.logoFiligraneUrl).trim()
+  if (req.body.filigraneOpacite !== undefined) parametresEntreprise.filigraneOpacite = Number(req.body.filigraneOpacite)
+  if (req.body.filigraneTexte !== undefined) parametresEntreprise.filigraneTexte = String(req.body.filigraneTexte).trim()
   if (plafondAutonomieEtatBesoinAgenceUsd !== undefined) parametresEntreprise.plafondAutonomieEtatBesoinAgenceUsd = Number(plafondAutonomieEtatBesoinAgenceUsd)
   if (plafondDepenseDirecteAgenceUsd !== undefined) parametresEntreprise.plafondDepenseDirecteAgenceUsd = Number(plafondDepenseDirecteAgenceUsd)
   if (doubleValidationTransfertObligatoire !== undefined) parametresEntreprise.doubleValidationTransfertObligatoire = Boolean(doubleValidationTransfertObligatoire)
@@ -2669,7 +2678,7 @@ router.get('/comptabilite/export/immobilisations', (req: Request, res: Response)
 
   const html = renderTableauImmobilisationsHtml(
     immobilisations,
-    agence?.nom || 'Minoterie MVG',
+    agence?.nom || parametresEntreprise.sigle || 'Siège & Agences',
     annee,
     parametresEntreprise
   )
@@ -2931,7 +2940,7 @@ router.get('/maintenance/entretiens/:id/fiche', (req: Request, res: Response) =>
   if (!maint) return res.status(404).send('Intervention technique introuvable')
 
   const agence = agences.find((a) => a.id === maint.agenceId)
-  const html = renderFicheMaintenanceTechniqueHtml(maint, agence?.nom || 'Atelier Minoterie MVG', parametresEntreprise)
+  const html = renderFicheMaintenanceTechniqueHtml(maint, agence?.nom || 'Atelier Technique', parametresEntreprise)
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
@@ -3766,7 +3775,7 @@ router.get('/etats-besoin/:id/bon-decaissement', (req: Request, res: Response) =
   if (!eb) return res.status(404).send('État de besoin introuvable')
 
   const agence = agences.find((a) => a.id === eb.agenceId)
-  const html = renderEtatBesoinBonDecaissementHtml(eb, agence?.nom || 'Agence Principale MVG', parametresEntreprise)
+  const html = renderEtatBesoinBonDecaissementHtml(eb, agence?.nom || 'Agence Locale', parametresEntreprise)
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })

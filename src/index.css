@@ -291,6 +291,11 @@ a:focus-visible {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: 280px 1fr;
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 74px 1fr;
 }
 
 .sidebar {
@@ -303,6 +308,43 @@ a:focus-visible {
   border-right: 1px solid var(--border);
   background: var(--surface);
   z-index: 20;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed {
+  width: 74px;
+  padding: 14px 8px;
+}
+
+.sidebar.collapsed .sidebar-head {
+  padding: 8px 0 16px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-head strong,
+.sidebar.collapsed .sidebar-head span,
+.sidebar.collapsed .nav-list a span,
+.sidebar.collapsed .nav-caret,
+.sidebar.collapsed .session-card > div,
+.sidebar.collapsed .secondary-action span {
+  display: none !important;
+}
+
+.sidebar.collapsed .nav-list a {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 10px 4px;
+}
+
+.sidebar.collapsed .session-card {
+  justify-content: center;
+  padding: 8px 4px;
+}
+
+.sidebar.collapsed .secondary-action {
+  justify-content: center;
+  padding: 8px 4px;
 }
 
 .sidebar-head {
@@ -647,6 +689,10 @@ tr:last-child td {
 
 .mobile-only {
   display: none;
+}
+
+.desktop-only {
+  display: inline-flex;
 }
 
 /* ==========================================================================
@@ -1157,6 +1203,10 @@ tr:last-child td {
 @media (max-width: 860px) {
   .mobile-only {
     display: grid;
+  }
+
+  .desktop-only {
+    display: none !important;
   }
 
   .app-shell {

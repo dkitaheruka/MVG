@@ -22,16 +22,92 @@ const COMMON_SCROLLBAR_CSS = `
 
 function renderStickyToolbar(docTitle: string): string {
   return `
-  <div class="no-print" style="position: sticky; top: 0; z-index: 999; background: #ffffff; border-bottom: 2px solid #0284c7; padding: 10px 18px; margin: -28px -28px 20px -28px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <div class="no-print" style="position: sticky; top: 0; z-index: 999; background: #ffffff; border-bottom: 2px solid #0f172a; padding: 10px 18px; margin: -28px -28px 20px -28px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.06);">
     <div style="display: flex; align-items: center; gap: 8px;">
-      <span style="font-size: 13px; font-weight: 700; color: #0f172a;">Aperçu officiel : ${docTitle}</span>
-      <span style="font-size: 11px; color: #64748b;">(Faites défiler avec la barre de scroll pour tout vérifier avant d'imprimer)</span>
+      <span style="font-size: 13px; font-weight: 700; color: #0f172a;">Aperçu du document : ${docTitle}</span>
+      <span style="font-size: 11px; color: #64748b;">(Faites défiler pour vérifier l'exactitude avant impression)</span>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
-      <button class="print-btn" onclick="window.print()" style="margin: 0; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;">🖨️ Imprimer ce Document (Ctrl+P)</button>
+      <button class="print-btn" onclick="window.print()" style="margin: 0; padding: 7px 16px; font-size: 12px; font-weight: 700; cursor: pointer; background: #0f172a; color: #fff; border: 0; border-radius: 6px;">Imprimer le document (Ctrl+P)</button>
     </div>
   </div>
   `
+}
+
+export function renderCorporateHeaderAndWatermark(params: {
+  entreprise?: any
+  agence?: any
+  docTitle: string
+  docReference?: string
+  isThermal?: boolean
+}): { headerHtml: string; watermarkHtml: string } {
+  const isThermal = params.isThermal ?? false
+  const socNom = params.entreprise?.nomSociete || 'SOCIÉTÉ INDUSTRIELLE & COMMERCIALE (SARL)'
+  const socSlogan = params.entreprise?.slogan || 'Production, transformation industrielle & distribution'
+  const socRccm = params.entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
+  const socIdNat = params.entreprise?.idNat || '01-83-N12457K'
+  const socNif = params.entreprise?.nif || 'A2189410F'
+  const socSiege = params.entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
+  const socTel = params.entreprise?.telephone || '+243 998 000 111'
+  const logoUrl = params.entreprise?.logoUrl
+  const logoDroiteUrl = params.entreprise?.logoDroiteUrl
+  const watermarkLogo = params.entreprise?.logoFiligraneUrl || params.entreprise?.logoUrl
+  const watermarkOpacity = (params.entreprise?.filigraneOpacite != null && !isNaN(params.entreprise.filigraneOpacite))
+    ? Math.max(0.01, Math.min(0.20, Number(params.entreprise.filigraneOpacite) / 100))
+    : 0.045
+  const watermarkText = params.entreprise?.filigraneTexte || (socNom.length > 20 ? socNom.slice(0, 16) + '...' : socNom)
+
+  const watermarkHtml = watermarkLogo
+    ? `<div class="doc-watermark" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 340px; height: 340px; opacity: ${watermarkOpacity}; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center;">
+        <img src="${watermarkLogo}" alt="Filigrane Officiel" style="max-width: 100%; max-height: 100%; object-fit: contain; filter: grayscale(100%);" />
+       </div>`
+    : `<div class="doc-watermark" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 290px; height: 290px; opacity: ${watermarkOpacity * 0.9}; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 900; color: #0f172a; border: 5px solid #0f172a; border-radius: 50%; text-align: center; text-transform: uppercase; padding: 20px; line-height: 1.2;">
+        ${watermarkText}
+       </div>`
+
+  const headerHtml = isThermal
+    ? `<div class="header" style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; position: relative; z-index: 1;">
+        ${logoUrl ? `<div style="text-align: center; margin-bottom: 6px;"><img src="${logoUrl}" alt="Logo" style="max-height: 42px; max-width: 160px; object-fit: contain;" /></div>` : ''}
+        <h1 class="company-name" style="font-size: 15px; font-weight: 800; margin: 0; color: #0f172a;">${socNom}</h1>
+        <div class="subtitle" style="font-size: 10px; color: #64748b; margin: 2px 0 4px;">${socSlogan}</div>
+        <div class="legal-info" style="font-size: 9px; color: #475569; line-height: 1.3;">
+          RCCM : ${socRccm} | ID. NAT : ${socIdNat} | NIF : ${socNif}<br/>
+          Agence : ${params.agence?.nom || 'Agence locale'}
+        </div>
+        <div class="doc-title" style="font-size: 13px; font-weight: 800; margin: 8px 0 2px; text-transform: uppercase; color: #0f172a;">${params.docTitle}</div>
+        ${params.docReference ? `<div style="font-size: 11px; font-weight: 700; color: #334155;">N° ${params.docReference}</div>` : ''}
+       </div>`
+    : `<div class="header-bilateral" style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; position: relative; z-index: 1;">
+        <!-- CÔTÉ GAUCHE : LOGO OFFICIEL CONFIGURABLE & NOM DE L'ENTREPRISE -->
+        <div style="flex: 1.2; display: flex; align-items: center; gap: 14px;">
+          ${logoUrl ? `<img src="${logoUrl}" alt="Logo Entreprise" style="max-height: 60px; max-width: 170px; object-fit: contain; border-radius: 4px;" />` : `<div style="width: 50px; height: 50px; background: #0f172a; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; flex-shrink: 0;">${socNom.slice(0, 2).toUpperCase()}</div>`}
+          <div>
+            <h1 class="company-name" style="font-size: 17px; font-weight: 800; color: #0f172a; margin: 0; line-height: 1.2;">${socNom}</h1>
+            <div class="subtitle" style="font-size: 11px; color: #64748b; margin-top: 3px;">${socSlogan}</div>
+            <div style="font-size: 10px; color: #475569; margin-top: 4px;">
+              Siège Social : ${socSiege} | Tél : ${socTel}
+            </div>
+          </div>
+        </div>
+
+        <!-- CÔTÉ DROIT : INFORMATIONS LÉGALES, LOGO/SCEAU DROIT (SI CONFIGURÉ) & TITRE DU DOCUMENT -->
+        <div style="flex: 1; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
+          <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-end;">
+            <div style="font-size: 10px; color: #475569; line-height: 1.4; text-align: right;">
+              RCCM : <strong>${socRccm}</strong> | ID. NAT : <strong>${socIdNat}</strong><br/>
+              NIF : <strong>${socNif}</strong><br/>
+              Agence d'émission : <strong>${params.agence?.nom || 'Siège Principal'}</strong> (${params.agence?.ville || 'RDC'})
+            </div>
+            ${logoDroiteUrl ? `<img src="${logoDroiteUrl}" alt="Logo/Sceau Droit" style="max-height: 52px; max-width: 110px; object-fit: contain; border-radius: 4px;" />` : ''}
+          </div>
+          <div class="doc-title" style="font-size: 14px; font-weight: 800; margin: 6px 0 2px; text-transform: uppercase; color: #0f172a; letter-spacing: 0.02em;">
+            ${params.docTitle}
+          </div>
+          ${params.docReference ? `<div style="font-size: 12px; font-weight: 700; color: #047857;">Réf : ${params.docReference}</div>` : ''}
+        </div>
+       </div>`
+
+  return { headerHtml, watermarkHtml }
 }
 
 export function renderFactureHtml(
@@ -46,15 +122,16 @@ export function renderFactureHtml(
   const isThermal = format === 'thermal'
   const totalUsd = Number(vente.montantTotal || 0)
   const totalCdf = Math.round(vente.montantCdf || totalUsd * (tauxActif || 2850))
+  const socNom = entreprise?.nomSociete || 'SOCIÉTÉ INDUSTRIELLE & COMMERCIALE (SARL)'
+  const socPied = entreprise?.mentionsPiedFacture || 'Marchandises vendues et réceptionnées conformes. Aucun retour accepté sans accord formel de la direction.'
 
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socSlogan = entreprise?.slogan || 'Transformation agroalimentaire & distribution de farine de maïs et dérivés'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const socIdNat = entreprise?.idNat || '01-83-N12457K'
-  const socNif = entreprise?.nif || 'A2189410F'
-  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
-  const socTel = entreprise?.telephone || '+243 998 000 111'
-  const socPied = entreprise?.mentionsPiedFacture || 'Les marchandises retirées des entrepôts de la minoterie sont conformes et ne sont ni reprises ni échangées. Document certifié par Matabishi ERP.'
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence,
+    docTitle: vente.estCredit ? 'FACTURE DE VENTE À CRÉDIT' : 'FACTURE DE VENTE AU COMPTANT',
+    docReference: vente.referenceVente || `VNT-${vente.id}`,
+    isThermal,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -93,19 +170,8 @@ export function renderFactureHtml(
 </head>
 <body>
   ${renderStickyToolbar(vente.estCredit ? 'Facture de Vente à Crédit' : 'Facture de Vente au Comptant')}
-
-  <div class="header">
-    ${entreprise?.logoUrl ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${entreprise.logoUrl}" alt="Logo" style="max-height: 55px; max-width: 220px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div class="subtitle">${socSlogan}</div>
-    <div class="legal-info">
-      RCCM : <strong>${socRccm}</strong> | ID. NAT : <strong>${socIdNat}</strong> | NIF : <strong>${socNif}</strong><br/>
-      Siège Social : ${socSiege} | Tél : ${socTel}<br/>
-      Agence d'émission : <strong>${agence?.nom || 'Agence Locale'}</strong> (${agence?.ville || 'RDC'})
-    </div>
-    <div class="doc-title">${vente.estCredit ? 'FACTURE DE VENTE À CRÉDIT' : 'FACTURE DE VENTE AU COMPTANT'}</div>
-    <div style="font-size: 12px; font-weight: 700; color: #334155;">N° ${vente.referenceVente || `VNT-${vente.id}`}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -193,14 +259,19 @@ export function renderBonLivraisonHtml(
   transportInfo?: any,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const socPied = entreprise?.mentionsPiedLivraison || 'Les sacs et emballages ont été vérifiés au départ de la minoterie. Le destinataire certifie la conformité qualitative et quantitative des sacs réceptionnés.'
+  const socPied = entreprise?.mentionsPiedLivraison || 'Les emballages et marchandises ont été vérifiés au départ. Le destinataire certifie la conformité qualitative et quantitative des articles réceptionnés.'
 
   const mode = transportInfo?.modeTransport || (transportInfo?.marqueModele ? 'FLOTTE_ENTREPRISE' : 'ENLEVEMENT_MAGASIN')
   const vehicule = transportInfo?.vehicule || (transportInfo?.marqueModele ? transportInfo : undefined)
   const clientVehicule = transportInfo?.clientVehicule
   const clientChauffeur = transportInfo?.clientChauffeur
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence,
+    docTitle: 'BORDEREAU DE LIVRAISON (BL)',
+    docReference: `BL-${vente.referenceVente || vente.id}`,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -230,21 +301,8 @@ export function renderBonLivraisonHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Bordereau de Livraison BL-${vente.referenceVente || vente.id}`)}
-
-  <div class="header">
-    <div>
-      ${entreprise?.logoUrl ? `<div style="margin-bottom: 6px;"><img src="${entreprise.logoUrl}" alt="Logo" style="max-height: 48px; max-width: 180px; object-fit: contain;" /></div>` : ''}
-      <h1 class="company-name">${socNom}</h1>
-      <div class="subtitle">Dépôt & Minoterie Industrielle</div>
-      <div style="font-size: 11px; color:#475569;">RCCM : <strong>${socRccm}</strong> | Agence : ${agence?.nom || 'Goma'}</div>
-    </div>
-    <div style="text-align: right;">
-      <div class="doc-title">BORDEREAU DE LIVRAISON</div>
-      <div style="font-weight: 700; font-size: 14px; color:#0284c7;">N° BL-${vente.referenceVente || vente.id}</div>
-      <div style="font-size: 11px; color:#64748b;">Réf Vente : ${vente.referenceVente || vente.id}</div>
-      <div style="font-size: 11px;">Date : ${new Date(vente.dateVente || Date.now()).toLocaleDateString('fr-FR')}</div>
-    </div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -260,9 +318,9 @@ export function renderBonLivraisonHtml(
           Véhicule client : <strong>${clientVehicule || 'Véhicule apporté par le client'}</strong><br/>
           Chauffeur / Convoyeur : <strong>${clientChauffeur || 'Chauffeur / Porteur désigné par le client'}</strong>
         ` : `
-          Transport : <strong>🚚 Flotte de l'Entreprise (Minoterie MVG)</strong><br/>
+          Transport : <strong>🚚 Flotte de l'Entreprise (${entreprise?.sigle || entreprise?.nomSociete || 'Flotte Interne'})</strong><br/>
           Camion affecté : <strong>${vehicule ? `${vehicule.marqueModele} (Plaque: ${vehicule.plaqueImmatriculation})` : 'Camion de livraison agence'}</strong><br/>
-          Chauffeur société : <strong>${vehicule?.chauffeurNom || 'Bahati Kasereka'}</strong> ${vehicule?.chauffeurTelephone ? `(${vehicule.chauffeurTelephone})` : ''}
+          Chauffeur société : <strong>${vehicule?.chauffeurNom || 'Chauffeur attitré'}</strong> ${vehicule?.chauffeurTelephone ? `(${vehicule.chauffeurTelephone})` : ''}
         `}
       </div>
     </div>
@@ -338,7 +396,12 @@ export function renderBalanceHtml(
   totalCreditUsd: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom, ville: 'RDC' },
+    docTitle: 'BALANCE GÉNÉRALE DES COMPTES',
+    docReference: `${mois < 10 ? '0' + mois : mois}/${annee}`,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -364,14 +427,8 @@ export function renderBalanceHtml(
 </head>
 <body>
   ${renderStickyToolbar('Balance Générale des Comptes OHADA')}
-
-  <div class="header">
-    <h1 class="company-name">${socNom}</h1>
-    <div style="font-size: 11px; color:#64748b;">Système Comptable SYSCOHADA Révisé - Goma, Nord-Kivu, RDC</div>
-    <div class="doc-title">BALANCE GÉNÉRALE DES COMPTES</div>
-    <div style="font-size: 12px; font-weight: 600;">Périmètre : ${agenceNom} | Période : ${mois < 10 ? '0' + mois : mois}/${annee}</div>
-    <div style="font-size: 10px; color:#475569;">Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <table>
     <thead>
@@ -424,7 +481,13 @@ export function renderBalanceHtml(
 
 export function renderInventaireHtml(stocks: any[], agenceNom: string, entreprise?: any): string {
   let valeurTotaleUsd = 0
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom, ville: 'RDC' },
+    docTitle: 'ÉTAT VALORISÉ DES STOCKS PHYSIQUES',
+    docReference: new Date().toLocaleDateString('fr-FR'),
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -450,12 +513,8 @@ export function renderInventaireHtml(stocks: any[], agenceNom: string, entrepris
 </head>
 <body>
   ${renderStickyToolbar(`Inventaire des Stocks Physiques - ${agenceNom}`)}
-
-  <div class="header">
-    <h1 class="company-name">${socNom}</h1>
-    <div class="doc-title">ÉTAT DES STOCKS PHYSIQUES ET VALORISATION PMP</div>
-    <div style="font-size: 12px; font-weight: 600;">Dépôt / Agence : ${agenceNom} | Situation au ${new Date().toLocaleDateString('fr-FR')}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <table>
     <thead>
@@ -516,14 +575,19 @@ export function renderFeuilleRouteTransfertHtml(
   vehicule?: any,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
   const plaque = vehicule?.plaqueImmatriculation || transfert.immatriculationCamion || '4512AB/19'
-  const modele = vehicule?.marqueModele || 'Camion Minoterie (15T)'
-  const chauffeur = vehicule?.chauffeurNom || transfert.chauffeurNom || 'Bahati Kasereka'
+  const modele = vehicule?.marqueModele || 'Camion de Transport'
+  const chauffeur = vehicule?.chauffeurNom || transfert.chauffeurNom || 'Chauffeur Convoi'
   const telChauffeur = vehicule?.chauffeurTelephone || '+243 970 112 233'
 
   let totalSacs = 0
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: agenceSource,
+    docTitle: 'FEUILLE DE ROUTE & BORDEREAU DE CONVOI',
+    docReference: transfert.referenceTransfert,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -553,20 +617,8 @@ export function renderFeuilleRouteTransfertHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Feuille de Route Transfert ${transfert.referenceTransfert}`)}
-
-  <div class="header">
-    <div>
-      <h1 class="company-name">${socNom}</h1>
-      <div class="subtitle">Logistique & Transferts Inter-Agences Flotte MVG</div>
-      <div style="font-size: 11px; color:#475569;">RCCM : <strong>${socRccm}</strong></div>
-    </div>
-    <div style="text-align: right;">
-      <div class="doc-title">FEUILLE DE ROUTE & BORDEREAU DE CONVOI</div>
-      <div style="font-weight: 700; font-size: 14px; color:#0284c7;">N° ${transfert.referenceTransfert}</div>
-      <div style="font-size: 11px; color:#64748b;">Statut : ${transfert.statut === 'RECU' ? 'RÉCEPTIONNÉ' : 'EN CONVOI / TRANSIT'}</div>
-      <div style="font-size: 11px;">Date départ : ${new Date(transfert.dateExpedition).toLocaleString('fr-FR')}</div>
-    </div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -576,7 +628,7 @@ export function renderFeuilleRouteTransfertHtml(
       Responsable expédition : <strong>${transfert.initiateurNom}</strong>
     </div>
     <div class="meta-box">
-      <strong>Véhicule Flotte MVG & Chauffeur :</strong><br/>
+      <strong>Véhicule Flotte ${entreprise?.sigle || 'Société'} & Chauffeur :</strong><br/>
       Camion : <strong>${modele}</strong><br/>
       Plaque d'immatriculation : <code style="font-weight:700; font-size:13px; color:#0369a1;">${plaque}</code><br/>
       Chauffeur Transporteur : <strong>${chauffeur}</strong> (Tél : ${telChauffeur})
@@ -653,9 +705,14 @@ export function renderBonProductionHtml(
   recetteLignes: any[],
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
   const qteReelle = ordre.quantiteReelle || ordre.quantitePrevue
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence,
+    docTitle: 'ORDRE DE FABRICATION & TRAÇABILITÉ',
+    docReference: ordre.codeOrdre,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -663,22 +720,18 @@ export function renderBonProductionHtml(
   <meta charset="UTF-8">
   <title>Ordre de Fabrication - ${ordre.codeOrdre}</title>
   <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
-    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-    .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .subtitle { font-size: 11px; color: #64748b; margin: 2px 0; }
-    .doc-title { font-size: 17px; font-weight: 700; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; position: relative; z-index: 1; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; position: relative; z-index: 1; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; font-weight: 700; }
     td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .center { text-align: center; }
     .right { text-align: right; }
     .lot-badge { display: inline-block; background: #0f172a; color: #fff; padding: 4px 10px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: 700; }
-    .qc-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: #fff; margin-bottom: 16px; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 30px; font-size: 11px; }
+    .qc-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: #fff; margin-bottom: 16px; position: relative; z-index: 1; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 30px; font-size: 11px; position: relative; z-index: 1; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -687,28 +740,16 @@ export function renderBonProductionHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Ordre de Fabrication & Production ${ordre.codeOrdre}`)}
-
-  <div class="header">
-    <div>
-      <h1 class="company-name">${socNom}</h1>
-      <div class="subtitle">Unité Industrielle de Mouture, Ensachage & Contrôle Qualité</div>
-      <div style="font-size: 11px; color:#475569;">RCCM : <strong>${socRccm}</strong> | Site : ${agence?.nom || 'Minoterie Goma'}</div>
-    </div>
-    <div style="text-align: right;">
-      <div class="doc-title">ORDRE DE FABRICATION & TRAÇABILITÉ</div>
-      <div style="font-weight: 700; font-size: 14px; color:#0284c7;">N° ${ordre.codeOrdre}</div>
-      <div style="font-size: 11px; color:#64748b;">Statut : ${ordre.statut === 'TERMINE' ? 'CLÔTURÉ / CERTIFIÉ' : 'EN COURS DE MOUTURE'}</div>
-      <div style="font-size: 11px;">Date émission : ${new Date(ordre.dateCreation).toLocaleDateString('fr-FR')}</div>
-    </div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
-      <strong>Produit Fini Ensaché :</strong><br/>
-      Désignation : <strong style="font-size:14px; color:#0f172a;">${articleFini?.designation || 'Farine'}</strong><br/>
+      <strong>Produit Fini Réalisé :</strong><br/>
+      Désignation : <strong style="font-size:14px; color:#0f172a;">${articleFini?.designation || 'Produits Finis'}</strong><br/>
       Code Article : <code>${articleFini?.codeUnique || 'ART'}</code><br/>
-      Conditionnement : ${articleFini?.uniteMesure || 'Sac'}<br/>
-      Site de production : ${agence?.nom || 'Dépôt Central'} (${agence?.ville})
+      Conditionnement : ${articleFini?.uniteMesure || 'Unité'}<br/>
+      Site de production : ${agence?.nom || 'Atelier Principal'} (${agence?.ville || 'RDC'})
     </div>
     <div class="meta-box">
       <strong>Lot Généré & Rendement Usine :</strong><br/>
@@ -790,13 +831,6 @@ export function renderBulletinPaieHtml(
   agence: any,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const socIdNat = entreprise?.idNat || '01-83-N12457K'
-  const socNif = entreprise?.nif || 'A2189410F'
-  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
-  const logo = entreprise?.logoUrl
-
   const salaireBase = Number(bulletin.salaireBase || 0)
   const commissions = Number(bulletin.commissionsVentes || 0)
   const primes = Number(bulletin.primes || 0)
@@ -808,30 +842,33 @@ export function renderBulletinPaieHtml(
   const totalRetenues = cnssSalarie + ipr + avances
   const netAPayer = Number(bulletin.netAPayer || (brutTotal - totalRetenues))
 
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence,
+    docTitle: 'BULLETIN INDIVIDUEL DE PAIE',
+    docReference: `${bulletin.referenceBulletin} (Mois ${bulletin.mois < 10 ? '0' + bulletin.mois : bulletin.mois}/${bulletin.annee})`,
+  })
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <title>Bulletin de Paie - ${bulletin.referenceBulletin}</title>
   <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
-    .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-    .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .subtitle { font-size: 11px; color: #64748b; margin: 2px 0 6px; }
-    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 10px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; position: relative; z-index: 1; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; position: relative; z-index: 1; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; font-weight: 700; }
     td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .center { text-align: center; }
     .right { text-align: right; }
     .bold { font-weight: 700; }
-    .total-box { margin-left: auto; width: 340px; border: 2px solid #0f172a; border-radius: 6px; overflow: hidden; margin-top: 14px; }
+    .total-box { margin-left: auto; width: 340px; border: 2px solid #0f172a; border-radius: 6px; overflow: hidden; margin-top: 14px; position: relative; z-index: 1; }
     .total-row { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
     .total-row.grand { background: #0f172a; color: #fff; font-size: 15px; font-weight: 800; border-bottom: 0; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; position: relative; z-index: 1; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -840,18 +877,8 @@ export function renderBulletinPaieHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Bulletin de Paie - ${bulletin.referenceBulletin} (${agent?.nom || 'Collaborateur'})`)}
-
-  <div class="header">
-    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 55px; max-width: 220px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div class="subtitle">Transformation céréalière, Minoterie & Distribution de farine</div>
-    <div style="font-size: 11px; color:#475569;">
-      RCCM : <strong>${socRccm}</strong> | ID. NAT : <strong>${socIdNat}</strong> | NIF : <strong>${socNif}</strong><br/>
-      Siège Social : ${socSiege}
-    </div>
-    <div class="doc-title">BULLETIN INDIVIDUEL DE PAIE & SALAIRE</div>
-    <div style="font-size: 12px; font-weight: 700; color: #334155;">Période : Mois ${bulletin.mois < 10 ? '0' + bulletin.mois : bulletin.mois} / ${bulletin.annee} | Réf : ${bulletin.referenceBulletin}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -974,7 +1001,7 @@ export function renderGrandLivreHtml(
   annee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
   const logo = entreprise?.logoUrl
 
   // Regrouper les écritures par numéro de compte
@@ -1087,7 +1114,7 @@ export function renderCompteResultatHtml(
   resultatNet: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
   const logo = entreprise?.logoUrl
 
   const charges = groupedComptes.filter((c) => c.numeroCompte.startsWith('6'))
@@ -1197,11 +1224,13 @@ export function renderBonCommandeHtml(
   fournisseur: any,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const logo = entreprise?.logoUrl
-
   const total = Number(commande.quantitePrevue || 0) * Number(commande.prixUnitaireNegocie || 0)
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    docTitle: 'BON DE COMMANDE FOURNISSEUR',
+    docReference: commande.numeroBC,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -1209,18 +1238,15 @@ export function renderBonCommandeHtml(
   <meta charset="UTF-8">
   <title>Bon de Commande - ${commande.numeroBC}</title>
   <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
-    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-    .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 17px; font-weight: 700; text-transform: uppercase; color: #0369a1; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; position: relative; z-index: 1; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; position: relative; z-index: 1; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; }
     td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .right { text-align: right; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; position: relative; z-index: 1; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -1229,20 +1255,8 @@ export function renderBonCommandeHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Bon de Commande Fournisseur BC ${commande.numeroBC}`)}
-
-  <div class="header">
-    <div>
-      ${logo ? `<div style="margin-bottom: 6px;"><img src="${logo}" alt="Logo" style="max-height: 48px; max-width: 180px; object-fit: contain;" /></div>` : ''}
-      <h1 class="company-name">${socNom}</h1>
-      <div style="font-size: 11px; color:#64748b;">Département Approvisionnements & Achats Matières Premières</div>
-      <div style="font-size: 11px; color:#475569;">RCCM : <strong>${socRccm}</strong></div>
-    </div>
-    <div style="text-align: right;">
-      <div class="doc-title">BON DE COMMANDE FOURNISSEUR</div>
-      <div style="font-weight: 700; font-size: 15px; color:#0284c7;">N° ${commande.numeroBC}</div>
-      <div style="font-size: 11px;">Date : ${new Date(commande.dateCommande).toLocaleDateString('fr-FR')}</div>
-    </div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -1254,7 +1268,7 @@ export function renderBonCommandeHtml(
     </div>
     <div class="meta-box">
       <strong>Modalités de Réception & Contrôle :</strong><br/>
-      Lieu de déchargement : <strong>Minoterie Centrale MVG Goma</strong><br/>
+      Lieu de déchargement : <strong>${entreprise?.siegeAdresse || 'Site de livraison convenu'}</strong><br/>
       Modalité de pesée : <strong>Pont-Bascule agréé</strong><br/>
       Exigence qualité : Humidité &le; 13.5%, Impuretés &le; 2.0%<br/>
       Échéance de livraison : Immédiate
@@ -1286,7 +1300,7 @@ export function renderBonCommandeHtml(
       <small>Signature & Cachet</small>
     </div>
     <div class="sig-box" style="text-align: right;">
-      <strong>Pour la Minoterie MVG (Direction des Achats) :</strong><br/>
+      <strong>Pour ${entreprise?.sigle || entreprise?.nomSociete || 'la Direction'} (Direction des Achats) :</strong><br/>
       <small>Signature & Visa d'engagement budgétaire</small>
     </div>
   </div>
@@ -1301,9 +1315,6 @@ export function renderTicketPontBasculeHtml(
   fournisseur?: any,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const logo = entreprise?.logoUrl
-
   const brut = Number(reception.peseeBrute || 0)
   const tare = Number(reception.peseeTare || 0)
   const netBrut = brut - tare
@@ -1311,26 +1322,29 @@ export function renderTicketPontBasculeHtml(
   const netAccepte = Number(reception.peseeNet || (netBrut - refaction))
   const montant = Number(reception.montantTotal || 0)
 
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    docTitle: 'TICKET DE PESÉE OFFICIEL PONT-BASCULE',
+    docReference: reception.referenceAchat,
+  })
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <title>Ticket Pont-Bascule - ${reception.referenceAchat}</title>
   <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 13px; }
-    .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-    .company-name { font-size: 18px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 15px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; position: relative; z-index: 1; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; position: relative; z-index: 1; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; }
     td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .right { text-align: right; }
-    .weigh-box { border: 2px solid #0284c7; border-radius: 6px; padding: 14px; background: #f0f9ff; margin-bottom: 16px; }
+    .weigh-box { border: 2px solid #0284c7; border-radius: 6px; padding: 14px; background: #f0f9ff; margin-bottom: 16px; position: relative; z-index: 1; }
     .weigh-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; font-size: 11px; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; font-size: 11px; position: relative; z-index: 1; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 65px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -1339,14 +1353,8 @@ export function renderTicketPontBasculeHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Ticket de Pesée Pont-Bascule ${reception.referenceAchat}`)}
-
-  <div class="header">
-    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div style="font-size: 11px; color:#64748b;">Poste de Pesage Électronique Pont-Bascule & Agrément Qualité Grain</div>
-    <div class="doc-title">TICKET DE PESÉE OFFICIEL & RÉCEPTION GRAINS</div>
-    <div style="font-size: 12px; font-weight: 700;">N° ${reception.referenceAchat} | Date : ${new Date(reception.dateAchat).toLocaleString('fr-FR')}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -1359,7 +1367,7 @@ export function renderTicketPontBasculeHtml(
       <strong>Fournisseur & Commande :</strong><br/>
       Fournisseur : <strong>${fournisseur?.nom || reception.fournisseurNom}</strong><br/>
       Réf Bon de Commande : <code>${commande?.numeroBC || 'Achat direct comptoir'}</code><br/>
-      Opérateur Pont-Bascule : <strong>${reception.recepteurNom || 'Pontier MVG'}</strong>
+      Opérateur Pont-Bascule : <strong>${reception.recepteurNom || 'Pontier de service'}</strong>
     </div>
   </div>
 
@@ -1410,7 +1418,7 @@ export function renderTableauImmobilisationsHtml(
   annee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
   const logo = entreprise?.logoUrl
 
   const totalAcq = immos.reduce((sum, i) => sum + Number(i.valeurAcquisitionUsd || 0), 0)
@@ -1524,16 +1532,15 @@ export function renderEtatBesoinBonDecaissementHtml(
   agenceNom: string,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socSlogan = entreprise?.slogan || 'Transformation céréalière, minoterie & distribution de farines'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const socIdNat = entreprise?.idNat || '01-83-N12457K'
-  const socNif = entreprise?.nif || 'A2189410F'
-  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
-  const socTel = entreprise?.telephone || '+243 998 000 111'
-
   const montantFormate = Number(eb.montant || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })
   const devise = eb.devise || 'USD'
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'BON DE DÉCAISSEMENT & DÉCHARGE CAISSE',
+    docReference: eb.numeroEB,
+  })
 
   const statutBadge =
     eb.statut === 'DECAISSE'
@@ -1551,6 +1558,10 @@ export function renderEtatBesoinBonDecaissementHtml(
   <title>Bon de Décaissement - ${eb.numeroEB}</title>
   <style>
     ${COMMON_SCROLLBAR_CSS}
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       margin: 0;
@@ -1559,38 +1570,15 @@ export function renderEtatBesoinBonDecaissementHtml(
       background: #ffffff;
       font-size: 13px;
       line-height: 1.45;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 2px solid #0284c7;
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-    }
-    .company-name {
-      font-size: 18px;
-      font-weight: 800;
-      color: #0369a1;
-      text-transform: uppercase;
-    }
-    .doc-title {
-      font-size: 19px;
-      font-weight: 800;
-      text-align: center;
-      margin: 16px 0 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #0f172a;
-      background: #f1f5f9;
-      padding: 8px;
-      border-radius: 6px;
-      border-left: 5px solid #0284c7;
+      position: relative;
     }
     .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       margin-bottom: 16px;
+      position: relative;
+      z-index: 1;
     }
     .info-card {
       background: #f8fafc;
@@ -1612,6 +1600,8 @@ export function renderEtatBesoinBonDecaissementHtml(
       display: flex;
       justify-content: space-between;
       align-items: center;
+      position: relative;
+      z-index: 1;
     }
     .amount-val {
       font-size: 22px;
@@ -1624,6 +1614,8 @@ export function renderEtatBesoinBonDecaissementHtml(
       border-radius: 6px;
       padding: 12px;
       margin: 14px 0;
+      position: relative;
+      z-index: 1;
     }
     .signatures {
       display: grid;
@@ -1632,6 +1624,8 @@ export function renderEtatBesoinBonDecaissementHtml(
       margin-top: 32px;
       padding-top: 12px;
       border-top: 1px solid #cbd5e1;
+      position: relative;
+      z-index: 1;
     }
     .sig-box {
       border: 1px dashed #94a3b8;
@@ -1657,26 +1651,12 @@ export function renderEtatBesoinBonDecaissementHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Bon de Décaissement Caisse - ${eb.numeroEB}`)}
+  ${watermarkHtml}
+  ${headerHtml}
 
-  <div class="header">
-    <div>
-      <div class="company-name">${socNom}</div>
-      <div style="font-size: 11px; color: #475569;">${socSlogan}</div>
-      <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
-        Siège : ${socSiege}<br/>
-        RCCM: ${socRccm} | ID.NAT: ${socIdNat} | NIF: ${socNif}<br/>
-        Tél: ${socTel}
-      </div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 14px; font-weight: 700; color: #0284c7;">AGENCE : ${agenceNom}</div>
-      <div style="font-size: 12px; color: #475569; margin-top: 4px;">Date d'émission : ${new Date(eb.dateDemande).toLocaleDateString('fr-FR')}</div>
-      <div style="margin-top: 6px;">${statutBadge}</div>
-    </div>
-  </div>
-
-  <div class="doc-title">
-    BON DE DÉCAISSEMENT & DÉCHARGE DE CAISSE N° ${eb.numeroEB}
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 6px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+    <div><strong>Date demande :</strong> ${new Date(eb.dateDemande).toLocaleDateString('fr-FR')}</div>
+    <div>${statutBadge}</div>
   </div>
 
   <div class="info-grid">
@@ -1794,12 +1774,12 @@ export function renderFicheMaintenanceTechniqueHtml(
   agenceNom: string,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const socSlogan = entreprise?.slogan || 'Transformation céréalière, minoterie & distribution de farines'
-  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/21-B-00452'
-  const socIdNat = entreprise?.idNat || '01-83-N12457K'
-  const socNif = entreprise?.nif || 'A2189410F'
-  const socSiege = entreprise?.siegeAdresse || 'Avenue du Port N° 14, Goma, Nord-Kivu, RDC'
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'FICHE D INTERVENTION TECHNIQUE',
+    docReference: maint.numeroIntervention,
+  })
 
   const statutBadge =
     maint.statut === 'TERMINE'
@@ -1815,6 +1795,10 @@ export function renderFicheMaintenanceTechniqueHtml(
   <title>Fiche Maintenance - ${maint.numeroIntervention}</title>
   <style>
     ${COMMON_SCROLLBAR_CSS}
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       margin: 0;
@@ -1823,30 +1807,15 @@ export function renderFicheMaintenanceTechniqueHtml(
       background: #ffffff;
       font-size: 13px;
       line-height: 1.45;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 2px solid #0284c7;
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-    }
-    .doc-title {
-      font-size: 18px;
-      font-weight: 800;
-      text-align: center;
-      margin: 16px 0 12px;
-      text-transform: uppercase;
-      background: #f8fafc;
-      padding: 8px;
-      border-radius: 6px;
-      border-left: 5px solid #0284c7;
+      position: relative;
     }
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       margin-bottom: 14px;
+      position: relative;
+      z-index: 1;
     }
     .card {
       background: #f8fafc;
@@ -1863,6 +1832,8 @@ export function renderFicheMaintenanceTechniqueHtml(
       width: 100%;
       border-collapse: collapse;
       margin: 14px 0;
+      position: relative;
+      z-index: 1;
     }
     .costs-table th, .costs-table td {
       border: 1px solid #cbd5e1;
@@ -1879,6 +1850,8 @@ export function renderFicheMaintenanceTechniqueHtml(
       margin-top: 32px;
       border-top: 1px solid #cbd5e1;
       padding-top: 12px;
+      position: relative;
+      z-index: 1;
     }
     .sig-box {
       border: 1px dashed #94a3b8;
@@ -1897,22 +1870,12 @@ export function renderFicheMaintenanceTechniqueHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Fiche d'Intervention - ${maint.numeroIntervention}`)}
+  ${watermarkHtml}
+  ${headerHtml}
 
-  <div class="header">
-    <div>
-      <div style="font-size: 18px; font-weight: 800; color: #0369a1;">${socNom}</div>
-      <div style="font-size: 11px; color: #64748b;">${socSlogan} • Siège : ${socSiege}</div>
-      <div style="font-size: 11px; color: #64748b;">RCCM: ${socRccm} | ID.NAT: ${socIdNat} | NIF: ${socNif}</div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 14px; font-weight: 700; color: #0284c7;">SITE / ATELIER : ${agenceNom}</div>
-      <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Date : ${new Date(maint.dateIntervention).toLocaleDateString('fr-FR')}</div>
-      <div style="margin-top: 6px;">${statutBadge}</div>
-    </div>
-  </div>
-
-  <div class="doc-title">
-    FICHE D'INTERVENTION TECHNIQUE & RAPPORT DE MAINTENANCE N° ${maint.numeroIntervention}
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 6px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+    <div><strong>Date intervention :</strong> ${new Date(maint.dateIntervention).toLocaleDateString('fr-FR')}</div>
+    <div>${statutBadge}</div>
   </div>
 
   <div class="grid">

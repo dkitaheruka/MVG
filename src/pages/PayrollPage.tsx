@@ -579,7 +579,7 @@ export function PayrollPage() {
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0 }}>BULLETIN INDIVIDUEL DE PAIE</h3>
-                <small style={{ color: 'var(--muted)' }}>MATABISHI ERP - MVG SARL</small>
+                <small style={{ color: 'var(--muted)' }}>RESSOURCES HUMAINES & GESTION SOCIALE</small>
               </div>
               <FilePdf size={28} style={{ color: 'var(--accent-strong)' }} />
             </div>
@@ -632,7 +632,7 @@ export function PayrollPage() {
           <div className="modal-card" style={{ maxWidth: 440 }}>
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>BON DE CAISSE - AVANCE SALAIRE</h3>
-              <small style={{ color: 'var(--muted)' }}>MATABISHI ERP - MVG SARL</small>
+              <small style={{ color: 'var(--muted)' }}>TRÉSORERIE & AVANCES SUR SALAIRE</small>
             </div>
             <div style={{ fontSize: '0.88rem', display: 'grid', gap: 8 }}>
               <div><strong>N° Ordre de caisse :</strong> AVS-{voucherAvance.id}</div>

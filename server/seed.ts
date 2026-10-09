@@ -980,6 +980,7 @@ export const categories: DbCategorie[] = [
 
 export let parametresEntreprise: DbParametresEntreprise = {
   nomSociete: 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)',
+  sigle: 'MVG SARL',
   slogan: 'Transformation agroalimentaire & distribution de farine de maïs et dérivés',
   rccm: 'CD/GOM/RCCM/21-B-00452',
   idNat: '01-83-N12457K',
@@ -992,6 +993,10 @@ export let parametresEntreprise: DbParametresEntreprise = {
   mentionsPiedFacture: 'Les marchandises vendues et retirées ne sont ni reprises ni échangées. Document certifié par Matabishi ERP.',
   mentionsPiedLivraison: 'Les sacs et emballages ont été vérifiés au départ de la minoterie. Le destinataire certifie la conformité qualitative et quantitative des sacs réceptionnés.',
   logoUrl: '',
+  logoDroiteUrl: '',
+  logoFiligraneUrl: '',
+  filigraneOpacite: 5,
+  filigraneTexte: 'MVG SARL',
   plafondAutonomieEtatBesoinAgenceUsd: 200,
   plafondDepenseDirecteAgenceUsd: 100,
   doubleValidationTransfertObligatoire: true,

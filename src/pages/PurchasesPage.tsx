@@ -747,7 +747,7 @@ export function PurchasesPage() {
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0 }}>BON DE RECEPTION D ACHAT</h3>
-                <small style={{ color: 'var(--muted)' }}>MATABISHI ERP - MVG SARL</small>
+                <small style={{ color: 'var(--muted)' }}>GESTION DES APPROVISIONNEMENTS</small>
               </div>
               <CheckCircle size={28} style={{ color: 'var(--success)' }} />
             </div>

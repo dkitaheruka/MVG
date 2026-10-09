@@ -52,6 +52,11 @@ import {
   Coins,
   ChartBar,
   Gear,
+  Storefront,
+  Car,
+  Warning,
+  Sidebar,
+  CaretLeft,
 } from '@phosphor-icons/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -313,6 +318,8 @@ function AppShell() {
   const setSession = useAppStore((state) => state.setSession)
   const sidebarOpen = useAppStore((state) => state.sidebarOpen)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
+  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed)
+  const toggleSidebarCollapsed = useAppStore((state) => state.toggleSidebarCollapsed)
   const printProposal = useAppStore((state) => state.printProposal)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const can = useAppStore((state) => state.can)
@@ -329,61 +336,110 @@ function AppShell() {
   })
 
   return (
-    <div className="app-shell">
-      <aside className={clsx('sidebar', sidebarOpen && 'open')}>
-        <div className="sidebar-head">
-          <div className="brand-mark"><Buildings size={24} weight="duotone" /></div>
-          <div>
-            <strong>Matabishi</strong>
-            <span>ERP Pro Max</span>
+    <div className={clsx('app-shell', sidebarCollapsed && 'sidebar-collapsed')}>
+      <aside className={clsx('sidebar', sidebarOpen && 'open', sidebarCollapsed && 'collapsed')}>
+        <div className="sidebar-head" style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', paddingBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+            <div className="brand-mark"><Buildings size={24} weight="duotone" /></div>
+            {!sidebarCollapsed && (
+              <div>
+                <strong>Matabishi</strong>
+                <span>ERP Pro Max</span>
+              </div>
+            )}
           </div>
-          <button className="icon-button mobile-only" onClick={() => setSidebarOpen(false)} aria-label="Fermer menu">
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              className="icon-button desktop-only"
+              onClick={toggleSidebarCollapsed}
+              title={sidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+              aria-label="Basculer la taille du menu"
+              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6 }}
+            >
+              {sidebarCollapsed ? <CaretRight size={16} /> : <CaretLeft size={16} />}
+            </button>
+            <button className="icon-button mobile-only" onClick={() => setSidebarOpen(false)} aria-label="Fermer menu">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <nav className="nav-list" aria-label="Navigation principale">
           {visibleNav.map((item) => {
             const Icon = item.icon
             return (
-              <NavLink key={item.to} to={item.to} onClick={() => setSidebarOpen(false)}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setSidebarOpen(false)}
+                title={sidebarCollapsed ? t(item.labelKey) : undefined}
+              >
                 <Icon size={20} />
-                <span>{t(item.labelKey)}</span>
-                <CaretRight size={14} className="nav-caret" />
+                {!sidebarCollapsed && <span>{t(item.labelKey)}</span>}
+                {!sidebarCollapsed && <CaretRight size={14} className="nav-caret" />}
               </NavLink>
             )
           })}
         </nav>
 
         <div className="sidebar-foot">
-          <div className="session-card">
+          <div className="session-card" title={sidebarCollapsed ? `${session?.role} (${session?.email})` : undefined}>
             <UserCircleGear size={22} />
-            <div>
-              <strong>{session?.role}</strong>
-              <span>{session?.email}</span>
-            </div>
+            {!sidebarCollapsed && (
+              <div>
+                <strong>{session?.role}</strong>
+                <span>{session?.email}</span>
+              </div>
+            )}
           </div>
-          <button className="secondary-action" onClick={() => setSession(null)}>
+          <button
+            className="secondary-action"
+            onClick={() => setSession(null)}
+            title={sidebarCollapsed ? t('logout') : undefined}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', gap: 8 }}
+          >
             <SignOut size={18} />
-            {t('logout')}
+            {!sidebarCollapsed && <span>{t('logout')}</span>}
           </button>
         </div>
       </aside>
 
       <div className="main-area">
         <header className="topbar">
-          <button className="icon-button mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir menu">
-            <List size={22} />
-          </button>
-          <div>
-            <span className="topbar-kicker">{t('app')}</span>
-            <h2>{t(currentTitle)}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="icon-button mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir menu">
+              <List size={22} />
+            </button>
+            <button
+              type="button"
+              className="icon-button desktop-only"
+              onClick={toggleSidebarCollapsed}
+              title={sidebarCollapsed ? "Agrandir le menu" : "Réduire le menu"}
+              aria-label="Basculer le menu"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '6px 8px',
+                borderRadius: 8,
+                background: 'var(--surface-2)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                cursor: 'pointer',
+              }}
+            >
+              {sidebarCollapsed ? <CaretRight size={16} /> : <CaretLeft size={16} />}
+            </button>
+            <div>
+              <span className="topbar-kicker">{t('app')}</span>
+              <h2>{t(currentTitle)}</h2>
+            </div>
           </div>
           <div className="topbar-actions">
             {/* SÉLECTEUR D'AGENCE ACTIF (POUR ADMIN SIÈGE ET SUPER ADMIN) */}
             {(session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE') ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <Buildings size={17} style={{ color: selectedAgenceId === 'CONSOLIDE' ? '#2563eb' : '#16a34a' }} />
+                <Buildings size={17} style={{ color: 'var(--primary)' }} />
                 <select
                   value={selectedAgenceId}
                   onChange={(e) => {
@@ -393,10 +449,10 @@ function AppShell() {
                   style={{ padding: '3px 6px', fontSize: '0.78rem', border: 'none', background: 'transparent', fontWeight: 600, color: 'var(--text)' }}
                   aria-label="Sélectionner l'agence de travail ou vue consolidée"
                 >
-                  <option value="CONSOLIDE">🌐 Vue Consolidée Siège (Toutes les Agences)</option>
+                  <option value="CONSOLIDE">Vue Consolidée Siège (Toutes les Agences)</option>
                   {(agencesQuery.data || []).map((ag: any) => (
                     <option key={ag.id} value={ag.id}>
-                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                      {ag.estSiege ? '[Siège] ' : ''}{ag.nom} ({ag.ville})
                     </option>
                   ))}
                 </select>
@@ -538,18 +594,14 @@ function DashboardPage() {
   const token = useToken()
   const session = useAppStore((state) => state.session)
   const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
-  const [selectedService, setSelectedService] = useState<string>('')
-  const [activeDiagramViewIndex, setActiveDiagramViewIndex] = useState<number>(0)
 
   const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
-  const isChefAgence = session?.role === 'CHEF_AGENCE'
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboard-service-summary', selectedAgenceId, selectedService],
+    queryKey: ['dashboard-service-summary', selectedAgenceId],
     queryFn: () => {
       const pAg = selectedAgenceId && selectedAgenceId !== 'CONSOLIDE' ? `&agenceId=${selectedAgenceId}` : ''
-      const pSrv = selectedService ? `&service=${selectedService}` : ''
-      return apiRequest<any>(`/api/dashboard/service-summary?t=1${pAg}${pSrv}`, { token })
+      return apiRequest<any>(`/api/dashboard/service-summary?t=1${pAg}`, { token })
     },
     enabled: Boolean(token),
   })
@@ -569,192 +621,210 @@ function DashboardPage() {
       case 'ClockCounterClockwise': return ClockCounterClockwise
       case 'ShieldCheck': return ShieldCheck
       case 'Bell': return Bell
+      case 'WarningCircle': return Warning
+      case 'Warning': return Warning
       default: return ChartLineUp
     }
   }
 
-  const availableViews = [
-    { titre: data?.diagramme?.titre || 'Diagramme d Activité', series: data?.diagramme?.series || [] },
-    ...(data?.diagramme?.vuesSecondaires || []),
-  ]
-  const currentView = availableViews[activeDiagramViewIndex] || availableViews[0] || { titre: 'Activité', series: [] }
-  const series = currentView.series || []
+  const series = data?.diagramme?.series || []
   const maxVal = Math.max(...series.map((s: any) => s.valeur || 0), 1)
 
   return (
     <section className="page-grid">
-      {/* BANDEAU SUPÉRIEUR DYNAMIQUE SELON LE SERVICE & LE RÔLE */}
-      <div className="hero-band">
+      {/* EN-TÊTE DU TABLEAU DE BORD - DESIGN ÉPURÉ & MODERNE */}
+      <div
+        className="panel"
+        style={{
+          padding: '20px 24px',
+          borderRadius: 12,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+        }}
+      >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span className="badge badge-primary" style={{ fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Service : {data?.serviceLibelle || 'Tableau de bord'}
-            </span>
-            <span className="badge badge-neutral" style={{ fontSize: '0.76rem' }}>
-              📍 {data?.agenceNom || 'Mon Agence'}
-            </span>
-            {data?.activeService === 'PRODUCTION' && (
-              <span className="badge" style={{ background: 'rgba(234, 88, 12, 0.15)', color: '#ea580c', fontSize: '0.75rem' }}>
-                🔒 Métriques Industrielles (Confidentialité financière préservée)
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+            <h1
+              style={{
+                fontSize: '1.45rem',
+                margin: 0,
+                fontWeight: 700,
+                color: 'var(--text)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {data?.serviceLibelle || 'Tableau de bord'}
+            </h1>
+            {data?.agenceNom && (
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  padding: '3px 10px',
+                  borderRadius: 6,
+                  background: 'var(--surface-2)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {data.agenceNom}
               </span>
             )}
           </div>
-
-          <h1 style={{ fontSize: '1.6rem', margin: '4px 0 8px' }}>
-            {data?.serviceLibelle || 'Pilotage Opérationnel'}
-          </h1>
-          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem', maxWidth: 680 }}>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.86rem' }}>
             {data?.activeService === 'PRODUCTION'
-              ? 'Indicateurs de fabrication, suivi des ordres de travail, cadence des machines et matières premières consommées.'
+              ? 'Indicateurs de fabrication, ordres de travail et matières consommées.'
               : data?.activeService === 'STOCKS'
-              ? 'Niveaux de stocks physiques, alertes de réapprovisionnement, lots sous contrôle et transferts inter-agences.'
+              ? 'Niveaux de stocks physiques, alertes réapprovisionnement et transferts.'
               : data?.activeService === 'VENTES'
-              ? 'Activité commerciale, facturation comptoir, répartition des règlements et créances clients.'
+              ? 'Activité commerciale, ventes comptoir et répartition des encaissements.'
               : data?.activeService === 'TRESORERIE'
-              ? 'Disponibilité physique des caisses, flux d encaissements et décaissements avec visas préalables.'
+              ? 'Disponibilité physique des caisses, recettes et décaissements avec visas.'
               : data?.activeService === 'MAINTENANCE'
-              ? 'Disponibilité du parc matériel, entretien préventif et curatif des machines et camions.'
-              : 'Supervision globale de l ensemble du réseau multi-agences et grandes décisions stratégiques.'}
+              ? 'Disponibilité du parc machines et véhicules, entretiens préventifs et curatifs.'
+              : 'Supervision générale multi-agences et indicateurs consolidés du réseau.'}
           </p>
-
-          {/* SÉLECTEUR DE PERSPECTIVE MÉTIER (POUR LES SUPERVISEURS ET CHEFS D'AGENCE) */}
-          {data?.canSwitchService && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600 }}>Changer de vue métier :</span>
-              {[
-                { code: '', label: isSuperOrAdminSiege ? '🌐 Direction Consolidée' : '🏢 Mon Agence' },
-                { code: 'PRODUCTION', label: '⚙️ Production' },
-                { code: 'STOCKS', label: '📦 Stocks' },
-                { code: 'VENTES', label: '🛒 Ventes' },
-                { code: 'TRESORERIE', label: '💵 Caisse' },
-                { code: 'MAINTENANCE', label: '🔧 Maintenance' },
-              ].map((s) => {
-                const isActive = (selectedService === s.code) || (!selectedService && s.code === '')
-                return (
-                  <button
-                    key={s.code}
-                    type="button"
-                    className={clsx('tab-button', isActive && 'active')}
-                    style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: 20 }}
-                    onClick={() => setSelectedService(s.code)}
-                  >
-                    {s.label}
-                  </button>
-                )
-              })}
-            </div>
-          )}
         </div>
 
-        <div className="hero-status" style={{ minWidth: 220 }}>
-          {data?.activeService === 'PRODUCTION' ? (
-            <>
-              <Gear size={26} color="#2563eb" />
-              <strong>Atelier Opérationnel</strong>
-              <span>Lignes de fabrication actives</span>
-            </>
-          ) : data?.activeService === 'STOCKS' ? (
-            <>
-              <Package size={26} color="#16a34a" />
-              <strong>Gestion des Magasins</strong>
-              <span>Contrôle FEFO & Lots</span>
-            </>
-          ) : isSuperOrAdminSiege ? (
-            <>
-              <ShieldCheck size={26} color="#8b5cf6" />
-              <strong>Gouvernance Siège</strong>
-              <span>{data?.kpis?.find((k: any) => k.label.includes('Visa'))?.valeur || 0} visas à surveiller</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle size={26} color="#16a34a" />
-              <strong>Poste Opérationnel</strong>
-              <span>Données synchronisées</span>
-            </>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: 'rgba(16, 185, 129, 0.1)',
+              color: '#10b981',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981' }} />
+            <span>Données en temps réel</span>
+          </div>
         </div>
       </div>
 
       {error && <Notice type="warning" text="Impossible de charger le résumé du service. Données locales temporaires." />}
 
-      {/* CARTES DE KPIS SPÉCIFIQUES AU SERVICE */}
+      {/* CARTES DE KPIS HARMONIEUSES (LIGHT & DARK MODES) */}
       <div className="metric-grid">
         {(data?.kpis || []).map((kpi: any) => {
           const Icon = getIcon(kpi.icon)
           return (
-            <article className="metric-card" key={kpi.label} style={{ borderLeft: `4px solid ${kpi.color || '#2563eb'}` }}>
+            <article
+              className="metric-card"
+              key={kpi.label}
+              style={{
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Icon size={24} style={{ color: kpi.color || 'var(--primary)' }} />
-                {kpi.detail && <span style={{ fontSize: '0.74rem', color: 'var(--muted)' }}>{kpi.detail}</span>}
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon size={22} style={{ color: '#10b981' }} weight="duotone" />
+                </div>
+                {kpi.detail && (
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      color: '#10b981',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                    }}
+                  >
+                    {kpi.detail}
+                  </span>
+                )}
               </div>
-              <span style={{ marginTop: 8, fontSize: '0.84rem' }}>{kpi.label}</span>
-              <strong style={{ fontSize: '1.4rem' }}>{isLoading ? '...' : kpi.valeur}</strong>
+              <div>
+                <span style={{ fontSize: '0.84rem', color: 'var(--muted)', display: 'block', fontWeight: 500 }}>
+                  {kpi.label}
+                </span>
+                <strong style={{ fontSize: '1.65rem', marginTop: 4, fontWeight: 700, color: 'var(--text)', display: 'block', letterSpacing: '-0.02em' }}>
+                  {isLoading ? '...' : kpi.valeur}
+                </strong>
+              </div>
             </article>
           )
         })}
       </div>
 
-      {/* SECTION CENTRALE : DIAGRAMME DYNAMIQUE DU SERVICE & DERNIÈRES OPÉRATIONS */}
-      <div className="two-column" style={{ gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
-        {/* 1. DIAGRAMME DYNAMIQUE DU SERVICE */}
+      {/* SYNTHÈSE D'ACTIVITÉ & DERNIÈRES OPÉRATIONS DU SERVICE */}
+      <div className="two-column" style={{ gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
+        {/* 1. SYNTHÈSE D'ACTIVITÉ */}
         <div className="panel" style={{ background: 'var(--surface)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <ChartBar size={20} color="#2563eb" />
-                {currentView.titre}
+              <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+                <ChartBar size={19} style={{ color: '#10b981' }} />
+                {data?.diagramme?.titre || 'Synthèse d Activité'}
               </h3>
               <small style={{ color: 'var(--muted)' }}>
                 {data?.activeService === 'PRODUCTION'
-                  ? 'Visualisation des indicateurs industriels (recettes et données financières strictement masquées)'
-                  : 'Visualisation graphique en temps réel selon les flux du département'}
+                  ? 'Volumes et cadences de fabrication du poste'
+                  : 'Indicateurs d exploitation en temps réel'}
               </small>
             </div>
-            <span className="badge badge-neutral" style={{ fontSize: '0.74rem' }}>
-              {series.length} indicateurs
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                background: 'rgba(16, 185, 129, 0.1)',
+                color: '#10b981',
+                padding: '3px 8px',
+                borderRadius: 6,
+              }}
+            >
+              {series.length} flux
             </span>
           </div>
 
-          {availableViews.length > 1 && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>Vue graphique :</span>
-              {availableViews.map((v: any, i: number) => (
-                <button
-                  key={v.titre}
-                  type="button"
-                  className={clsx('tab-button', activeDiagramViewIndex === i && 'active')}
-                  style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: 16 }}
-                  onClick={() => setActiveDiagramViewIndex(i)}
-                >
-                  {v.titre}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* REPRÉSENTATION DU DIAGRAMME EN BARRES INTERACTIVES */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* DIAGRAMME EN BARRES ÉPURÉ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {series.map((item: any, idx: number) => {
               const pct = maxVal > 0 ? Math.round(((item.valeur || 0) / maxVal) * 100) : 0
-              const barColors = ['#2563eb', '#16a34a', '#8b5cf6', '#ea580c', '#0284c7', '#d97706']
-              const color = barColors[idx % barColors.length]
               return (
                 <div key={item.label || idx}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 4 }}>
                     <span style={{ fontWeight: 600 }}>{item.label}</span>
                     <strong>
                       {typeof item.valeur === 'number' ? item.valeur.toLocaleString() : item.valeur}{' '}
                       <small style={{ color: 'var(--muted)', fontWeight: 400 }}>{item.unite || ''}</small>
                     </strong>
                   </div>
-                  <div style={{ width: '100%', height: 10, background: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ width: '100%', height: 7, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden' }}>
                     <div
                       style={{
-                        width: `${Math.max(pct, 4)}%`,
+                        width: `${Math.max(pct, 3)}%`,
                         height: '100%',
-                        background: color,
-                        borderRadius: 6,
-                        transition: 'width 0.4s ease',
+                        background: '#10b981',
+                        borderRadius: 4,
+                        transition: 'width 0.3s ease',
                       }}
                     />
                   </div>
@@ -762,73 +832,85 @@ function DashboardPage() {
               )
             })}
             {series.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--muted)', fontSize: '0.88rem' }}>
-                Aucune donnée à modéliser pour ce filtre.
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--muted)', fontSize: '0.84rem' }}>
+                Aucune donnée enregistrée pour le moment.
               </div>
             )}
           </div>
 
-          {/* RACCROCHEMENT AUX ACTIONS MÉTIER */}
-          <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {/* RACCOURCIS RAPIDES DU SERVICE */}
+          <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {data?.activeService === 'PRODUCTION' && (
               <>
-                <NavLink to="/production" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Gear size={16} /> Lancer un Ordre de Fabrication
+                <NavLink to="/production" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Gear size={15} /> Lancer un Ordre de Fabrication
                 </NavLink>
-                <NavLink to="/stock" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Package size={16} /> Vérifier les Matières Premières
+                <NavLink to="/stock" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 12px' }}>
+                  <Package size={15} /> Consulter les Stocks
                 </NavLink>
               </>
             )}
             {data?.activeService === 'STOCKS' && (
               <>
-                <NavLink to="/stock" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Package size={16} /> Consulter l Inventaire
+                <NavLink to="/stock" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Package size={15} /> Consulter l Inventaire
                 </NavLink>
-                <NavLink to="/transferts" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Truck size={16} /> Suivre les Convois
+                <NavLink to="/transferts" className="secondary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 12px' }}>
+                  <Truck size={15} /> Suivre les Convois
                 </NavLink>
               </>
             )}
             {data?.activeService === 'VENTES' && (
               <>
-                <NavLink to="/ventes" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Receipt size={16} /> Nouvelle Vente Comptoir
+                <NavLink to="/ventes" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Receipt size={15} /> Nouvelle Vente Comptoir
                 </NavLink>
               </>
             )}
             {data?.activeService === 'TRESORERIE' && (
               <>
-                <NavLink to="/tresorerie" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Coins size={16} /> Nouvel État de Besoin
+                <NavLink to="/tresorerie" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Coins size={15} /> Nouvel État de Besoin
                 </NavLink>
               </>
             )}
             {data?.activeService === 'MAINTENANCE' && (
               <>
-                <NavLink to="/maintenance" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                  <Wrench size={16} /> Planifier une Intervention
+                <NavLink to="/maintenance" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Wrench size={15} /> Planifier un Entretien
                 </NavLink>
               </>
             )}
             {(data?.activeService === 'DIRECTION_SIEGE' || isSuperOrAdminSiege) && (
-              <NavLink to="/reporting" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.82rem', padding: '6px 12px' }}>
-                <Buildings size={16} /> Supervision Multi-Agences
+              <NavLink to="/reporting" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Buildings size={15} /> Supervision Multi-Agences
               </NavLink>
             )}
           </div>
         </div>
 
-        {/* 2. DERNIÈRES OPÉRATIONS & FLUX DU MÉTIER */}
+        {/* 2. DERNIÈRES OPÉRATIONS DU SERVICE */}
         <div className="panel" style={{ background: 'var(--surface)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ClockCounterClockwise size={20} color="#8b5cf6" />
-              Activités & Enregistrements Récents
+            <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+              <ClockCounterClockwise size={19} style={{ color: '#10b981' }} />
+              Dernières Opérations
             </h3>
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                background: 'rgba(16, 185, 129, 0.1)',
+                color: '#10b981',
+                padding: '3px 8px',
+                borderRadius: 6,
+              }}
+            >
+              {(data?.recents || []).length} récents
+            </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(data?.recents || []).map((item: any) => (
               <div
                 key={item.id || item.reference}
@@ -836,29 +918,41 @@ function DashboardPage() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '10px 12px',
+                  padding: '10px 14px',
                   background: 'var(--surface-2)',
                   borderRadius: 8,
                   border: '1px solid var(--border)',
                 }}
               >
                 <div>
-                  <strong style={{ fontSize: '0.85rem', display: 'block' }}>{item.reference}</strong>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{item.titre}</span>
-                  {item.date && <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 2 }}>{item.date}</div>}
+                  <strong style={{ fontSize: '0.82rem', display: 'block' }}>{item.reference}</strong>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>{item.titre}</span>
+                  {item.date && <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: 2 }}>{item.date}</div>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <strong style={{ fontSize: '0.85rem', display: 'block', color: 'var(--accent-strong)' }}>
+                  <strong style={{ fontSize: '0.84rem', display: 'block', color: 'var(--text)' }}>
                     {item.quantite}
                   </strong>
-                  <span className="badge" style={{ fontSize: '0.7rem' }}>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      color: 'var(--text)',
+                      background: 'var(--surface)',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      border: '1px solid var(--border)',
+                      display: 'inline-block',
+                      marginTop: 2,
+                    }}
+                  >
                     {item.statut}
                   </span>
                 </div>
               </div>
             ))}
             {(data?.recents || []).length === 0 && (
-              <div style={{ textAlign: 'center', padding: 20, color: 'var(--muted)', fontSize: '0.84rem' }}>
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--muted)', fontSize: '0.84rem' }}>
                 Aucune opération récente dans ce département.
               </div>
             )}
@@ -916,6 +1010,12 @@ function SalesPage() {
   const flotteQuery = useQuery({
     queryKey: ['flotte-vehicules'],
     queryFn: () => apiRequest<any[]>('/api/flotte/vehicules', { token }),
+    enabled: Boolean(token),
+  })
+
+  const entrepriseInfoQuery = useQuery({
+    queryKey: ['entreprise-info'],
+    queryFn: () => apiRequest<any>('/api/parametrage/entreprise', { token }),
     enabled: Boolean(token),
   })
 
@@ -1985,33 +2085,34 @@ function SalesPage() {
                   <button
                     type="button"
                     className={clsx('tab-btn', blModeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
-                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6 }}
                     onClick={() => setBlModeTransport('ENLEVEMENT_MAGASIN')}
                   >
-                    🏪 Retrait Comptoir
+                    <Storefront size={16} /> Retrait Comptoir
                   </button>
                   <button
                     type="button"
                     className={clsx('tab-btn', blModeTransport === 'VEHICULE_CLIENT' && 'active')}
-                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6 }}
                     onClick={() => setBlModeTransport('VEHICULE_CLIENT')}
                   >
-                    🚗 Véhicule Client
+                    <Car size={16} /> Véhicule Client
                   </button>
                   <button
                     type="button"
                     className={clsx('tab-btn', blModeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
-                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center' }}
+                    style={{ fontSize: '0.8rem', padding: '6px 8px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6 }}
                     onClick={() => setBlModeTransport('FLOTTE_ENTREPRISE')}
                   >
-                    🚚 Flotte Société
+                    <Truck size={16} /> Flotte Société
                   </button>
                 </div>
               </div>
 
               {blModeTransport === 'ENLEVEMENT_MAGASIN' && (
-                <div style={{ padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, fontSize: '0.82rem', color: 'var(--muted)' }}>
-                  ✓ Le client retire directement ses sacs au magasin/dépôt. Aucun véhicule de transport n'est mobilisé.
+                <div style={{ padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle size={15} color="var(--primary)" />
+                  <span>Le client retire directement ses sacs au magasin/dépôt. Aucun véhicule de transport n'est mobilisé.</span>
                 </div>
               )}
 
@@ -2038,12 +2139,12 @@ function SalesPage() {
 
               {blModeTransport === 'FLOTTE_ENTREPRISE' && (
                 <label>
-                  Camion & Chauffeur Affecté (Flotte MVG)
+                  Camion & Chauffeur Affecté ({entrepriseInfoQuery.data?.sigle || 'Flotte Entreprise'})
                   <select
                     value={blVehiculeId}
                     onChange={(e) => setBlVehiculeId(e.target.value ? Number(e.target.value) : '')}
                   >
-                    <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                    <option value="">Sélectionner un véhicule de la flotte...</option>
                     {(flotteQuery.data ?? []).map((v: any) => (
                       <option key={'cam-' + v.id} value={v.id}>
                         {v.plaqueImmatriculation} - {v.marqueModele} (Chauffeur: {v.chauffeurNom}) - {v.statut}
@@ -2254,7 +2355,7 @@ function SalesPage() {
 
             <div className="thermal-ticket">
               <div className="ticket-header">
-                <h3>MATABISHI MVG SARL</h3>
+                <h3>{entrepriseInfoQuery.data?.nomSociete || entrepriseInfoQuery.data?.sigle || 'REÇU DE VENTE'}</h3>
                 <p style={{ margin: 0, fontSize: 11 }}>SYSTEME DE GESTION COMMERCIALE</p>
                 <p style={{ margin: 0, fontSize: 11 }}>Agence : {activeReceipt.agence?.nom ?? 'Goma'}</p>
                 <div className="ticket-line" />
@@ -2321,9 +2422,9 @@ function SalesPage() {
               <div className="ticket-line" />
               <div style={{ fontSize: 11, textAlign: 'left', background: '#f8fafc', padding: '6px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>
                 <strong>Transport & Enlèvement :</strong><br/>
-                {modeTransport === 'ENLEVEMENT_MAGASIN' && '🏪 Retrait direct au comptoir / dépôt par le client'}
-                {modeTransport === 'VEHICULE_CLIENT' && `🚗 Véhicule client : ${clientVehicule || 'Véhicule client'} ${clientChauffeur ? `(Chauffeur: ${clientChauffeur})` : ''}`}
-                {modeTransport === 'FLOTTE_ENTREPRISE' && `🚚 Camion société : ${flotteQuery.data?.find((v: any) => v.id === selectedVehiculeId)?.marqueModele || 'Flotte Minoterie MVG'}`}
+                {modeTransport === 'ENLEVEMENT_MAGASIN' && 'Retrait direct au comptoir / dépôt par le client'}
+                {modeTransport === 'VEHICULE_CLIENT' && `Véhicule client : ${clientVehicule || 'Véhicule client'} ${clientChauffeur ? `(Chauffeur: ${clientChauffeur})` : ''}`}
+                {modeTransport === 'FLOTTE_ENTREPRISE' && `Camion société : ${flotteQuery.data?.find((v: any) => v.id === selectedVehiculeId)?.marqueModele || 'Flotte Entreprise'}`}
               </div>
 
               <div className="ticket-footer">
@@ -2343,32 +2444,33 @@ function SalesPage() {
                 <button
                   type="button"
                   className={clsx('tab-btn', modeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
                   onClick={() => setModeTransport('ENLEVEMENT_MAGASIN')}
                 >
-                  🏪 Retrait Comptoir
+                  <Storefront size={15} /> Retrait Comptoir
                 </button>
                 <button
                   type="button"
                   className={clsx('tab-btn', modeTransport === 'VEHICULE_CLIENT' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
                   onClick={() => setModeTransport('VEHICULE_CLIENT')}
                 >
-                  🚗 Véhicule Client
+                  <Car size={15} /> Véhicule Client
                 </button>
                 <button
                   type="button"
                   className={clsx('tab-btn', modeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center' }}
+                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
                   onClick={() => setModeTransport('FLOTTE_ENTREPRISE')}
                 >
-                  🚚 Camion Société
+                  <Truck size={15} /> Camion Société
                 </button>
               </div>
 
               {modeTransport === 'ENLEVEMENT_MAGASIN' && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: '#fff', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                  ✓ Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: '#fff', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle size={14} color="var(--primary)" />
+                  <span>Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.</span>
                 </div>
               )}
 
@@ -3062,7 +3164,7 @@ function ProductionPage() {
                 <select value={prodAgenceId} onChange={(e) => setProdAgenceId(Number(e.target.value))} required>
                   {(agencesList ?? []).map((ag: any) => (
                     <option key={ag.id} value={ag.id}>
-                      {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                      {ag.estSiege ? '[Siège] ' : ''}{ag.nom} ({ag.ville})
                     </option>
                   ))}
                 </select>
@@ -3186,7 +3288,7 @@ function ProductionPage() {
                 </div>
               </div>
               <div style={{ fontSize: '0.88rem', display: 'grid', gap: 6 }}>
-                <div><strong>Produit :</strong> {generatedLotInfo.ordre?.articleFini?.designation || 'Produit MVG'}</div>
+                <div><strong>Produit :</strong> {generatedLotInfo.ordre?.articleFini?.designation || 'Article fini'}</div>
                 <div><strong>Quantité :</strong> {generatedLotInfo.ordre?.quantiteReelle || generatedLotInfo.ordre?.quantitePrevue} unités</div>
                 <div><strong>Date fabrication :</strong> {new Date().toLocaleDateString()}</div>
                 <div><strong>Date expiration :</strong> 2027-06-30</div>
@@ -3206,7 +3308,7 @@ function ProductionPage() {
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0 }}>BON DE FABRICATION & PRODUCTION</h3>
-                <small style={{ color: 'var(--muted)' }}>MINOTERIE VOLCAN GRANDS-LACS - MVG SARL</small>
+                <small style={{ color: 'var(--muted)' }}>ATELIER DE TRANSFORMATION & PRODUCTION</small>
               </div>
               <Barcode size={32} style={{ color: 'var(--accent-strong)' }} />
             </div>
@@ -3247,6 +3349,12 @@ function TreasuryPage() {
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
   const can = useAppStore((state) => state.can)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
+
+  const entrepriseQuery = useQuery({
+    queryKey: ['entreprise-info'],
+    queryFn: () => apiRequest<any>('/api/parametrage/entreprise', { token }),
+    enabled: Boolean(token),
+  })
 
   const sessionRole = useAppStore((state) => state.session?.role)
   const isSiegeOrSuperAdmin = sessionRole === 'SUPER_ADMIN' || sessionRole === 'ADMIN_SIEGE'
@@ -3836,8 +3944,8 @@ function TreasuryPage() {
                       : 'Rejeté'}
                   </span>
                   {eb.visaSiegeNom && (
-                    <div style={{ fontSize: '0.7rem', color: '#8b5cf6', marginTop: 2 }}>
-                      ✓ {eb.visaSiegeNom}
+                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <CheckCircle size={11} color="var(--primary)" /> Visa : {eb.visaSiegeNom}
                     </div>
                   )}
                 </div>,
@@ -4096,7 +4204,7 @@ function TreasuryPage() {
                 key={'ec-' + r.id}
                 style={{ color: Math.abs(r.ecart) < 0.01 ? '#16a34a' : '#dc2626' }}
               >
-                {money(r.ecart, r.devise)} {Math.abs(r.ecart) < 0.01 ? '✓ Justifié' : '⚠ Écart'}
+                {money(r.ecart, r.devise)} {Math.abs(r.ecart) < 0.01 ? '(Équilibré)' : '(Écart)'}
               </strong>,
               <span
                 key={'st-' + r.id}
@@ -4694,7 +4802,7 @@ function TreasuryPage() {
           <div className="receipt-preview-wrap" onClick={(e) => e.stopPropagation()}>
             <div className="voucher-ticket">
               <div className="voucher-header">
-                <h2>MATABISHI MVG SARL</h2>
+                <h2>{entrepriseQuery.data?.nomSociete || entrepriseQuery.data?.sigle || 'BON DE TRÉSORERIE'}</h2>
                 <p style={{ margin: '2px 0 0', fontSize: 11, color: '#555' }}>BON DE TRÉSORERIE INTERNE</p>
                 <p style={{ margin: '2px 0 0', fontSize: 11, color: '#555' }}>Agence : {activeVoucher.agence?.nom ?? 'Goma'}</p>
               </div>
@@ -6099,8 +6207,8 @@ function ReportingPage() {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <strong style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2563eb' }}>
-                      🌐 TOUT CONSOLIDÉ
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)' }}>
+                      TOUT CONSOLIDÉ
                     </strong>
                     <span className="badge badge-primary">{multiAgencesTransactionsQuery.data?.totalTransactionsCount ?? 0} flux</span>
                   </div>
@@ -6120,8 +6228,8 @@ function ReportingPage() {
                       if (isSuperOrAdminSiege) setSelectedAgenceFiltre(ag.agenceId)
                     }}
                     style={{
-                      background: isSelected ? 'rgba(22, 163, 74, 0.08)' : 'var(--surface)',
-                      border: `2px solid ${isSelected ? '#16a34a' : 'var(--border)'}`,
+                      background: isSelected ? 'rgba(37, 99, 235, 0.06)' : 'var(--surface)',
+                      border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}`,
                       borderRadius: 10,
                       padding: 14,
                       cursor: isSuperOrAdminSiege ? 'pointer' : 'default',
@@ -6130,16 +6238,16 @@ function ReportingPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {ag.estSiege ? '🏢' : '📍'} {ag.agenceNom}
+                        {ag.estSiege ? '[Siège] ' : ''}{ag.agenceNom}
                       </strong>
-                      <span className={clsx('badge', ag.estSiege ? 'badge-primary' : 'badge-info')} style={{ fontSize: '0.72rem' }}>
+                      <span className={clsx('badge', ag.estSiege ? 'badge-primary' : 'badge-neutral')} style={{ fontSize: '0.72rem' }}>
                         {ag.estSiege ? 'Siège Principal' : ag.ville}
                       </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8, fontSize: '0.8rem' }}>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Ventes :</span>
-                        <strong style={{ color: '#16a34a' }}>${ag.totalVentesUsd.toLocaleString()}</strong>
+                        <strong style={{ color: 'var(--text)' }}>${ag.totalVentesUsd.toLocaleString()}</strong>
                       </div>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Caisse dispo :</span>
@@ -6151,7 +6259,7 @@ function ReportingPage() {
                       </div>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Attente visa :</span>
-                        <strong style={{ color: ag.validationsEnAttente > 0 ? '#ea580c' : '#16a34a' }}>
+                        <strong>
                           {ag.validationsEnAttente} dossier(s)
                         </strong>
                       </div>
@@ -6188,16 +6296,16 @@ function ReportingPage() {
                     }}
                     style={{ padding: '5px 10px', fontSize: '0.84rem' }}
                   >
-                    <option value="CONSOLIDE">🌐 Tout Consolidé (Toutes les Agences)</option>
+                    <option value="CONSOLIDE">Tout Consolidé (Toutes les Agences)</option>
                     {(agencesQuery.data || []).map((ag: any) => (
                       <option key={ag.id} value={ag.id}>
-                        {ag.estSiege ? '🏢' : '📍'} {ag.nom} ({ag.ville})
+                        {ag.estSiege ? '[Siège] ' : ''}{ag.nom} ({ag.ville})
                       </option>
                     ))}
                   </select>
                 ) : (
                   <span className="badge badge-primary" style={{ padding: '5px 10px', fontSize: '0.84rem' }}>
-                    🏢 {(agencesQuery.data || []).find((a: any) => a.id === agenceId)?.nom || 'Mon Agence'}
+                    {(agencesQuery.data || []).find((a: any) => a.id === agenceId)?.nom || 'Mon Agence'}
                   </span>
                 )}
               </div>
@@ -6210,13 +6318,13 @@ function ReportingPage() {
                   style={{ padding: '5px 10px', fontSize: '0.84rem' }}
                 >
                   <option value="TOUS">Tous les flux opérationnels</option>
-                  <option value="VENTES">🛒 Ventes & Facturation</option>
-                  <option value="TRESORERIE">💵 Caisse & Décaissements</option>
-                  <option value="ETAT_BESOIN">📋 États de Besoin & Réquisitions</option>
-                  <option value="ACHATS">⚖️ Achats & Pesées Pont-Bascule</option>
-                  <option value="PRODUCTION">⚙️ Production & Minoterie</option>
-                  <option value="LOGISTIQUE">🚚 Transferts & Convois</option>
-                  <option value="MAINTENANCE">🔧 Maintenance Technique</option>
+                  <option value="VENTES">Ventes & Facturation</option>
+                  <option value="TRESORERIE">Caisse & Décaissements</option>
+                  <option value="ETAT_BESOIN">États de Besoin & Réquisitions</option>
+                  <option value="ACHATS">Achats & Pesées Pont-Bascule</option>
+                  <option value="PRODUCTION">Production & Transformation</option>
+                  <option value="LOGISTIQUE">Transferts & Convois</option>
+                  <option value="MAINTENANCE">Maintenance Technique</option>
                 </select>
               </div>
             </div>
@@ -7313,13 +7421,22 @@ function AdminPage() {
             }}
             style={{ display: 'grid', gap: 16 }}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr', gap: 14 }}>
               <label>
                 Nom / Raison Sociale officielle
                 <input
                   value={formEntreprise.nomSociete || ''}
                   onChange={(e) => setFormEntreprise({ ...formEntreprise, nomSociete: e.target.value })}
+                  placeholder="ex: Votre Société SARL"
                   required
+                />
+              </label>
+              <label>
+                Sigle / Abréviation officielle
+                <input
+                  value={formEntreprise.sigle || ''}
+                  onChange={(e) => setFormEntreprise({ ...formEntreprise, sigle: e.target.value })}
+                  placeholder="ex: Sigle ou Acronyme court"
                 />
               </label>
               <label>
@@ -7327,6 +7444,7 @@ function AdminPage() {
                 <input
                   value={formEntreprise.slogan || ''}
                   onChange={(e) => setFormEntreprise({ ...formEntreprise, slogan: e.target.value })}
+                  placeholder="ex: Transformation & Distribution"
                 />
               </label>
             </div>
@@ -7407,46 +7525,250 @@ function AdminPage() {
               </label>
             </div>
 
-            <div style={{ padding: 14, background: 'var(--panel-bg)', borderRadius: 8, border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 16, alignItems: 'center', marginTop: 10 }}>
-              <div>
-                <label style={{ margin: 0, fontWeight: 700 }}>Logo Officiel de l'Entreprise / Minoterie</label>
-                <p style={{ margin: '4px 0 10px', fontSize: '0.82rem', color: 'var(--muted)' }}>
-                  Ce logo apparaîtra en haut de tous les documents officiels imprimables (Factures A4, Tickets thermiques, Bons de livraison, Fiches d'inventaire, Bulletins de paie, Grand Livre).
-                </p>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        const reader = new FileReader()
-                        reader.onload = (ev) => {
-                          const base64 = ev.target?.result as string
-                          setFormEntreprise({ ...formEntreprise, logoUrl: base64 })
-                        }
-                        reader.readAsDataURL(file)
-                      }
-                    }}
-                  />
-                  {formEntreprise.logoUrl && (
-                    <button
-                      type="button"
-                      className="secondary-action"
-                      style={{ padding: '4px 10px', fontSize: '0.8rem' }}
-                      onClick={() => setFormEntreprise({ ...formEntreprise, logoUrl: '' })}
-                    >
-                      Supprimer le logo
-                    </button>
-                  )}
+            <div style={{ padding: 20, background: 'var(--surface)', borderRadius: 10, border: '1px solid rgba(16, 185, 129, 0.35)', marginTop: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(16, 185, 129, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Package size={22} color="#059669" />
+                </div>
+                <div>
+                  <label style={{ margin: 0, fontWeight: 700, fontSize: '1rem', color: 'var(--text)' }}>
+                    Logos de l'En-Tête & Filigrane des Documents (100% Configurables)
+                  </label>
+                  <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 600 }}>
+                    Aucun logo codé en dur • Personnalisation dynamique pour l'ensemble des factures, BL et documents officiels
+                  </span>
                 </div>
               </div>
-              <div style={{ width: 120, height: 70, border: '1px dashed var(--border)', borderRadius: 6, display: 'grid', placeItems: 'center', background: '#fff', overflow: 'hidden' }}>
-                {formEntreprise.logoUrl ? (
-                  <img src={formEntreprise.logoUrl} alt="Logo" style={{ maxHeight: 60, maxWidth: 110, objectFit: 'contain' }} />
-                ) : (
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>Aucun logo</span>
-                )}
+
+              <p style={{ margin: '4px 0 16px', fontSize: '0.84rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+                Configurez librement le <strong>logo officiel principal (en-tête gauche)</strong>, le <strong>logo/sceau secondaire (en-tête droite)</strong> et le <strong>filigrane de sécurité (watermark)</strong>. Ces éléments sont injectés en temps réel lors de l'impression et de l'export PDF.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, alignItems: 'start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* 1. LOGO PRINCIPAL (EN-TÊTE GAUCHE) */}
+                  <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#047857' }}>
+                        1. Logo Principal (Haut Gauche de l'En-Tête)
+                      </span>
+                      {formEntreprise.logoUrl && (
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.74rem', color: 'var(--danger)', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          onClick={() => setFormEntreprise({ ...formEntreprise, logoUrl: '' })}
+                        >
+                          <Trash size={12} /> Effacer
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ fontSize: '0.78rem', marginBottom: 6 }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = (ev) => {
+                            const base64 = ev.target?.result as string
+                            setFormEntreprise({ ...formEntreprise, logoUrl: base64 })
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Ou URL image : https://... ou data:image/..."
+                      value={formEntreprise.logoUrl || ''}
+                      onChange={(e) => setFormEntreprise({ ...formEntreprise, logoUrl: e.target.value })}
+                      style={{ fontSize: '0.8rem' }}
+                    />
+                  </div>
+
+                  {/* 2. LOGO / SCEAU SECONDAIRE (EN-TÊTE DROITE - OPTIONNEL) */}
+                  <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#047857' }}>
+                        2. Logo / Sceau Secondaire (Haut Droite de l'En-Tête - Optionnel)
+                      </span>
+                      {formEntreprise.logoDroiteUrl && (
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.74rem', color: 'var(--danger)', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          onClick={() => setFormEntreprise({ ...formEntreprise, logoDroiteUrl: '' })}
+                        >
+                          <Trash size={12} /> Effacer
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ fontSize: '0.78rem', marginBottom: 6 }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = (ev) => {
+                            const base64 = ev.target?.result as string
+                            setFormEntreprise({ ...formEntreprise, logoDroiteUrl: base64 })
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Ou URL sceau/certification : https://..."
+                      value={formEntreprise.logoDroiteUrl || ''}
+                      onChange={(e) => setFormEntreprise({ ...formEntreprise, logoDroiteUrl: e.target.value })}
+                      style={{ fontSize: '0.8rem' }}
+                    />
+                  </div>
+
+                  {/* 3. FILIGRANE DE SÉCURITÉ DÉDIÉ & OPACITÉ */}
+                  <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#047857' }}>
+                        3. Filigrane de Sécurité (Watermark Centré)
+                      </span>
+                      {formEntreprise.logoFiligraneUrl && (
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.74rem', color: 'var(--danger)', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          onClick={() => setFormEntreprise({ ...formEntreprise, logoFiligraneUrl: '' })}
+                        >
+                          <Trash size={12} /> Réutiliser logo principal
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ margin: '0 0 6px', fontSize: '0.75rem', color: 'var(--muted)' }}>
+                      Par défaut, le filigrane reprend le logo principal. Vous pouvez aussi téléverser une image de filigrane dédiée (ex: sceau monochrome).
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ fontSize: '0.78rem', marginBottom: 6 }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = (ev) => {
+                            const base64 = ev.target?.result as string
+                            setFormEntreprise({ ...formEntreprise, logoFiligraneUrl: base64 })
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6 }}>
+                      <label style={{ fontSize: '0.75rem', margin: 0 }}>
+                        Opacité du filigrane ({formEntreprise.filigraneOpacite ?? 5}%)
+                        <input
+                          type="range"
+                          min="1"
+                          max="20"
+                          value={formEntreprise.filigraneOpacite ?? 5}
+                          onChange={(e) => setFormEntreprise({ ...formEntreprise, filigraneOpacite: Number(e.target.value) })}
+                          style={{ width: '100%', marginTop: 4 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: '0.75rem', margin: 0 }}>
+                        Texte alternatif filigrane
+                        <input
+                          type="text"
+                          value={formEntreprise.filigraneTexte || ''}
+                          placeholder="ex: Sigle ou Nom société"
+                          onChange={(e) => setFormEntreprise({ ...formEntreprise, filigraneTexte: e.target.value })}
+                          style={{ fontSize: '0.8rem', marginTop: 4 }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TRIPLE APERÇU EN DIRECT DU DOCUMENT OFFICIEL */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>
+                    Aperçu en Temps Réel sur Document :
+                  </div>
+
+                  {/* 1. RENDU EN-TÊTE BILATÉRALE */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, background: '#fff' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#047857', display: 'block', marginBottom: 8, textTransform: 'uppercase' }}>
+                      En-Tête Bilatérale (Haut de Page A4)
+                    </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #0f172a', paddingBottom: 8 }}>
+                      {/* GAUCHE */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {formEntreprise.logoUrl ? (
+                           <img src={formEntreprise.logoUrl} alt="Logo Gauche" style={{ maxHeight: 38, maxWidth: 90, objectFit: 'contain' }} />
+                        ) : (
+                          <div style={{ width: 34, height: 34, background: '#0f172a', color: '#fff', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>
+                            {(formEntreprise.sigle || formEntreprise.nomSociete || 'EN').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0f172a' }}>{formEntreprise.nomSociete || formEntreprise.sigle || 'Votre Entreprise'}</div>
+                          <div style={{ fontSize: '0.62rem', color: '#64748b' }}>{formEntreprise.slogan || 'Production & Distribution'}</div>
+                        </div>
+                      </div>
+
+                      {/* DROITE */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'right' }}>
+                        <div>
+                          <div style={{ fontSize: '0.62rem', color: '#475569' }}>RCCM: {formEntreprise.rccm || 'CD/GOM/...'}</div>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#047857' }}>FACTURE N° 2026-001</div>
+                        </div>
+                        {formEntreprise.logoDroiteUrl ? (
+                          <img src={formEntreprise.logoDroiteUrl} alt="Logo Droit" style={{ maxHeight: 32, maxWidth: 60, objectFit: 'contain' }} />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. RENDU FILIGRANE DE SÉCURITÉ CENTRÉ */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 14, background: '#fff', position: 'relative', overflow: 'hidden', minHeight: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ position: 'absolute', top: 6, left: 10, fontSize: '0.68rem', fontWeight: 700, color: '#047857', textTransform: 'uppercase', zIndex: 3 }}>
+                      Filigrane de Sécurité Arrière-Plan (Watermark)
+                    </span>
+
+                    {/* IMAGE OU TEXTE DU FILIGRANE */}
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 1 }}>
+                      {formEntreprise.logoFiligraneUrl || formEntreprise.logoUrl ? (
+                        <img
+                          src={formEntreprise.logoFiligraneUrl || formEntreprise.logoUrl}
+                          alt="Filigrane"
+                          style={{
+                            maxHeight: 85,
+                            maxWidth: 160,
+                            objectFit: 'contain',
+                            opacity: (formEntreprise.filigraneOpacite ?? 5) / 100,
+                            filter: 'grayscale(100%)',
+                          }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 26, fontWeight: 900, color: '#0f172a', opacity: (formEntreprise.filigraneOpacite ?? 5) / 100, border: '3px solid #0f172a', borderRadius: '50%', padding: '12px 20px', textTransform: 'uppercase' }}>
+                          {formEntreprise.filigraneTexte || formEntreprise.sigle || formEntreprise.nomSociete || 'FILIGRANE'}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SIMULATION CONTENU DOCUMENT DEVANT LE FILIGRANE */}
+                    <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', pointerEvents: 'none' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>Farine de Maïs Extra • 50 Sacs x $24.50</div>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>Total à payer : $1,225.00 USD (Payé au comptoir)</div>
+                      <div style={{ fontSize: '0.62rem', color: '#059669', fontWeight: 600, marginTop: 4 }}>
+                        ✓ Filigrane visible et non intrusif lors de l'impression
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

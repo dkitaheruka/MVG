@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   CheckSquare,
   Prohibit,
+  Warning,
+  XCircle,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest, downloadUrl } from '../lib/api'
@@ -259,30 +261,38 @@ export function StockTransfersPage() {
                   </td>
                   <td>
                     {t.statut === 'EN_ATTENTE_VALIDATION_SOURCE' && (
-                      <span className="badge" style={{ background: '#f97316', color: '#fff' }}>1. Attente Validation Source</span>
+                      <span className="badge badge-warning">1. Attente Validation Source</span>
                     )}
                     {t.statut === 'EN_ATTENTE_VISA_SIEGE' && (
-                      <span className="badge" style={{ background: '#8b5cf6', color: '#fff' }}>2. Attente Visa Siège</span>
+                      <span className="badge badge-primary">2. Attente Visa Siège</span>
                     )}
                     {t.statut === 'EN_TRANSIT' && (
-                      <span className="badge" style={{ background: '#2563eb', color: '#fff' }}>🚚 En transit convoi</span>
+                      <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Truck size={13} /> En transit convoi
+                      </span>
                     )}
                     {t.statut === 'RECU' && (
-                      <span className="badge badge-success">✓ Réceptionné Conforme</span>
+                      <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <CheckCircle size={13} /> Réceptionné Conforme
+                      </span>
                     )}
                     {t.statut === 'LITIGE' && (
-                      <span className="badge badge-danger">⚠️ Litige / Écart</span>
+                      <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Warning size={13} /> Litige / Écart
+                      </span>
                     )}
                     {t.statut === 'REFUSE' && (
-                      <span className="badge" style={{ background: '#ef4444', color: '#fff' }}>❌ Refusé</span>
+                      <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <XCircle size={13} /> Refusé
+                      </span>
                     )}
                   </td>
                   <td style={{ fontSize: '0.8rem' }}>
                     <div>Initié par : {t.initiateurNom}</div>
-                    {t.validationSourceNom && <div style={{ color: '#16a34a', marginTop: 2 }}>✓ Départ : {t.validationSourceNom}</div>}
-                    {t.visaSiegeNom && <div style={{ color: '#8b5cf6', marginTop: 2 }}>✓ Visa Siège : {t.visaSiegeNom}</div>}
-                    {t.recepteurNom && <div style={{ color: '#2563eb', marginTop: 2 }}>✓ Reçu par : {t.recepteurNom}</div>}
-                    {t.motifRefus && <div style={{ color: '#ef4444', marginTop: 2 }}>Motif refus : {t.motifRefus}</div>}
+                    {t.validationSourceNom && <div style={{ color: 'var(--text)', marginTop: 2 }}>Départ validé : {t.validationSourceNom}</div>}
+                    {t.visaSiegeNom && <div style={{ color: 'var(--text)', marginTop: 2 }}>Visa Siège : {t.visaSiegeNom}</div>}
+                    {t.recepteurNom && <div style={{ color: 'var(--text)', marginTop: 2 }}>Reçu par : {t.recepteurNom}</div>}
+                    {t.motifRefus && <div style={{ color: 'var(--danger)', marginTop: 2 }}>Motif refus : {t.motifRefus}</div>}
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -408,7 +418,7 @@ export function StockTransfersPage() {
               </label>
 
               <label style={{ marginTop: 12 }}>
-                Camion de transport assigné (Flotte MVG)
+                Camion de transport assigné (Flotte de l'Entreprise)
                 <select
                   value={selectedVehiculeId}
                   onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
@@ -530,7 +540,7 @@ export function StockTransfersPage() {
             <div style={{ borderBottom: '2px solid var(--border)', paddingBottom: 12, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0 }}>BON DE TRANSFERT INTER-AGENCES</h3>
-                <small style={{ color: 'var(--muted)' }}>MATABISHI ERP - MVG SARL</small>
+                <small style={{ color: 'var(--muted)' }}>LOGISTIQUE & MOUVEMENTS DE STOCKS</small>
               </div>
               <Truck size={28} style={{ color: 'var(--accent-strong)' }} />
             </div>
