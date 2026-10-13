@@ -2,7 +2,7 @@ import { useAppStore } from './stores/appStore'
 
 const dictionary = {
   fr: {
-    app: 'Matabishi ERP',
+    app: 'ERP Pro',
     dashboard: 'Tableau de bord',
     sales: 'Ventes',
     stock: 'Stock',
@@ -27,7 +27,7 @@ const dictionary = {
     logout: 'Déconnexion',
   },
   sw: {
-    app: 'Matabishi ERP',
+    app: 'ERP Pro',
     dashboard: 'Dashibodi',
     sales: 'Mauzo',
     stock: 'Stoo',
@@ -52,7 +52,7 @@ const dictionary = {
     logout: 'Toka',
   },
   en: {
-    app: 'Matabishi ERP',
+    app: 'ERP Pro',
     dashboard: 'Dashboard',
     sales: 'Sales',
     stock: 'Stock',

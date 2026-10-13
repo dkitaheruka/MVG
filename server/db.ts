@@ -1,4 +1,3 @@
-// Database and business state for Matabishi ERP
 export interface DbUser {
   id: number
   email: string
@@ -7,6 +6,31 @@ export interface DbUser {
   agenceId?: number
   permissions: string[]
   actif: boolean
+  password?: string
+  tentativesEchouees?: number
+  estBloque?: boolean
+  motifBlocage?: 'TENTATIVES_EXCESSIVES' | 'CONNEXION_MULTI_APPAREILS' | 'SUSPENDU_ADMIN' | string
+  doitChangerMotDePasse?: boolean
+  estVip?: boolean
+  appareilActifId?: string
+  appareilActifNom?: string
+  sessionActiveId?: string
+  derniereConnexion?: string
+}
+
+export interface DbAppareil {
+  id: number
+  deviceId: string
+  nom: string
+  type: 'POS_TERMINAL' | 'PC_BUREAU' | 'TABLETTE' | 'MOBILE'
+  agenceId: number
+  userId?: number
+  userNom?: string
+  statut: 'AUTORISE' | 'BLOQUE' | 'EN_ATTENTE'
+  adresseIp?: string
+  userAgent?: string
+  derniereConnexion?: string
+  dateEnregistrement: string
 }
 
 export interface DbAgence {

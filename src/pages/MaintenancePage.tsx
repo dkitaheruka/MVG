@@ -19,6 +19,7 @@ import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
 import type { EntretienTechnique, TypeEquipementTechnique, TypeMaintenance, EquipementParc } from '../types'
+import { NewEtatBesoinModal } from '../components/NewEtatBesoinModal'
 
 export function MaintenancePage() {
   const queryClient = useQueryClient()
@@ -32,6 +33,7 @@ export function MaintenancePage() {
   const [filterStatut, setFilterStatut] = useState<string>('TOUS')
   const [showNewInterventionModal, setShowNewInterventionModal] = useState(false)
   const [showNewEquipementModal, setShowNewEquipementModal] = useState(false)
+  const [showEBModal, setShowEBModal] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
@@ -268,13 +270,30 @@ export function MaintenancePage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a
             className="secondary-action"
+            href={`/api/export/print/maintenance${agenceParam}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+          >
+            <Printer size={18} /> Imprimer Carnet (PDF)
+          </a>
+          <a
+            className="secondary-action"
             href={`/api/export/excel/maintenance${agenceParam}`}
             target="_blank"
             rel="noreferrer"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
           >
-            <FileXls size={18} /> Exporter Carnet Maintenance (.xlsx)
+            <FileXls size={18} /> Exporter Carnet (.xlsx)
           </a>
+          <button
+            className="secondary-action"
+            onClick={() => setShowEBModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour l'achat de pièces détachées ou réparation"
+          >
+            <Coins size={18} /> Demande de Fonds / Pièces
+          </button>
           <button className="secondary-action" onClick={() => setShowNewEquipementModal(true)}>
             <Plus size={18} /> Ajouter Matériel au Parc
           </button>
@@ -912,6 +931,13 @@ export function MaintenancePage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN POUR LE SERVICE TECHNIQUE */}
+      <NewEtatBesoinModal
+        isOpen={showEBModal}
+        onClose={() => setShowEBModal(false)}
+        defaultService="Service Maintenance & Technique"
+        agenceId={targetAgenceId || (session?.agenceId ?? 1)}
+      />
     </section>
   )
 }

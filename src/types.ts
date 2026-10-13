@@ -112,6 +112,8 @@ export type TauxChangeAgence = {
 
 export type StockAgence = {
   id: number
+  articleId?: number
+  agenceId?: number
   quantite?: number
   numeroLot?: string
   dateExpiration?: string
@@ -130,6 +132,7 @@ export type Client = {
 
 export type VenteDetail = {
   id?: number
+  articleId?: number
   article?: Article
   quantite: number
   prixUnitaireApplique: number
@@ -138,6 +141,7 @@ export type VenteDetail = {
 export type Vente = {
   id?: number
   referenceVente?: string
+  agenceId?: number
   agence?: Agence
   vendeur?: { id?: number; nom?: string; email: string }
   client?: Client

@@ -47,9 +47,14 @@ const savedSession = (() => {
   }
 })()
 
+const initialTheme = (localStorage.getItem('matabishi_theme') as 'light' | 'dark') || 'light'
+if (typeof document !== 'undefined') {
+  document.documentElement.setAttribute('data-theme', initialTheme)
+}
+
 export const useAppStore = create<AppStore>((set, get) => ({
   session: savedSession,
-  theme: (localStorage.getItem('matabishi_theme') as 'light' | 'dark') || 'light',
+  theme: initialTheme,
   language: (localStorage.getItem('matabishi_lang') as 'fr' | 'sw' | 'en') || 'fr',
   sidebarOpen: true,
   sidebarCollapsed: localStorage.getItem('matabishi_sidebar_collapsed') === 'true',

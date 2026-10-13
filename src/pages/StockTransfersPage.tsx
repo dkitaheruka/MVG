@@ -12,21 +12,28 @@ import {
   Prohibit,
   Warning,
   XCircle,
+  Coins,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest, downloadUrl } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
+import { NewEtatBesoinModal } from '../components/NewEtatBesoinModal'
 
 export function StockTransfersPage() {
   const queryClient = useQueryClient()
   const session = useAppStore((state) => state.session)
   const token = session?.token
-  const agenceId = session?.agenceId ?? 1
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const userRole = session?.role
   const isSuperAdminOrSiegeAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN_SIEGE'
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [showNewTransfertModal, setShowNewTransfertModal] = useState(false)
+  const [showEBModal, setShowEBModal] = useState(false)
   const [receptionTransfert, setReceptionTransfert] = useState<any | null>(null)
   const [refusTransfert, setRefusTransfert] = useState<any | null>(null)
   const [motifRefus, setMotifRefus] = useState('')
@@ -199,9 +206,19 @@ export function StockTransfersPage() {
             Expéditions de farine en sacs, feuilles de route chauffeurs, suivi de flotte et réception contradictoire.
           </p>
         </div>
-        <button className="primary-action" onClick={() => setShowNewTransfertModal(true)}>
-          <Plus size={18} /> Expédier un Transfert
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="secondary-action"
+            onClick={() => setShowEBModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour le transport, carburant ou frais de route"
+          >
+            <Coins size={18} /> Demande de Fonds Logistique
+          </button>
+          <button className="primary-action" onClick={() => setShowNewTransfertModal(true)}>
+            <Plus size={18} /> Expédier un Transfert
+          </button>
+        </div>
       </div>
 
       {actionError && (
@@ -577,6 +594,13 @@ export function StockTransfersPage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN LOGISTIQUE & TRANSPORT */}
+      <NewEtatBesoinModal
+        isOpen={showEBModal}
+        onClose={() => setShowEBModal(false)}
+        defaultService="Service Logistique & Transferts"
+        agenceId={agenceId}
+      />
     </section>
   )
 }

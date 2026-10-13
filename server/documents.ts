@@ -1,3 +1,39 @@
+import QRCode from 'qrcode'
+
+export async function generateMvgQrSvg(textOrPayload: string | object): Promise<string> {
+  const text = typeof textOrPayload === 'string' ? textOrPayload : JSON.stringify(textOrPayload)
+  try {
+    let svg = await QRCode.toString(text, {
+      type: 'svg',
+      errorCorrectionLevel: 'H',
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    })
+    const vbMatch = svg.match(/viewBox="0 0 (\d+) (\d+)"/)
+    if (vbMatch) {
+      const w = parseFloat(vbMatch[1])
+      const h = parseFloat(vbMatch[2])
+      const cx = w / 2
+      const cy = h / 2
+      const r = w * 0.125
+      const fs = r * 0.85
+      const badge = `
+        <circle cx="${cx}" cy="${cy}" r="${(r + 0.8).toFixed(2)}" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.35"/>
+        <circle cx="${cx}" cy="${cy}" r="${r.toFixed(2)}" fill="#0284c7"/>
+        <text x="${cx}" y="${(cy + 0.25).toFixed(2)}" fill="#ffffff" font-size="${fs.toFixed(2)}" font-family="system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-weight="900" text-anchor="middle" dominant-baseline="central">MVG</text>
+      </svg>`
+      svg = svg.replace('</svg>', badge)
+    }
+    return svg
+  } catch (err) {
+    console.error('Erreur génération QR SVG:', err)
+    return ''
+  }
+}
+
 const COMMON_SCROLLBAR_CSS = `
     html {
       overflow-y: scroll;
@@ -74,7 +110,7 @@ export function renderCorporateHeaderAndWatermark(params: {
           RCCM : ${socRccm} | ID. NAT : ${socIdNat} | NIF : ${socNif}<br/>
           Agence : ${params.agence?.nom || 'Agence locale'}
         </div>
-        <div class="doc-title" style="font-size: 13px; font-weight: 800; margin: 8px 0 2px; text-transform: uppercase; color: #0f172a;">${params.docTitle}</div>
+        <div class="doc-title" style="font-size: 13px; font-weight: 800; margin: 8px 0 2px; text-transform: uppercase; color: #0284c7;">${params.docTitle}</div>
         ${params.docReference ? `<div style="font-size: 11px; font-weight: 700; color: #334155;">N° ${params.docReference}</div>` : ''}
        </div>`
     : `<div class="header-bilateral" style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; position: relative; z-index: 1;">
@@ -100,7 +136,7 @@ export function renderCorporateHeaderAndWatermark(params: {
             </div>
             ${logoDroiteUrl ? `<img src="${logoDroiteUrl}" alt="Logo/Sceau Droit" style="max-height: 52px; max-width: 110px; object-fit: contain; border-radius: 4px;" />` : ''}
           </div>
-          <div class="doc-title" style="font-size: 14px; font-weight: 800; margin: 6px 0 2px; text-transform: uppercase; color: #0f172a; letter-spacing: 0.02em;">
+          <div class="doc-title" style="font-size: 14px; font-weight: 800; margin: 6px 0 2px; text-transform: uppercase; color: #0284c7; letter-spacing: 0.02em;">
             ${params.docTitle}
           </div>
           ${params.docReference ? `<div style="font-size: 12px; font-weight: 700; color: #047857;">Réf : ${params.docReference}</div>` : ''}
@@ -117,7 +153,8 @@ export function renderFactureHtml(
   details: any[],
   tauxActif: number,
   format: 'a4' | 'thermal' = 'a4',
-  entreprise?: any
+  entreprise?: any,
+  qrSvg?: string
 ): string {
   const isThermal = format === 'thermal'
   const totalUsd = Number(vente.montantTotal || 0)
@@ -145,7 +182,7 @@ export function renderFactureHtml(
     .company-name { font-size: ${isThermal ? '16px' : '22px'}; font-weight: 800; color: #0f172a; margin: 0; }
     .subtitle { font-size: 11px; color: #64748b; margin: 2px 0 6px; }
     .legal-info { font-size: 10px; color: #475569; line-height: 1.4; }
-    .doc-title { font-size: ${isThermal ? '14px' : '18px'}; font-weight: 700; margin: 12px 0 4px; text-transform: uppercase; color: #0369a1; }
+    .doc-title { font-size: ${isThermal ? '14px' : '18px'}; font-weight: 700; margin: 12px 0 4px; text-transform: uppercase; color: #0284c7; }
     .meta-grid { display: grid; grid-template-columns: ${isThermal ? '1fr' : '1fr 1fr'}; gap: 8px; margin-bottom: 16px; font-size: 12px; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
@@ -233,6 +270,26 @@ export function renderFactureHtml(
     </div>
   </div>
 
+  ${qrSvg ? `
+  <div style="display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1.5px solid #0284c7; border-radius: 8px; padding: 10px 14px; margin: 14px 0;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 76px; height: 76px; flex-shrink: 0; background: #fff; padding: 2px; border-radius: 6px; border: 1px solid #bae6fd;">
+        ${qrSvg}
+      </div>
+      <div>
+        <div style="font-size: 11px; font-weight: 800; color: #0284c7; letter-spacing: 0.03em;">CERTIFICAT DE VENTE & SÉCURISATION FISCALE MVG</div>
+        <div style="font-size: 10px; color: #475569; margin-top: 2px; line-height: 1.35;">
+          Scannez ce QR Code pour valider l'authenticité de la facture et générer automatiquement les écritures comptables d'agence.
+        </div>
+      </div>
+    </div>
+    <div style="text-align: right; font-size: 10px; color: #64748b; font-family: monospace;">
+      REF: ${vente.referenceVente || `VNT-${vente.id}`}<br/>
+      DATE: ${(vente.dateVente || '').slice(0, 10)}
+    </div>
+  </div>
+  ` : ''}
+
   <div class="notice">
     ${socPied}
   </div>
@@ -284,7 +341,7 @@ export function renderBonLivraisonHtml(
     .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
     .subtitle { font-size: 11px; color: #64748b; margin: 2px 0; }
-    .doc-title { font-size: 18px; font-weight: 700; text-transform: uppercase; color: #0f172a; margin-top: 6px; }
+    .doc-title { font-size: 18px; font-weight: 700; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
@@ -413,7 +470,7 @@ export function renderBalanceHtml(
     body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 12px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 16px; font-weight: 700; color: #0369a1; text-transform: uppercase; margin: 6px 0 2px; }
+    .doc-title { font-size: 16px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin: 6px 0 2px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 6px 8px; text-align: left; font-size: 11px; }
     td { border: 1px solid #e2e8f0; padding: 5px 8px; font-size: 11px; }
@@ -499,7 +556,7 @@ export function renderInventaireHtml(stocks: any[], agenceNom: string, entrepris
     body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 12px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 16px; font-weight: 700; color: #0369a1; text-transform: uppercase; margin: 6px 0 2px; }
+    .doc-title { font-size: 16px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin: 6px 0 2px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 6px 8px; text-align: left; font-size: 11px; }
     td { border: 1px solid #e2e8f0; padding: 5px 8px; font-size: 11px; }
@@ -600,7 +657,7 @@ export function renderFeuilleRouteTransfertHtml(
     .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
     .subtitle { font-size: 11px; color: #64748b; margin: 2px 0; }
-    .doc-title { font-size: 17px; font-weight: 700; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
+    .doc-title { font-size: 17px; font-weight: 700; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
     .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
@@ -703,7 +760,8 @@ export function renderBonProductionHtml(
   agence: any,
   articleFini: any,
   recetteLignes: any[],
-  entreprise?: any
+  entreprise?: any,
+  qrSvg?: string
 ): string {
   const qteReelle = ordre.quantiteReelle || ordre.quantitePrevue
 
@@ -742,6 +800,27 @@ export function renderBonProductionHtml(
   ${renderStickyToolbar(`Ordre de Fabrication & Production ${ordre.codeOrdre}`)}
   ${watermarkHtml}
   ${headerHtml}
+
+  ${qrSvg ? `
+  <div style="display: flex; align-items: center; justify-content: space-between; background: #f0f9ff; border: 2px solid #0284c7; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div style="width: 82px; height: 82px; flex-shrink: 0; background: #fff; padding: 3px; border-radius: 6px; border: 1px solid #bae6fd;">
+        ${qrSvg}
+      </div>
+      <div>
+        <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase;">
+          Étiquette QR Code Traçabilité Lot • Minoterie MVG
+        </div>
+        <div style="font-size: 11px; color: #334155; margin-top: 2px; line-height: 1.4;">
+          Ce QR code officiel est rattaché aux cartons, sacs ou bidons issus de cet ordre. Sans prix fixé dans le code, il détecte automatiquement le tarif fixé par le Chef d'Agence lors du scan au POS.
+        </div>
+      </div>
+    </div>
+    <div style="text-align: right; font-size: 11px;">
+      <span style="background: #0284c7; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: 700;">SCAN AUTOMATIQUE</span>
+    </div>
+  </div>
+  ` : ''}
 
   <div class="meta-grid">
     <div class="meta-box">
@@ -1037,7 +1116,7 @@ export function renderGrandLivreHtml(
     body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 12px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
+    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
     .account-block { margin-bottom: 24px; page-break-inside: avoid; }
     .account-header { background: #0f172a; color: #fff; padding: 8px 12px; font-weight: 700; font-size: 13px; border-radius: 4px 4px 0 0; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
@@ -1130,7 +1209,7 @@ export function renderCompteResultatHtml(
     body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
+    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
     .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; }
@@ -1436,7 +1515,7 @@ export function renderTableauImmobilisationsHtml(
     body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
-    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0369a1; margin-top: 6px; }
+    .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; }
     td { border: 1px solid #e2e8f0; padding: 7px 8px; font-size: 12px; }
@@ -1762,7 +1841,7 @@ export function renderEtatBesoinBonDecaissementHtml(
   </div>
 
   <div class="notice">
-    Document de décharge interne certifié par Matabishi ERP • Conservation obligatoire 10 ans selon l'Acte Uniforme OHADA.
+    Document de décharge interne certifié par ${entreprise?.sigle || entreprise?.nomSociete || 'le Système ERP'} • Conservation obligatoire 10 ans selon l'Acte Uniforme OHADA.
   </div>
 </body>
 </html>`
@@ -1977,4 +2056,300 @@ export function renderFicheMaintenanceTechniqueHtml(
 </body>
 </html>`
 }
+
+export function renderRapportOfficielHtml(params: {
+  docTitle: string
+  docReference?: string
+  agence?: any
+  entreprise?: any
+  dateLabel?: string
+  colonnes: string[]
+  lignes: (string | number)[][]
+  totaux?: { label: string; valeur: string }[]
+  badges?: { text: string; bg: string; color: string }[]
+}): string {
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise: params.entreprise,
+    agence: params.agence,
+    docTitle: params.docTitle,
+    docReference: params.docReference,
+  })
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>${params.docTitle}</title>
+  <style>
+    ${COMMON_SCROLLBAR_CSS}
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; color: #1e293b; margin: 28px; line-height: 1.4; }
+    h2.report-blue-title { color: #0284c7; font-size: 18px; font-weight: 800; margin: 0 0 4px; text-transform: uppercase; letter-spacing: -0.01em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 11px; }
+    th { background: #f8fafc; border: 1px solid #cbd5e1; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; color: #334155; text-transform: uppercase; }
+    td { border: 1px solid #e2e8f0; padding: 6px 10px; }
+    tr:nth-child(even) { background: #fbfcfe; }
+    .total-row { background: #eff6ff; font-weight: 800; border-top: 2px solid #0284c7; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 700; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 36px; padding-top: 16px; border-top: 1px dashed #cbd5e1; font-size: 11px; }
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 8mm; font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(params.docTitle)}
+  ${watermarkHtml}
+  ${headerHtml}
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; border-bottom: 2px solid #0284c7; padding-bottom: 8px;">
+    <div>
+      <h2 class="report-blue-title">${params.docTitle}</h2>
+      ${params.dateLabel ? `<div style="font-size: 11px; color: #64748b;">${params.dateLabel}</div>` : ''}
+    </div>
+    ${params.badges && params.badges.length > 0 ? `
+      <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+        ${params.badges.map(b => `<span class="badge" style="background: ${b.bg}; color: ${b.color};">${b.text}</span>`).join('')}
+      </div>
+    ` : ''}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        ${params.colonnes.map(c => `<th>${c}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${params.lignes.map(row => `
+        <tr>
+          ${row.map(cell => `<td>${cell}</td>`).join('')}
+        </tr>
+      `).join('')}
+      ${params.totaux && params.totaux.length > 0 ? `
+        <tr class="total-row">
+          <td colspan="${params.colonnes.length - params.totaux.length}">RÉCAPITULATIF & TOTAUX GÉNÉRAUX</td>
+          ${params.totaux.map(t => `<td style="text-align: right; color: #0284c7;"><strong>${t.valeur}</strong></td>`).join('')}
+        </tr>
+      ` : ''}
+    </tbody>
+  </table>
+
+  <div class="signatures">
+    <div>
+      <strong>Établi par (Responsable Opérationnel / Agence) :</strong><br/><br/>
+      Date : ${new Date().toLocaleDateString('fr-FR')}<br/>
+      Signature & Cachet : _______________________
+    </div>
+    <div style="text-align: right;">
+      <strong>Approuvé & Certifié (Direction Générale / Siège) :</strong><br/><br/>
+      Date : ${new Date().toLocaleDateString('fr-FR')}<br/>
+      Visa Officiel : _______________________
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+export async function renderPlancheEtiquettesQrLotHtml(
+  ordre: any,
+  agence: any,
+  articleFini: any,
+  entreprise?: any,
+  emballageType: string = 'Sac de 25 kg',
+  count: number = 8
+): Promise<string> {
+  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const sigle = entreprise?.sigle || 'MVG'
+  const numeroLot = ordre.lotCree || `LOT-${ordre.codeOrdre}`
+  const dateProd = (ordre.dateCloture || ordre.dateCreation || new Date().toISOString()).slice(0, 10)
+  const dateExp = '2027-06-30'
+
+  // PAYLOAD ENCODÉ SANS LE PRIX ! (Le prix est détecté au scan selon le barème de l'agence)
+  const qrPayload = {
+    type: 'LOT',
+    articleId: ordre.articleFiniId || articleFini?.id,
+    codeArticle: articleFini?.codeUnique || `ART-${articleFini?.id || 1}`,
+    numeroLot,
+    designation: articleFini?.designation || 'Farine de Maïs Extra',
+    uniteMesure: emballageType,
+    quantiteInitiale: ordre.quantiteReelle || ordre.quantitePrevue || 50,
+    dateFabrication: dateProd,
+    dateExpiration: dateExp,
+    codeUnique: numeroLot,
+  }
+
+  const qrSvg = await generateMvgQrSvg(qrPayload)
+  const stickers = Array.from({ length: count })
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Planche Étiquettes QR Code - Lot ${numeroLot}</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 20px; background: #f8fafc; color: #0f172a; }
+    .page-sheet {
+      max-width: 210mm;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 10mm 8mm;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+      border-radius: 8px;
+    }
+    .sheet-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm 6mm;
+    }
+    .sticker-card {
+      border: 2px solid #0284c7;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #ffffff;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .sticker-head {
+      border-bottom: 1.5px solid #0284c7;
+      padding-bottom: 5px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sticker-brand {
+      font-size: 11px;
+      font-weight: 800;
+      color: #0284c7;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .sticker-tag {
+      font-size: 8.5px;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+    .sticker-body {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 4px 0;
+    }
+    .sticker-qr {
+      width: 82px;
+      height: 82px;
+      flex-shrink: 0;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sticker-qr svg {
+      width: 100%;
+      height: 100%;
+    }
+    .sticker-info {
+      flex: 1;
+      font-size: 10px;
+      line-height: 1.35;
+    }
+    .sticker-product {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 3px;
+      line-height: 1.2;
+    }
+    .sticker-row {
+      display: flex;
+      justify-content: space-between;
+      color: #334155;
+      margin-top: 1px;
+    }
+    .sticker-footer {
+      border-top: 1px dashed #cbd5e1;
+      padding-top: 4px;
+      margin-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 7.5px;
+      color: #64748b;
+      align-items: center;
+    }
+    .print-btn {
+      background: #0284c7;
+      color: #fff;
+      border: 0;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .page-sheet { box-shadow: none; padding: 4mm; margin: 0; max-width: 100%; }
+      .no-print { display: none !important; }
+    }
+    ${COMMON_SCROLLBAR_CSS}
+  </style>
+</head>
+<body>
+  <div class="no-print" style="position: sticky; top: 0; z-index: 999; background: #ffffff; border-bottom: 2px solid #0f172a; padding: 12px 20px; margin: -20px -20px 20px -20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.08);">
+    <div>
+      <strong style="font-size: 14px; color: #0f172a;">Planche d'Étiquettes QR Code Traçabilité • Lot ${numeroLot}</strong>
+      <div style="font-size: 11px; color: #64748b;">
+        Conçu pour impression et collage sur ${emballageType} (Cartons, Bidons, Sacs). Scan direct sans prix préenregistré.
+      </div>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="print-btn" onclick="window.print()">Imprimer la Planche (${count} étiquettes)</button>
+    </div>
+  </div>
+
+  <div class="page-sheet">
+    <div class="sheet-grid">
+      ${stickers.map((_, i) => `
+        <div class="sticker-card">
+          <div class="sticker-head">
+            <span class="sticker-brand">${sigle} • ${socNom.split('(')[0].trim()}</span>
+            <span class="sticker-tag">${emballageType.toUpperCase()}</span>
+          </div>
+
+          <div class="sticker-body">
+            <div class="sticker-qr">
+              ${qrSvg}
+            </div>
+            <div class="sticker-info">
+              <div class="sticker-product">${articleFini?.designation || 'Farine de Maïs Extra'}</div>
+              <div class="sticker-row"><span>Lot FEFO :</span> <strong>${numeroLot}</strong></div>
+              <div class="sticker-row"><span>Conditionnement :</span> <strong>${emballageType}</strong></div>
+              <div class="sticker-row"><span>Site Minoterie :</span> <span>${agence?.nom || 'Atelier Principal'}</span></div>
+              <div class="sticker-row"><span>Date Fabrication :</span> <span>${dateProd}</span></div>
+              <div class="sticker-row"><span>Date Expiration :</span> <strong>${dateExp}</strong></div>
+            </div>
+          </div>
+
+          <div class="sticker-footer">
+            <span>Certification OCC / MVG RDC</span>
+            <span style="font-style: italic;">Prix détecté selon le barème agence au scan</span>
+            <strong style="color: #0284c7;">Unité #${i + 1} / ${count}</strong>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 

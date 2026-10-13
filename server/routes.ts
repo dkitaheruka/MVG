@@ -36,6 +36,7 @@ import {
   etatsBesoin,
   entretiensTechniques,
   equipementsParc,
+  appareils,
 } from './seed'
 import {
   renderFactureHtml,
@@ -52,10 +53,44 @@ import {
   renderTableauImmobilisationsHtml,
   renderEtatBesoinBonDecaissementHtml,
   renderFicheMaintenanceTechniqueHtml,
+  renderRapportOfficielHtml,
+  renderPlancheEtiquettesQrLotHtml,
+  generateMvgQrSvg,
 } from './documents'
 
 const router = Router()
 const JWT_SECRET = 'matabishi_secure_token_secret_mvg_2026'
+
+// Récupération dynamique du taux de change actif par agence (ou par défaut)
+export function getActiveExchangeRate(agenceId?: number): number {
+  if (agenceId) {
+    const agenceTaux = tauxChanges.find((t) => t.agenceId === agenceId && t.statut === 'VALIDE' && t.actif)
+    if (agenceTaux?.taux && agenceTaux.taux > 0) return agenceTaux.taux
+  }
+  const defaultTaux = tauxChanges.find((t) => t.actif && t.statut === 'VALIDE')?.taux
+  return defaultTaux || 2850
+}
+
+// Paramétrage dynamique des schémas d'écritures comptables automatiques
+export const parametresComptables = {
+  compteVenteMarchandises: '701',
+  compteTvaCollectee: '443',
+  compteClientOrdinaire: '411',
+  compteCaisseUsd: '571',
+  compteCaisseCdf: '572',
+  compteBanque: '521',
+  compteVirementsInternes: '585',
+  compteFournisseurs: '401',
+  compteAchatsMatieres: '601',
+  compteChargesExploitation: '605',
+  compteProduitsAccessoires: '706',
+  compteStocksProduitsFinis: '31',
+  compteVariationStocks: '713',
+  compteLiaisonInterAgences: '181',
+  comptePersonnelRemuneration: '421',
+  compteChargesPersonnel: '661',
+  compteChargesSocialesPatronales: '664',
+}
 
 function toInt(val: unknown, defaultVal = 0): number {
   if (typeof val === 'number') return val
@@ -72,7 +107,14 @@ function getUserFromToken(req: Request) {
   try {
     const token = authHeader.substring(7)
     const decoded = jwt.verify(token, JWT_SECRET) as any
-    return users.find((u) => u.email === decoded.sub) || null
+    const u = users.find((user) => user.email === decoded.sub)
+    if (!u) return null
+    if (u.actif === false || u.estBloque) return null
+    // Si l'administrateur a déconnecté de force l'utilisateur
+    if (decoded.sessionId && u.sessionActiveId && decoded.sessionId !== u.sessionActiveId) {
+      return null
+    }
+    return u
   } catch {
     return null
   }
@@ -89,14 +131,110 @@ function logAudit(utilisateur: string, action: string, details: string, agenceId
   })
 }
 
-// ----------------- AUTHENTICATION -----------------
+// ----------------- AUTHENTICATION & SINGLE-DEVICE SECURITY -----------------
 router.post('/auth/login', (req: Request, res: Response) => {
-  const { email } = req.body
-  const user = users.find((u) => u.email === email)
+  const { email, password, deviceId, deviceName, deviceType } = req.body
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  const user = users.find((u) => u.email.toLowerCase() === cleanEmail)
 
   if (!user) {
     return res.status(401).json({ message: 'Identifiants invalides' })
   }
+
+  // 1. Vérification si le compte est bloqué (5 tentatives infructueuses ou alerte multi-appareils)
+  if (user.estBloque || user.actif === false) {
+    const motifTexte =
+      user.motifBlocage === 'TENTATIVES_EXCESSIVES'
+        ? 'Compte bloqué après plus de 5 tentatives de mot de passe incorrectes.'
+        : user.motifBlocage === 'CONNEXION_MULTI_APPAREILS'
+        ? 'Compte verrouillé : tentative de connexion détectée sur un autre appareil non autorisé.'
+        : 'Compte désactivé ou suspendu par l administrateur.'
+    return res.status(403).json({
+      message: `${motifTexte} Veuillez contacter le Super Administrateur pour débloquer votre compte et obtenir un mot de passe temporaire.`,
+      bloque: true,
+      motif: user.motifBlocage,
+    })
+  }
+
+  // 2. Vérification du mot de passe
+  const expectedPassword = user.password || 'admin123'
+  if (password !== expectedPassword) {
+    user.tentativesEchouees = (user.tentativesEchouees || 0) + 1
+    if (user.tentativesEchouees >= 5) {
+      user.estBloque = true
+      user.motifBlocage = 'TENTATIVES_EXCESSIVES'
+      logAudit(user.nom, 'BLOCAGE_SECURITE', 'Compte bloqué suite à 5 tentatives de mot de passe erronées', user.agenceId)
+      return res.status(403).json({
+        message: 'Sécurité : 5 tentatives infructueuses atteintes. Votre compte a été automatiquement BLOQUÉ. Veuillez contacter le Super Administrateur pour débloquer votre compte et recevoir un mot de passe temporaire.',
+        bloque: true,
+        motif: 'TENTATIVES_EXCESSIVES',
+      })
+    }
+    const rest = 5 - user.tentativesEchouees
+    return res.status(401).json({
+      message: `Mot de passe incorrect. Attention : il vous reste ${rest} tentative(s) avant le blocage de sécurité de votre compte.`,
+      tentativesRestantes: rest,
+    })
+  }
+
+  // Mot de passe correct : Réinitialiser le compteur de tentatives échouées
+  user.tentativesEchouees = 0
+
+  // 3. Règle mono-appareil (seuls les comptes déclarés VIP par le Super Admin peuvent se connecter sur plusieurs appareils)
+  const incomingDeviceId = String(deviceId || req.body.deviceFingerprint || 'DEV-WEB-' + cleanEmail.replace(/[^a-z0-9]/g, '')).trim()
+  const incomingDeviceName = String(deviceName || (deviceType === 'MOBILE' ? 'Appareil Mobile POS' : 'Poste Navigateur Web')).trim()
+
+  if (!user.estVip) {
+    // Si l'utilisateur a déjà un appareil lié ET qu'il se connecte depuis un appareil différent
+    if (user.appareilActifId && user.appareilActifId !== incomingDeviceId) {
+      user.estBloque = true
+      user.motifBlocage = 'CONNEXION_MULTI_APPAREILS'
+      logAudit(
+        user.nom,
+        'ALERTE_MULTI_APPAREIL',
+        `Tentative de connexion sur un second appareil (${incomingDeviceName} [${incomingDeviceId}]). Appareil enregistré: ${user.appareilActifNom || user.appareilActifId}. Compte bloqué (politique mono-appareil non-VIP).`,
+        user.agenceId
+      )
+      return res.status(403).json({
+        message: 'Alerte Sécurité : Les utilisateurs standards ne peuvent se connecter que sur un seul appareil désigné. Une tentative de connexion sur un autre appareil a été détectée et votre compte a été bloqué. Contactez le Super Admin pour déblocage ou pour déclarer votre compte VIP.',
+        bloque: true,
+        motif: 'CONNEXION_MULTI_APPAREILS',
+      })
+    }
+
+    // Lier l'appareil si non lié
+    user.appareilActifId = incomingDeviceId
+    user.appareilActifNom = incomingDeviceName
+  }
+
+  // Enregistrer ou mettre à jour dans le registre des appareils
+  let appareilObj = appareils.find((a) => a.deviceId === incomingDeviceId)
+  if (!appareilObj) {
+    appareilObj = {
+      id: appareils.length + 1,
+      deviceId: incomingDeviceId,
+      nom: incomingDeviceName,
+      type: deviceType === 'MOBILE' ? 'MOBILE' : 'PC_BUREAU',
+      agenceId: user.agenceId || 1,
+      userId: user.id,
+      userNom: user.nom,
+      statut: 'AUTORISE',
+      adresseIp: req.ip || '127.0.0.1',
+      userAgent: (req.headers['user-agent'] as string) || 'Web',
+      derniereConnexion: new Date().toISOString(),
+      dateEnregistrement: new Date().toISOString(),
+    }
+    appareils.push(appareilObj)
+  } else {
+    appareilObj.derniereConnexion = new Date().toISOString()
+    appareilObj.userId = user.id
+    appareilObj.userNom = user.nom
+  }
+
+  // 4. Session unique pour déconnexion par l'administrateur
+  const sessionId = 'SES-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7)
+  user.sessionActiveId = sessionId
+  user.derniereConnexion = new Date().toISOString()
 
   const token = jwt.sign(
     {
@@ -105,18 +243,79 @@ router.post('/auth/login', (req: Request, res: Response) => {
       role: user.role,
       agenceId: user.agenceId,
       permissions: user.permissions,
+      sessionId,
+      estVip: Boolean(user.estVip),
+      doitChangerMotDePasse: Boolean(user.doitChangerMotDePasse),
     },
     JWT_SECRET,
     { expiresIn: '24h' }
   )
 
-  logAudit(user.nom, 'CONNEXION', `Connexion réussie sur le canal ${req.body.deviceType || 'WEB'}`)
-  res.json({ token })
+  logAudit(
+    user.nom,
+    'CONNEXION',
+    `Connexion réussie sur ${incomingDeviceName} (${incomingDeviceId}) - ${user.estVip ? 'Compte VIP (Multi-appareils)' : 'Mono-appareil'}`,
+    user.agenceId
+  )
+
+  res.json({
+    token,
+    mustChangePassword: Boolean(user.doitChangerMotDePasse),
+    user: {
+      id: user.id,
+      email: user.email,
+      nom: user.nom,
+      role: user.role,
+      agenceId: user.agenceId,
+      estVip: Boolean(user.estVip),
+      doitChangerMotDePasse: Boolean(user.doitChangerMotDePasse),
+      appareilActifNom: user.appareilActifNom || incomingDeviceName,
+    },
+  })
+})
+
+router.post('/auth/change-password', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { newPassword } = req.body
+  if (!newPassword || String(newPassword).trim().length < 4) {
+    return res.status(400).json({ message: 'Le mot de passe doit comporter au moins 4 caractères' })
+  }
+
+  currentUser.password = String(newPassword).trim()
+  currentUser.doitChangerMotDePasse = false
+  currentUser.tentativesEchouees = 0
+
+  logAudit(currentUser.nom, 'CHANGEMENT_MOT_DE_PASSE', 'Mot de passe mis à jour avec succès par l utilisateur', currentUser.agenceId)
+
+  const token = jwt.sign(
+    {
+      sub: currentUser.email,
+      nom: currentUser.nom,
+      role: currentUser.role,
+      agenceId: currentUser.agenceId,
+      permissions: currentUser.permissions,
+      sessionId: currentUser.sessionActiveId,
+      estVip: Boolean(currentUser.estVip),
+      doitChangerMotDePasse: false,
+    },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  )
+
+  res.json({ message: 'Mot de passe changé avec succès !', token })
 })
 
 router.get('/auth/users', (_req: Request, res: Response) => {
-  res.json(users.map(({ id, email, nom, role, agenceId, actif, permissions }) => ({
-    id, email, nom, role, agenceId, actif, permissions: permissions || []
+  res.json(users.map(({ id, email, nom, role, agenceId, actif, permissions, estBloque, doitChangerMotDePasse, estVip, appareilActifNom, tentativesEchouees, motifBlocage }) => ({
+    id, email, nom, role, agenceId, actif, permissions: permissions || [],
+    estBloque: Boolean(estBloque),
+    doitChangerMotDePasse: Boolean(doitChangerMotDePasse),
+    estVip: Boolean(estVip),
+    appareilActifNom,
+    tentativesEchouees: tentativesEchouees || 0,
+    motifBlocage,
   })))
 })
 
@@ -518,7 +717,9 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
     const agId = currentUser.agenceId
     const ag = agences.find((a) => a.id === agId)
     const vAg = ventes.filter((v) => v.agenceId === agId && v.statutAnnulation !== 'ANNULEE')
-    const tVentesUsd = vAg.reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850), 0)
+    const vAgUsd = vAg.filter((v) => v.devise === 'USD').reduce((s, v) => s + v.montantTotal, 0)
+    const vAgCdf = vAg.filter((v) => v.devise === 'CDF').reduce((s, v) => s + v.montantTotal, 0)
+    const totalAgConsolideUsd = vAgUsd + (vAgCdf / 2850)
     const csAg = comptesCaisse.filter((c) => c.agenceId === agId)
     const soldeUsd = csAg.reduce((s, c) => s + (c.soldeUsd || 0), 0)
     const opAg = ordresProduction.filter((o) => o.agenceId === agId && o.statut === 'TERMINE')
@@ -528,21 +729,31 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
 
     return res.json({
       activeService: 'AGENCE',
-      serviceLibelle: `Pilotage Agence Locale (${ag?.nom || 'Mon Agence'})`,
+      serviceLibelle: `Pilotage opérationnel (${ag?.nom || 'Agence locale'})`,
       agenceNom: ag?.nom || 'Agence Locale',
       isConsolide: false,
       canSwitchService: true,
+      badgeTitre: `Vue agence`,
+      titrePrincipal: `Pilotage opérationnel - ${ag?.nom || 'Agence locale'}`,
+      description: `Suivez ventes, stock, caisse, production, crédits, audit et synchronisation depuis un tableau de bord unique.`,
+      validationsCount: Math.max(ebAttente + creditAttente, 1),
+      validationsSousTitre: 'Crédits, sorties de caisse, stocks négatifs',
       kpis: [
-        { label: 'Ventes locales de l agence', valeur: `$${Math.round(tVentesUsd).toLocaleString()}`, icon: 'Receipt', color: '#059669', detail: `${vAg.length} factures` },
-        { label: 'Caisse physique disponible', valeur: `$${Math.round(soldeUsd).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Fonds en caisse' },
-        { label: 'Production locale réalisée', valeur: `${sacsProduits.toLocaleString()} sacs`, icon: 'Package', color: '#059669', detail: 'Produits finis' },
-        { label: 'Validations en attente', valeur: ebAttente + creditAttente, icon: 'Bell', color: '#059669', detail: 'Dossiers à viser' },
+        { label: 'Recettes USD', valeur: `${vAgUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $US`, icon: 'CurrencyCircleDollar' },
+        { label: 'Recettes CDF', valeur: `${Math.round(vAgCdf).toLocaleString('fr-FR')} CDF`, icon: 'Calculator' },
+        { label: 'Consolidé USD', valeur: `${totalAgConsolideUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $US`, icon: 'TrendUp' },
+        { label: 'Transactions', valeur: String(vAg.length), icon: 'ClipboardText' },
       ],
+      fluxValidations: [
+        { type: 'Vente crédit', initiateur: ag?.nom || 'Chef agence', statut: 'En attente' },
+        { type: 'Sortie caisse', initiateur: ag?.nom || 'Chef agence', statut: 'Contrôle solde' },
+      ],
+      architectureTerrain: 'Vente hors ligne jusqu\'à deux semaines avec file locale IndexedDB.',
       diagramme: {
         titre: 'Indicateurs d Activité de l Agence',
         type: 'BAR',
         series: [
-          { label: 'Ventes Agence', valeur: Math.round(tVentesUsd), unite: 'USD' },
+          { label: 'Ventes Agence', valeur: Math.round(totalAgConsolideUsd), unite: 'USD' },
           { label: 'Caisse Locale', valeur: Math.round(soldeUsd), unite: 'USD' },
           { label: 'Sacs Fabriqués', valeur: sacsProduits, unite: 'sacs' },
         ],
@@ -559,14 +770,12 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
   }
 
   // DIRECTION_SIEGE (Admin Siège & Super Admin)
-  let totalCaUsd = 0
-  ventes.forEach((v) => {
-    if (v.statutAnnulation !== 'ANNULEE') {
-      totalCaUsd += v.devise === 'USD' ? v.montantTotal : v.montantTotal / 2850
-    }
-  })
-  const totalTresorerie = comptesCaisse.reduce((s, c) => s + (c.soldeUsd || 0), 0)
-  const totalProd = ordresProduction.filter((o) => o.statut === 'TERMINE').reduce((s, o) => s + (o.quantiteReelle || 0), 0)
+  const vActives = ventes.filter((v) => v.statutAnnulation !== 'ANNULEE')
+  const vUsd = vActives.filter((v) => v.devise === 'USD').reduce((s, v) => s + v.montantTotal, 0)
+  const vCdf = vActives.filter((v) => v.devise === 'CDF').reduce((s, v) => s + v.montantTotal, 0)
+  const totalConsolideUsd = vUsd + (vCdf / 2850)
+  const transactionsCount = vActives.length
+
   const dossiersSiege = etatsBesoin.filter((eb) => eb.statut === 'ATTENTE_VISA_SIEGE').length + transfertsStock.filter((t) => t.statut === 'EN_ATTENTE_VISA_SIEGE').length
 
   const seriesAgences = agences.map((ag) => {
@@ -601,16 +810,26 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
 
   return res.json({
     activeService: 'DIRECTION_SIEGE',
-    serviceLibelle: 'Supervision Stratégique & Direction Générale',
+    serviceLibelle: 'Pilotage opérationnel multi-agences',
     agenceNom: currentAgence?.nom || 'Réseau Consolidé Siège',
     isConsolide: !agenceId,
     canSwitchService: true,
+    badgeTitre: 'Vue siège',
+    titrePrincipal: 'Pilotage opérationnel multi-agences',
+    description: 'Suivez ventes, stock, caisse, production, crédits, audit et synchronisation depuis un tableau de bord unique.',
+    validationsCount: Math.max(dossiersSiege, 3),
+    validationsSousTitre: 'Crédits, sorties de caisse, stocks négatifs',
     kpis: [
-      { label: 'Chiffre d affaires consolidé', valeur: `$${Math.round(totalCaUsd).toLocaleString()}`, icon: 'CurrencyCircleDollar', color: '#059669', detail: 'Toutes agences' },
-      { label: 'Trésorerie nette du réseau', valeur: `$${Math.round(totalTresorerie).toLocaleString()}`, icon: 'Wallet', color: '#059669', detail: 'Caisses + Banques' },
-      { label: 'Production globale du groupe', valeur: `${totalProd.toLocaleString()} sacs`, icon: 'Package', color: '#059669', detail: 'Tous sites' },
-      { label: 'Dossiers en attente Visa Siège', valeur: dossiersSiege, icon: 'ShieldCheck', color: '#059669', detail: 'Grandes décisions' },
+      { label: 'Recettes USD', valeur: `${vUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $US`, icon: 'CurrencyCircleDollar' },
+      { label: 'Recettes CDF', valeur: `${Math.round(vCdf).toLocaleString('fr-FR')} CDF`, icon: 'Calculator' },
+      { label: 'Consolidé USD', valeur: `${totalConsolideUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $US`, icon: 'TrendUp' },
+      { label: 'Transactions', valeur: String(transactionsCount), icon: 'ClipboardText' },
     ],
+    fluxValidations: [
+      { type: 'Vente crédit', initiateur: 'Chef agence', statut: 'En attente' },
+      { type: 'Sortie caisse', initiateur: 'Chef agence', statut: 'Contrôle solde' },
+    ],
+    architectureTerrain: 'Vente hors ligne jusqu\'à deux semaines avec file locale IndexedDB.',
     diagramme: {
       titre: 'Chiffre d Affaires par Agence (Comparatif Réseau)',
       type: 'BAR',
@@ -1049,20 +1268,42 @@ router.post('/parametrage/agences/:agenceId/taux', (req: Request, res: Response)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
   const agenceId = toInt(req.params.agenceId)
-  const { taux } = req.body
+  const { taux, appliquerImmediatement } = req.body
+  const numTaux = Number(taux)
+  if (!numTaux || numTaux <= 0) {
+    return res.status(400).json({ message: 'Taux invalide' })
+  }
+
+  const isSuperOrAdmin = currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE'
+  const isChefAgence = currentUser.role === 'CHEF_AGENCE' && (!currentUser.agenceId || currentUser.agenceId === agenceId)
+
+  // Le chef d'agence ou l'admin peut activer immédiatement ou soumettre à validation
+  const shouldActivate = isSuperOrAdmin || (isChefAgence && appliquerImmediatement)
+
+  if (shouldActivate) {
+    tauxChanges.forEach((t) => {
+      if (t.agenceId === agenceId) t.actif = false
+    })
+  }
 
   const nouveauTaux = {
     id: tauxChanges.length + 1,
     agenceId,
-    taux: Number(taux),
-    statut: 'PROPOSE' as const,
+    taux: numTaux,
+    statut: (shouldActivate ? 'VALIDE' : 'PROPOSE') as 'VALIDE' | 'PROPOSE',
     proposePar: currentUser.nom,
+    validePar: shouldActivate ? currentUser.nom : undefined,
     dateDebut: new Date().toISOString(),
-    actif: false,
+    actif: shouldActivate,
   }
 
   tauxChanges.unshift(nouveauTaux)
-  logAudit(currentUser.nom, 'PROPOSITION_TAUX', `Taux proposé: ${taux} CDF pour 1 USD`, agenceId)
+  logAudit(
+    currentUser.nom,
+    shouldActivate ? 'ACTIVATION_TAUX' : 'PROPOSITION_TAUX',
+    `Taux ${shouldActivate ? 'appliqué' : 'proposé'}: ${numTaux} CDF pour 1 USD (Agence #${agenceId})`,
+    agenceId
+  )
   res.json(nouveauTaux)
 })
 
@@ -1073,8 +1314,11 @@ router.post('/parametrage/taux/:id/valider', (req: Request, res: Response) => {
   const tauxObj = tauxChanges.find((t) => t.id === toInt(req.params.id))
   if (!tauxObj) return res.status(404).json({ message: 'Taux non trouvé' })
 
-  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE') {
-    return res.status(403).json({ message: 'Seul le Siège peut valider un nouveau taux de change.' })
+  const isSuperOrAdmin = currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN_SIEGE'
+  const isChefAgence = currentUser.role === 'CHEF_AGENCE' && currentUser.agenceId === tauxObj.agenceId
+
+  if (!isSuperOrAdmin && !isChefAgence) {
+    return res.status(403).json({ message: 'Seul le Siège ou le Chef d\'Agence concerné peut valider un taux de change.' })
   }
 
   tauxChanges.forEach((t) => {
@@ -1440,7 +1684,7 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
         id: ecrituresComptables.length + 1,
         referenceOperation: ref,
         agenceId: agId,
-        compteNumero: devise === 'USD' ? '571' : '572',
+        compteNumero: devise === 'USD' ? parametresComptables.compteCaisseUsd : parametresComptables.compteCaisseCdf,
         sens: 'DEBIT',
         montant: Number(montantTotal),
         devise: devise || 'USD',
@@ -1457,14 +1701,53 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
         id: ecrituresComptables.length + 2,
         referenceOperation: ref,
         agenceId: agId,
-        compteNumero: '701',
+        compteNumero: parametresComptables.compteVenteMarchandises,
         sens: 'CREDIT',
         montant: Number(montantTotal),
         devise: devise || 'USD',
         tauxApplique: activeRate,
-        libelle: `Produit des ventes ${ref}`,
+        libelle: `Produit des ventes marchandises ${ref}`,
         sourceModule: 'VENTES',
         sourceType: 'VENTE_COMPTANT',
+        sourceId: String(nouvelleVente.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      }
+    )
+  } else {
+    // Vente à crédit : Débit Compte Client, Crédit Compte Vente
+    const ref = nouvelleVente.referenceVente
+    ecrituresComptables.push(
+      {
+        id: ecrituresComptables.length + 1,
+        referenceOperation: ref,
+        agenceId: agId,
+        compteNumero: parametresComptables.compteClientOrdinaire,
+        sens: 'DEBIT',
+        montant: Number(montantTotal),
+        devise: devise || 'USD',
+        tauxApplique: activeRate,
+        libelle: `Créance client vente à crédit ${ref} (${clientObj?.nom || 'Client'})`,
+        sourceModule: 'VENTES',
+        sourceType: 'VENTE_CREDIT',
+        sourceId: String(nouvelleVente.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      },
+      {
+        id: ecrituresComptables.length + 2,
+        referenceOperation: ref,
+        agenceId: agId,
+        compteNumero: parametresComptables.compteVenteMarchandises,
+        sens: 'CREDIT',
+        montant: Number(montantTotal),
+        devise: devise || 'USD',
+        tauxApplique: activeRate,
+        libelle: `Produit des ventes à terme ${ref}`,
+        sourceModule: 'VENTES',
+        sourceType: 'VENTE_CREDIT',
         sourceId: String(nouvelleVente.id),
         annulee: false,
         statutValidation: 'VALIDE',
@@ -1673,7 +1956,7 @@ router.post('/ventes/:id/valider-annulation', (req: Request, res: Response) => {
 })
 
 // ----------------- DOCUMENTS & IMPRESSIONS NORMALISEES -----------------
-router.get('/ventes/:id/recu-pdf', (req: Request, res: Response) => {
+router.get(['/ventes/:id/facture', '/ventes/:id/recu-pdf'], async (req: Request, res: Response) => {
   const venteId = toInt(req.params.id)
   const vente = ventes.find((v) => v.id === venteId)
   if (!vente) return res.status(404).send('Vente introuvable')
@@ -1687,12 +1970,25 @@ router.get('/ventes/:id/recu-pdf', (req: Request, res: Response) => {
   const activeRate = tauxChanges.find((t) => t.agenceId === vente.agenceId && t.statut === 'VALIDE' && t.actif)?.taux || 2850
   const format = req.query.format === 'thermal' ? 'thermal' : 'a4'
 
-  const html = renderFactureHtml(vente, agence, client, details, activeRate, format, parametresEntreprise)
+  const qrPayload = {
+    type: 'VENTE',
+    reference: vente.referenceVente || `VNT-${vente.id}`,
+    agenceId: vente.agenceId,
+    nomAgence: agence?.nom || `Agence #${vente.agenceId}`,
+    montantTotal: Number(vente.montantTotal || 0),
+    montantCdf: Math.round(Number(vente.montantTotal || 0) * activeRate),
+    devise: vente.devise || 'USD',
+    taux: activeRate,
+    date: vente.dateVente,
+  }
+  const qrSvg = await generateMvgQrSvg(qrPayload)
+
+  const html = renderFactureHtml(vente, agence, client, details, activeRate, format, parametresEntreprise, qrSvg)
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
 
-router.get('/ventes/:id/bon-livraison', (req: Request, res: Response) => {
+router.get(['/ventes/:id/bon-livraison', '/livraisons/:id/document', '/logistique/livraisons/:id/document'], (req: Request, res: Response) => {
   const venteId = toInt(req.params.id)
   const vente = ventes.find((v) => v.id === venteId)
   if (!vente) return res.status(404).send('Vente introuvable')
@@ -1725,7 +2021,7 @@ router.get('/ventes/:id/bon-livraison', (req: Request, res: Response) => {
   res.send(html)
 })
 
-router.get('/reporting/export/balance', (req: Request, res: Response) => {
+router.get(['/comptabilite/balance/document', '/reporting/export/balance'], (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
   const mois = req.query.mois ? Number(req.query.mois) : new Date().getMonth() + 1
   const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
@@ -1763,7 +2059,7 @@ router.get('/reporting/export/balance', (req: Request, res: Response) => {
   res.send(html)
 })
 
-router.get('/stocks/export/inventaire', (req: Request, res: Response) => {
+router.get(['/stock/inventaire/document', '/stocks/export/inventaire'], (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : 1
   const agence = agences.find((a) => a.id === agenceId)
   const agenceNom = agence ? agence.nom : 'Dépôt Central'
@@ -1920,7 +2216,7 @@ router.get('/admin/backup/export', (req: Request, res: Response) => {
 
   const dump = {
     metadata: {
-      logiciel: 'Matabishi ERP & Meunerie',
+      logiciel: parametresEntreprise.sigle ? `${parametresEntreprise.sigle} ERP` : 'Système ERP Industriel',
       societe: parametresEntreprise.nomSociete,
       dateExport: new Date().toISOString(),
       exportePar: currentUser.nom,
@@ -2317,9 +2613,325 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
   res.send('\uFEFF' + csv)
 })
 
+// ----------------- PARAMÉTRAGE DES COMPTES COMPTABLES AUTOMATIQUES -----------------
+router.get('/comptabilite/parametrage-schemas', (_req: Request, res: Response) => {
+  res.json(parametresComptables)
+})
+
+router.put('/comptabilite/parametrage-schemas', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE' && currentUser.role !== 'COMPTABLE' && currentUser.role !== 'COMPTABLE_SENIOR') {
+    return res.status(403).json({ message: 'Accès réservé au service comptabilité et direction.' })
+  }
+  Object.assign(parametresComptables, req.body)
+  logAudit(currentUser.nom, 'PARAMETRAGE_COMPTABLE', 'Mise à jour des comptes automatiques SYSCOHADA')
+  res.json({ message: 'Paramétrage des comptes mis à jour avec succès', parametres: parametresComptables })
+})
+
+// ----------------- IMPRESSIONS OFFICIELLES (PDF / A4 AVEC TITRE EN BLEU) POUR LES EXPORTS -----------------
+router.get('/export/print/:type', (req: Request, res: Response) => {
+  const type = req.params.type
+  const currentUser = getUserFromToken(req)
+  const isSuperOrAdminSiege = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN_SIEGE'
+  const agenceId = isSuperOrAdminSiege
+    ? (req.query.agenceId ? toInt(req.query.agenceId) : undefined)
+    : (currentUser?.agenceId ?? (req.query.agenceId ? toInt(req.query.agenceId) : 1))
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : undefined
+  const annee = req.query.annee ? toInt(req.query.annee) : new Date().getFullYear()
+  const mois = req.query.mois ? toInt(req.query.mois) : new Date().getMonth() + 1
+
+  let docTitle = 'DOCUMENT OFFICIEL MATABISHI ERP'
+  let colonnes: string[] = []
+  let lignes: (string | number)[][] = []
+  let totaux: { label: string; valeur: string }[] | undefined = undefined
+
+  if (type === 'balance') {
+    docTitle = `BALANCE GÉNÉRALE DES COMPTES SYSCOHADA (${mois}/${annee})`
+    colonnes = ['N° Compte', 'Intitulé Compte OHADA', 'Débit USD', 'Crédit USD', 'Solde Débiteur', 'Solde Créditeur']
+    const grouped: Record<string, { num: string; lib: string; debit: number; credit: number }> = {}
+    ecrituresComptables.forEach((e) => {
+      if (!e.annulee && (!agenceId || e.agenceId === agenceId)) {
+        if (!grouped[e.compteNumero]) {
+          const cp = planComptable.find((p) => p.numero === e.compteNumero)
+          grouped[e.compteNumero] = {
+            num: e.compteNumero,
+            lib: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+            debit: 0,
+            credit: 0,
+          }
+        }
+        if (e.sens === 'DEBIT') grouped[e.compteNumero].debit += e.montant
+        else grouped[e.compteNumero].credit += e.montant
+      }
+    })
+    const list = Object.values(grouped).sort((a, b) => a.num.localeCompare(b.num))
+    let tDeb = 0
+    let tCred = 0
+    lignes = list.map((l) => {
+      const solde = l.debit - l.credit
+      tDeb += l.debit
+      tCred += l.credit
+      return [
+        `<strong>${l.num}</strong>`,
+        l.lib,
+        `$${l.debit.toFixed(2)}`,
+        `$${l.credit.toFixed(2)}`,
+        solde > 0 ? `$${solde.toFixed(2)}` : '-',
+        solde < 0 ? `$${Math.abs(solde).toFixed(2)}` : '-',
+      ]
+    })
+    totaux = [
+      { label: 'Débit', valeur: `$${tDeb.toFixed(2)}` },
+      { label: 'Crédit', valeur: `$${tCred.toFixed(2)}` },
+    ]
+  } else if (type === 'compte-resultat') {
+    docTitle = `COMPTE DE RÉSULTAT OFFICIEL (EXERCICE ${annee})`
+    colonnes = ['N° Compte', 'Classe SYSCOHADA', 'Poste & Libellé', 'Charges USD', 'Produits USD', 'Solde Net USD']
+    const grouped: Record<string, { num: string; lib: string; charges: number; produits: number }> = {}
+    ecrituresComptables.forEach((e) => {
+      if (!e.annulee && (!agenceId || e.agenceId === agenceId)) {
+        if (e.compteNumero.startsWith('6') || e.compteNumero.startsWith('7')) {
+          if (!grouped[e.compteNumero]) {
+            const cp = planComptable.find((p) => p.numero === e.compteNumero)
+            grouped[e.compteNumero] = {
+              num: e.compteNumero,
+              lib: cp?.libelle || e.libelle || `Compte ${e.compteNumero}`,
+              charges: 0,
+              produits: 0,
+            }
+          }
+          if (e.compteNumero.startsWith('6')) {
+            if (e.sens === 'DEBIT') grouped[e.compteNumero].charges += e.montant
+            else grouped[e.compteNumero].charges -= e.montant
+          } else {
+            if (e.sens === 'CREDIT') grouped[e.compteNumero].produits += e.montant
+            else grouped[e.compteNumero].produits -= e.montant
+          }
+        }
+      }
+    })
+    let totalCh = 0
+    let totalPr = 0
+    lignes = Object.values(grouped).sort((a, b) => a.num.localeCompare(b.num)).map((l) => {
+      const classe = l.num.startsWith('6') ? 'CHARGES (CL. 6)' : 'PRODUITS (CL. 7)'
+      const solde = l.produits - l.charges
+      totalCh += l.charges
+      totalPr += l.produits
+      return [
+        `<strong>${l.num}</strong>`,
+        classe,
+        l.lib,
+        `$${l.charges.toFixed(2)}`,
+        `$${l.produits.toFixed(2)}`,
+        `<strong>$${solde.toFixed(2)}</strong>`,
+      ]
+    })
+    totaux = [
+      { label: 'Charges', valeur: `$${totalCh.toFixed(2)}` },
+      { label: 'Produits', valeur: `$${totalPr.toFixed(2)}` },
+    ]
+  } else if (type === 'grand-livre') {
+    docTitle = `GRAND LIVRE DES ÉCRITURES COMPTABLES (${annee})`
+    colonnes = ['Réf. Pièce', 'Date', 'N° Compte', 'Libellé de l\'écriture', 'Sens', 'Montant', 'Devise', 'Agence']
+    lignes = ecrituresComptables
+      .filter((e) => !e.annulee && (!agenceId || e.agenceId === agenceId))
+      .map((e) => {
+        const ag = agences.find((a) => a.id === e.agenceId)
+        return [
+          `<strong>${e.referenceOperation}</strong>`,
+          e.dateEcriture.slice(0, 10),
+          `<code>${e.compteNumero}</code>`,
+          e.libelle,
+          `<span style="color: ${e.sens === 'DEBIT' ? '#0284c7' : '#16a34a'}; font-weight: 700;">${e.sens}</span>`,
+          `<strong>${e.montant.toFixed(2)}</strong>`,
+          e.devise,
+          ag?.nom || String(e.agenceId),
+        ]
+      })
+  } else if (type === 'immobilisations') {
+    docTitle = `TABLEAU DES IMMOBILISATIONS ET AMORTISSEMENTS (${annee})`
+    colonnes = ['Code', 'Désignation du Bien', 'Emplacement', 'Compte', 'Date Acquis.', 'Durée', 'V. Acquis. USD', 'Amort. Cumulés', 'VNC USD']
+    lignes = immobilisations
+      .filter((immo) => !agenceId || immo.agenceId === agenceId)
+      .map((immo) => [
+        `<strong>${immo.code}</strong>`,
+        immo.nom,
+        immo.emplacement || 'Usine',
+        immo.compteImmo,
+        immo.dateAcquisition,
+        `${immo.dureeAnnees} ans`,
+        `$${immo.valeurAcquisitionUsd.toFixed(2)}`,
+        `$${immo.amortissementCumuleUsd.toFixed(2)}`,
+        `<strong>$${immo.valeurNetteComptableUsd.toFixed(2)}</strong>`,
+      ])
+  } else if (type === 'inventaire' || type === 'stocks') {
+    docTitle = `INVENTAIRE OFFICIEL & ÉTAT DES STOCKS PHYSIQUES`
+    colonnes = ['Agence', 'Désignation Farine / Article', 'Code Unique', 'N° Lot', 'Expiration', 'Stock Disponible', 'Unité', 'P.U (USD)', 'Valeur Stock']
+    let totalVal = 0
+    lignes = stocksAgence
+      .filter((s) => !agenceId || s.agenceId === agenceId)
+      .map((s) => {
+        const ag = agences.find((a) => a.id === s.agenceId)
+        const art = articles.find((a) => a.id === s.articleId)
+        const pu = art?.prixVenteStandard || 20
+        const valTot = (s.quantite || 0) * pu
+        totalVal += valTot
+        return [
+          ag?.nom || String(s.agenceId),
+          `<strong>${art?.designation || 'Article'}</strong>`,
+          art?.codeUnique || '-',
+          s.numeroLot || '-',
+          s.dateExpiration || '-',
+          `<strong>${s.quantite}</strong>`,
+          art?.uniteMesure || 'Sac',
+          `$${pu.toFixed(2)}`,
+          `$${valTot.toFixed(2)}`,
+        ]
+      })
+    totaux = [{ label: 'Valeur Stock', valeur: `$${totalVal.toFixed(2)} USD` }]
+  } else if (type === 'ventes') {
+    docTitle = `JOURNAL COMMERCIAL DES VENTES COMPTOIR & FACTURES`
+    colonnes = ['Réf. Facture', 'Date', 'Agence', 'Client', 'Vendeur', 'Montant Total', 'Mode', 'Statut']
+    let totalV = 0
+    lignes = ventes
+      .filter((v) => !agenceId || v.agenceId === agenceId)
+      .map((v) => {
+        const ag = agences.find((a) => a.id === v.agenceId)
+        const client = clients.find((c) => c.id === v.clientId)
+        const vendeur = users.find((u) => u.id === v.vendeurId)
+        totalV += v.montantTotal
+        return [
+          `<strong>${v.referenceVente}</strong>`,
+          (v.dateVente || '').slice(0, 10),
+          ag?.nom || String(v.agenceId),
+          client?.nom || 'Client Comptoir',
+          vendeur?.nom || 'Vendeur',
+          `<strong>$${v.montantTotal.toFixed(2)} ${v.devise}</strong>`,
+          v.estCredit ? '<span style="color: #b45309; font-weight: 700;">CRÉDIT</span>' : 'COMPTANT',
+          v.statutAnnulation === 'ANNULEE' ? '<span style="color: #dc2626;">ANNULÉE</span>' : '<span style="color: #16a34a;">VALIDÉE</span>',
+        ]
+      })
+    totaux = [{ label: 'Total Ventes', valeur: `$${totalV.toFixed(2)} USD` }]
+  } else if (type === 'tresorerie') {
+    docTitle = `JOURNAL DES OPÉRATIONS DE TRÉSORERIE & CAISSES`
+    colonnes = ['Réf. Caisse', 'Date', 'Agence', 'Caisse', 'Sens', 'Motif / Libellé', 'Montant', 'Statut']
+    lignes = transactions
+      .filter((t) => !agenceId || t.agenceId === agenceId)
+      .map((t) => {
+        const ag = agences.find((a) => a.id === t.agenceId)
+        const caisse = comptesCaisse.find((c) => c.id === t.caisseId)
+        return [
+          `<strong>${t.referenceInterne || t.id}</strong>`,
+          (t.dateCreation || '').slice(0, 10),
+          ag?.nom || String(t.agenceId),
+          caisse?.nom || 'Caisse',
+          `<span style="color: ${t.type === 'ENTREE' ? '#16a34a' : '#dc2626'}; font-weight: 700;">${t.type}</span>`,
+          t.libelle,
+          `<strong>${t.montant.toFixed(2)} ${t.devise}</strong>`,
+          t.statut,
+        ]
+      })
+  } else if (type === 'etats-besoin') {
+    docTitle = `REGISTRE OFFICIEL DES ÉTATS DE BESOIN & RÉQUISITIONS`
+    colonnes = ['N° Requisition', 'Date', 'Agence', 'Service', 'Demandeur', 'Motif', 'Montant', 'Statut']
+    lignes = etatsBesoin
+      .filter((eb) => !agenceId || eb.agenceId === agenceId)
+      .map((eb) => {
+        const ag = agences.find((a) => a.id === eb.agenceId)
+        return [
+          `<strong>${eb.numeroEB}</strong>`,
+          (eb.dateDemande || '').slice(0, 10),
+          ag?.nom || String(eb.agenceId),
+          eb.serviceDemandeur,
+          eb.demandeurNom,
+          eb.motif,
+          `<strong>${eb.montant.toFixed(2)} ${eb.devise}</strong>`,
+          eb.statut,
+        ]
+      })
+  } else if (type === 'maintenance') {
+    docTitle = `CARNET GÉNÉRAL DE MAINTENANCE & ENTRETIENS DU PARC MATÉRIEL`
+    colonnes = ['N° Intervention', 'Date', 'Agence', 'Type Matériel', 'Équipement / Immatriculation', 'Nature des Travaux', 'Prestataire', 'Coût Total USD', 'Statut']
+    let totalMaint = 0
+    lignes = entretiensTechniques
+      .filter((m) => !agenceId || m.agenceId === agenceId)
+      .map((m) => {
+        const ag = agences.find((a) => a.id === m.agenceId)
+        totalMaint += m.coutTotalUsd
+        return [
+          `<strong>${m.numeroIntervention}</strong>`,
+          m.dateIntervention,
+          ag?.nom || String(m.agenceId),
+          m.typeEquipement,
+          `<strong>${m.nomEquipement}</strong> ${m.immatriculationOuSerie ? `(${m.immatriculationOuSerie})` : ''}`,
+          m.natureTravaux,
+          m.technicienOuGarage,
+          `<strong>$${m.coutTotalUsd.toFixed(2)}</strong>`,
+          m.statut,
+        ]
+      })
+    totaux = [{ label: 'Coût Maintenance', valeur: `$${totalMaint.toFixed(2)} USD` }]
+  } else if (type === 'transactions-consolidees' || type === 'supervision-siege') {
+    docTitle = `JOURNAL CONSOLIDÉ DES OPÉRATIONS MULTI-AGENCES (${mois}/${annee})`
+    colonnes = ['Réf.', 'Date', 'Agence', 'Module', 'Type Flux', 'Libellé de l\'opération', 'Montant', 'Opérateur', 'Statut']
+    // Ventes et caisses combinées
+    const listConsolidee: any[] = []
+    ventes.forEach((v) => {
+      if (!agenceId || v.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === v.agenceId)
+        const ven = users.find((u) => u.id === v.vendeurId)
+        listConsolidee.push([
+          `<strong>${v.referenceVente}</strong>`,
+          (v.dateVente || '').slice(0, 10),
+          ag?.nom || String(v.agenceId),
+          'VENTES',
+          v.estCredit ? 'CRÉDIT' : 'COMPTANT',
+          `Vente client`,
+          `$${v.montantTotal.toFixed(2)} ${v.devise}`,
+          ven?.nom || 'Vendeur',
+          v.statutAnnulation === 'ANNULEE' ? 'ANNULÉE' : 'VALIDÉE',
+        ])
+      }
+    })
+    transactions.forEach((t) => {
+      if (!agenceId || t.agenceId === agenceId) {
+        const ag = agences.find((a) => a.id === t.agenceId)
+        const cr = users.find((u) => u.id === t.createurId)
+        listConsolidee.push([
+          `<strong>${t.referenceInterne || t.id}</strong>`,
+          (t.dateCreation || '').slice(0, 10),
+          ag?.nom || String(t.agenceId),
+          'TRÉSORERIE',
+          t.type,
+          t.libelle,
+          `$${t.montant.toFixed(2)} ${t.devise}`,
+          cr?.nom || 'Caissier',
+          t.statut,
+        ])
+      }
+    })
+    lignes = listConsolidee
+  }
+
+  const html = renderRapportOfficielHtml({
+    docTitle,
+    docReference: `RPT-${String(type).toUpperCase()}-${Date.now().toString().slice(-6)}`,
+    agence,
+    entreprise: parametresEntreprise,
+    dateLabel: `Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')} | Système Matabishi ERP`,
+    colonnes,
+    lignes,
+    totaux,
+  })
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
 
 // ----------------- DOCUMENTS & ÉDITIONS OFFICIELLES SUPPLÉMENTAIRES -----------------
-router.get('/rh/bulletins/:id/document', (req: Request, res: Response) => {
+router.get(['/paie/bulletins/:id/document', '/rh/bulletins/:id/document'], (req: Request, res: Response) => {
   const bId = toInt(req.params.id)
   const b = bulletinsPaie.find((item) => item.id === bId)
   if (!b) return res.status(404).send('Bulletin de paie introuvable')
@@ -2332,7 +2944,7 @@ router.get('/rh/bulletins/:id/document', (req: Request, res: Response) => {
   res.send(html)
 })
 
-router.get('/comptabilite/export/grand-livre', (req: Request, res: Response) => {
+router.get(['/comptabilite/grand-livre/document', '/comptabilite/export/grand-livre'], (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
   const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
   const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
@@ -2344,7 +2956,7 @@ router.get('/comptabilite/export/grand-livre', (req: Request, res: Response) => 
   res.send(html)
 })
 
-router.get('/comptabilite/export/compte-resultat', (req: Request, res: Response) => {
+router.get(['/comptabilite/compte-resultat/document', '/comptabilite/export/compte-resultat'], (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
   const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
   const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
@@ -2390,7 +3002,7 @@ router.get('/achats/commandes/:id/document', (req: Request, res: Response) => {
   res.send(html)
 })
 
-router.get('/achats/pont-bascule/:id/document', (req: Request, res: Response) => {
+router.get(['/achats/receptions/:id/document', '/achats/pont-bascule/:id/document', '/achats/receptions/:id/ticket-pont-bascule', '/achats/receptions/:id/bon-pdf'], (req: Request, res: Response) => {
   const pbId = toInt(req.params.id)
   const rec = receptionsPontBascule.find((r) => r.id === pbId)
   if (!rec) return res.status(404).send('Réception pont-bascule introuvable')
@@ -2671,7 +3283,7 @@ router.post('/comptabilite/immobilisations/dotation-annuelle', (req: Request, re
   res.json({ message: `Dotations annuelles ${annee} calculées et passées en écritures avec succès`, totalDotationUsd: totalDotation })
 })
 
-router.get('/comptabilite/export/immobilisations', (req: Request, res: Response) => {
+router.get(['/comptabilite/immobilisations/document', '/comptabilite/export/immobilisations'], (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : 1
   const agence = agences.find((a) => a.id === agenceId)
   const annee = req.query.annee ? toInt(req.query.annee) : new Date().getFullYear()
@@ -2935,7 +3547,7 @@ router.post('/maintenance/entretiens/:id/generer-etat-besoin', (req: Request, re
   res.json({ message: 'État de besoin généré avec succès pour cette intervention technique', etatBesoin: nouveauEB })
 })
 
-router.get('/maintenance/entretiens/:id/fiche', (req: Request, res: Response) => {
+router.get(['/maintenance/:id/document', '/maintenance/entretiens/:id/fiche'], (req: Request, res: Response) => {
   const maint = entretiensTechniques.find((m) => m.id === toInt(req.params.id))
   if (!maint) return res.status(404).send('Intervention technique introuvable')
 
@@ -3770,7 +4382,7 @@ router.post('/etats-besoin/:id/rejeter', (req: Request, res: Response) => {
   res.json({ message: 'État de besoin rejeté', etatBesoin: eb })
 })
 
-router.get('/etats-besoin/:id/bon-decaissement', (req: Request, res: Response) => {
+router.get(['/etats-besoin/:id/bon-decaissement', '/etats-besoin/:id/document'], (req: Request, res: Response) => {
   const eb = etatsBesoin.find((e) => e.id === toInt(req.params.id))
   if (!eb) return res.status(404).send('État de besoin introuvable')
 
@@ -4055,7 +4667,7 @@ router.post('/production/ordres/:id/cloturer', (req: Request, res: Response) => 
   res.json({ message: 'Ordre clôturé et lot généré avec succès', ordre, numeroLot })
 })
 
-router.get('/production/ordres/:id/fiche-a4', (req: Request, res: Response) => {
+router.get(['/production/ordres/:id/document', '/production/ordres/:id/fiche-a4', '/production/ordres/:id/bon-pdf', '/production/ordres/:id/bon'], async (req: Request, res: Response) => {
   const ordreId = toInt(req.params.id)
   const ordre = ordresProduction.find((o) => o.id === ordreId)
   if (!ordre) return res.status(404).send('Ordre de production non trouvé')
@@ -4069,7 +4681,44 @@ router.get('/production/ordres/:id/fiche-a4', (req: Request, res: Response) => {
       articleMatiere: articles.find((a) => a.id === r.articleMatiereId),
     }))
 
-  const html = renderBonProductionHtml(ordre, agence, articleFini, recetteLignes, parametresEntreprise)
+  const qrPayload = {
+    type: 'LOT',
+    articleId: ordre.articleFiniId,
+    codeArticle: articleFini?.codeUnique || `ART-${ordre.articleFiniId}`,
+    numeroLot: ordre.lotCree || `LOT-${ordre.codeOrdre}`,
+    designation: articleFini?.designation || 'Produit Fini',
+    uniteMesure: articleFini?.uniteMesure || 'Unité',
+    quantiteInitiale: ordre.quantiteReelle || ordre.quantitePrevue,
+    dateFabrication: (ordre.dateCloture || ordre.dateCreation || new Date().toISOString()).slice(0, 10),
+    dateExpiration: '2027-06-30',
+    codeUnique: ordre.lotCree || `LOT-${ordre.codeOrdre}`,
+  }
+  const qrSvg = await generateMvgQrSvg(qrPayload)
+
+  const html = renderBonProductionHtml(ordre, agence, articleFini, recetteLignes, parametresEntreprise, qrSvg)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get('/production/ordres/:id/etiquettes', async (req: Request, res: Response) => {
+  const ordreId = toInt(req.params.id)
+  const ordre = ordresProduction.find((o) => o.id === ordreId)
+  if (!ordre) return res.status(404).send('Ordre de production non trouvé')
+
+  const agence = agences.find((a) => a.id === ordre.agenceId)
+  const articleFini = articles.find((a) => a.id === ordre.articleFiniId)
+  const emballageType = (req.query.emballage as string) || articleFini?.uniteMesure || 'Sac de 25 kg'
+  const quantiteProduite = Number(ordre.quantiteReelle) || Number(ordre.quantitePrevue) || 50
+  const count = req.query.count ? Math.max(1, toInt(req.query.count)) : quantiteProduite
+
+  const html = await renderPlancheEtiquettesQrLotHtml(
+    ordre,
+    agence,
+    articleFini,
+    parametresEntreprise,
+    emballageType,
+    count
+  )
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
@@ -4709,7 +5358,7 @@ router.post('/stocks/transferts/:id/recevoir', (req: Request, res: Response) => 
   res.json(transfert)
 })
 
-router.get('/stocks/transferts/:id/feuille-route', (req: Request, res: Response) => {
+router.get(['/transferts/:id/feuille-route', '/stocks/transferts/:id/feuille-route'], (req: Request, res: Response) => {
   const transfert = transfertsStock.find((t) => t.id === toInt(req.params.id))
   if (!transfert) return res.status(404).send('Transfert introuvable')
 
@@ -5113,6 +5762,365 @@ router.post('/admin/users/:id/toggle-statut', (req: Request, res: Response) => {
   }
 
   res.json({ message: `Compte utilisateur ${targetUser.actif ? 'activé' : 'suspendu'} avec succès`, user: enriched })
+})
+
+router.post('/admin/users/:id/deconnecter', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  // Révocation de la session active et déliaison de l'appareil
+  targetUser.sessionActiveId = undefined
+  targetUser.appareilActifId = undefined
+  targetUser.appareilActifNom = undefined
+
+  logAudit(
+    currentUser.nom,
+    'DECONNEXION_FORCEE',
+    `Déconnexion forcée du compte #${userId} (${targetUser.nom}) par l administrateur. Session et appareil déliés.`,
+    targetUser.agenceId
+  )
+
+  res.json({ message: `L'utilisateur ${targetUser.nom} a été déconnecté de force avec succès. Sa session active a été révoquée.` })
+})
+
+router.post('/admin/users/:id/debloquer-reinitialiser', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  const { motDePasseTemporaire, libererAppareil } = req.body
+  const tempPass = String(motDePasseTemporaire || 'TempPass' + Math.floor(1000 + Math.random() * 9000)).trim()
+
+  targetUser.estBloque = false
+  targetUser.motifBlocage = undefined
+  targetUser.tentativesEchouees = 0
+  targetUser.password = tempPass
+  targetUser.doitChangerMotDePasse = true
+  targetUser.sessionActiveId = undefined
+
+  if (libererAppareil !== false) {
+    targetUser.appareilActifId = undefined
+    targetUser.appareilActifNom = undefined
+  }
+
+  logAudit(
+    currentUser.nom,
+    'DEBLOCAGE_COMPTE',
+    `Déblocage du compte #${userId} (${targetUser.nom}) et génération d un mot de passe temporaire à changer au 1er login.`,
+    targetUser.agenceId
+  )
+
+  res.json({
+    message: `Compte débloqué avec succès ! Mot de passe temporaire attribué : "${tempPass}". L'utilisateur sera contraint de le changer lors de son premier login.`,
+    motDePasseTemporaire: tempPass,
+    user: {
+      ...targetUser,
+      agence: agences.find((a) => a.id === targetUser.agenceId),
+    },
+  })
+})
+
+router.post('/admin/users/:id/toggle-vip', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const userId = toInt(req.params.id)
+  const targetUser = users.find((u) => u.id === userId)
+  if (!targetUser) return res.status(404).json({ message: 'Utilisateur introuvable' })
+
+  targetUser.estVip = !targetUser.estVip
+
+  logAudit(
+    currentUser.nom,
+    'MODIFICATION_STATUT_VIP',
+    `Statut VIP (multi-appareils autorisés) ${targetUser.estVip ? 'ACTIVÉ' : 'DÉSACTIVÉ'} pour #${userId} (${targetUser.nom})`,
+    targetUser.agenceId
+  )
+
+  res.json({
+    message: `Statut VIP ${targetUser.estVip ? 'activé (multi-appareils autorisé)' : 'désactivé (restreint à un seul appareil)'} pour ${targetUser.nom}.`,
+    estVip: targetUser.estVip,
+  })
+})
+
+// ----------------- GESTION DU PARC D'APPAREILS ENREGISTRÉS -----------------
+router.get('/admin/appareils', (_req: Request, res: Response) => {
+  const list = appareils.map((ap) => ({
+    ...ap,
+    agence: agences.find((a) => a.id === ap.agenceId),
+    user: ap.userId ? users.find((u) => u.id === ap.userId) : null,
+  }))
+  res.json(list)
+})
+
+router.post('/admin/appareils', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { deviceId, nom, type, agenceId, userId } = req.body
+  if (!deviceId || !nom) {
+    return res.status(400).json({ message: 'Identifiant matériel et nom de l appareil obligatoires' })
+  }
+
+  const existing = appareils.find((a) => a.deviceId.toLowerCase() === String(deviceId).trim().toLowerCase())
+  if (existing) {
+    return res.status(400).json({ message: 'Un appareil avec cet identifiant est déjà enregistré' })
+  }
+
+  const assignedUser = userId ? users.find((u) => u.id === toInt(userId)) : null
+
+  const nouvelAppareil = {
+    id: appareils.length + 1,
+    deviceId: String(deviceId).trim(),
+    nom: String(nom).trim(),
+    type: type || 'PC_BUREAU',
+    agenceId: toInt(agenceId) || currentUser.agenceId || 1,
+    userId: assignedUser ? assignedUser.id : undefined,
+    userNom: assignedUser ? assignedUser.nom : undefined,
+    statut: 'AUTORISE' as const,
+    adresseIp: req.ip || '127.0.0.1',
+    userAgent: (req.headers['user-agent'] as string) || 'Client Matabishi',
+    derniereConnexion: new Date().toISOString(),
+    dateEnregistrement: new Date().toISOString(),
+  }
+
+  appareils.push(nouvelAppareil)
+  logAudit(
+    currentUser.nom,
+    'ENREGISTREMENT_APPAREIL',
+    `Nouvel appareil enregistré: ${nouvelAppareil.nom} (${nouvelAppareil.deviceId}) pour l agence #${nouvelAppareil.agenceId}`,
+    nouvelAppareil.agenceId
+  )
+
+  res.json({ message: 'Appareil enregistré avec succès', appareil: nouvelAppareil })
+})
+
+router.put('/admin/appareils/:id/statut', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const apId = toInt(req.params.id)
+  const ap = appareils.find((a) => a.id === apId)
+  if (!ap) return res.status(404).json({ message: 'Appareil introuvable' })
+
+  const { statut } = req.body
+  if (statut) ap.statut = statut
+
+  logAudit(
+    currentUser.nom,
+    'STATUT_APPAREIL',
+    `Mise à jour statut appareil ${ap.nom} (${ap.deviceId}) -> ${ap.statut}`,
+    ap.agenceId
+  )
+
+  res.json({ message: 'Statut de l appareil mis à jour', appareil: ap })
+})
+
+router.delete('/admin/appareils/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const apId = toInt(req.params.id)
+  const index = appareils.findIndex((a) => a.id === apId)
+  if (index === -1) return res.status(404).json({ message: 'Appareil introuvable' })
+
+  const removed = appareils.splice(index, 1)[0]
+  logAudit(
+    currentUser.nom,
+    'SUPPRESSION_APPAREIL',
+    `Suppression de l appareil enregistré ${removed.nom} (${removed.deviceId})`,
+    removed.agenceId
+  )
+
+  res.json({ message: 'Appareil supprimé du registre avec succès' })
+})
+
+// ----------------- ÉCRITURES COMPTABLES AUTOMATIQUES PAR SCAN QR CODE -----------------
+router.post('/agences/:agenceId/articles/:articleId/prix', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agId = toInt(req.params.agenceId)
+  const artId = toInt(req.params.articleId)
+  const { prix, devise } = req.body
+  const numPrix = Number(prix)
+  if (!numPrix || numPrix <= 0) return res.status(400).json({ message: 'Prix supérieur à 0 requis' })
+
+  prixArticlesAgence.forEach((p) => {
+    if (p.agenceId === agId && p.articleId === artId) {
+      p.actif = false
+    }
+  })
+
+  const nouveauPrix = {
+    id: prixArticlesAgence.length + 1,
+    agenceId: agId,
+    articleId: artId,
+    prix: numPrix,
+    devise: (devise === 'CDF' ? 'CDF' : 'USD') as 'USD' | 'CDF',
+    statut: 'VALIDE' as const,
+    proposePar: `${currentUser.nom} (Chef Agence)`,
+    validePar: `${currentUser.nom} (Chef Agence)`,
+    actif: true,
+  }
+
+  prixArticlesAgence.unshift(nouveauPrix)
+  logAudit(currentUser.nom, 'FIXATION_PRIX_CHEF_AGENCE', `Nouveau prix de vente fixé par Chef d'Agence: $${numPrix} ${nouveauPrix.devise} pour article #${artId}`, agId)
+  res.json({ message: `Prix fixé avec succès pour l'agence: $${numPrix} ${nouveauPrix.devise}`, prix: nouveauPrix })
+})
+
+router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { type, reference, agenceId, articleId, codeArticle, quantite, montantTotal, montantCdf, devise } = req.body
+  const numAg = Number(agenceId) || currentUser.agenceId || 1
+  const ag = agences.find((a) => a.id === numAg) || agences[0]
+  let numMontant = Number(montantTotal) || 0
+
+  // Détection en temps réel du prix fixé par le Chef d'Agence pour l'agence de l'utilisateur qui scanne
+  let prixUnitaireDetecte = 0
+  if (numMontant <= 0) {
+    const art = articles.find((a) => a.id === toInt(articleId) || (codeArticle && a.codeUnique === codeArticle) || (reference && a.codeUnique === reference))
+    if (art) {
+      const prixAg = prixArticlesAgence.find((p) => p.agenceId === numAg && p.articleId === art.id && p.statut === 'VALIDE' && p.actif)
+      prixUnitaireDetecte = prixAg ? prixAg.prix : (art.prixVenteStandard || 25)
+      const qte = Number(quantite) || 1
+      numMontant = prixUnitaireDetecte * qte
+    } else {
+      prixUnitaireDetecte = 25
+      numMontant = 25
+    }
+  }
+
+  const dev = devise || 'USD'
+  const numCdf = Number(montantCdf) || Math.round(numMontant * 2850)
+
+  const pieceRef = `ECR-QR-${Date.now().toString().slice(-6)}`
+  const dateIso = new Date().toISOString()
+
+  if (type === 'VENTE') {
+    // Écriture de Vente certifiée scanné par QR Code
+    const compteDebit = dev === 'USD' ? parametresComptables.compteCaisseUsd : parametresComptables.compteCaisseCdf
+    const compteCredit = parametresComptables.compteVenteMarchandises
+
+    ecrituresComptables.push(
+      {
+        id: ecrituresComptables.length + 1,
+        referenceOperation: pieceRef,
+        agenceId: numAg,
+        compteNumero: compteDebit,
+        sens: 'DEBIT',
+        montant: numMontant,
+        devise: dev,
+        tauxApplique: numCdf && numMontant ? Math.round(numCdf / numMontant) : 2850,
+        libelle: `[SCAN QR] Encaissement Vente ${reference || ''} (${ag.nom})`,
+        sourceModule: 'VENTES_QR',
+        sourceType: 'SCAN_QR_VENTE',
+        sourceId: pieceRef,
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: dateIso,
+      },
+      {
+        id: ecrituresComptables.length + 2,
+        referenceOperation: pieceRef,
+        agenceId: numAg,
+        compteNumero: compteCredit,
+        sens: 'CREDIT',
+        montant: numMontant,
+        devise: dev,
+        tauxApplique: numCdf && numMontant ? Math.round(numCdf / numMontant) : 2850,
+        libelle: `[SCAN QR] Produits Ventes Marchandises ${reference || ''} (${ag.nom})`,
+        sourceModule: 'VENTES_QR',
+        sourceType: 'SCAN_QR_VENTE',
+        sourceId: pieceRef,
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: dateIso,
+      }
+    )
+
+    logAudit(
+      currentUser.nom,
+      'ECRITURE_AUTO_QR',
+      `Passation écriture automatique via QR Code Vente ${reference || ''} pour ${ag.nom}: $${numMontant} ${dev} (${numCdf} CDF). Pièce: ${pieceRef}`,
+      numAg
+    )
+
+    return res.json({
+      message: `Écriture comptable passée avec succès pour l'${ag.nom} ! Pièce officielle : ${pieceRef}`,
+      pieceReference: pieceRef,
+      agence: ag.nom,
+      debitCompte: compteDebit,
+      creditCompte: compteCredit,
+      montant: numMontant,
+      devise: dev,
+    })
+  } else {
+    // Type LOT ou STOCK : Valorisation et intégration stock de production pour l'agence
+    const compteDebit = parametresComptables.compteStocksProduitsFinis
+    const compteCredit = parametresComptables.compteVariationStocks
+
+    ecrituresComptables.push(
+      {
+        id: ecrituresComptables.length + 1,
+        referenceOperation: pieceRef,
+        agenceId: numAg,
+        compteNumero: compteDebit,
+        sens: 'DEBIT',
+        montant: numMontant,
+        devise: dev,
+        tauxApplique: 2850,
+        libelle: `[SCAN QR] Entrée Stock Lot ${reference || ''} (${ag.nom}) - Tarif fixé Chef Agence`,
+        sourceModule: 'STOCKS_QR',
+        sourceType: 'SCAN_QR_STOCK',
+        sourceId: pieceRef,
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: dateIso,
+      },
+      {
+        id: ecrituresComptables.length + 2,
+        referenceOperation: pieceRef,
+        agenceId: numAg,
+        compteNumero: compteCredit,
+        sens: 'CREDIT',
+        montant: numMontant,
+        devise: dev,
+        tauxApplique: 2850,
+        libelle: `[SCAN QR] Variation Stock Production ${reference || ''} (${ag.nom})`,
+        sourceModule: 'STOCKS_QR',
+        sourceType: 'SCAN_QR_STOCK',
+        sourceId: pieceRef,
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: dateIso,
+      }
+    )
+
+    logAudit(
+      currentUser.nom,
+      'ECRITURE_AUTO_QR',
+      `Passation écriture automatique via QR Code Lot/Stock ${reference || ''} pour ${ag.nom}: $${numMontant} USD (Prix Chef d'Agence: $${prixUnitaireDetecte || numMontant}). Pièce: ${pieceRef}`,
+      numAg
+    )
+
+    return res.json({
+      message: `Écriture de valorisation passée pour l'${ag.nom} (Tarif Chef d'Agence détecté) ! Pièce : ${pieceRef}`,
+      pieceReference: pieceRef,
+      agence: ag.nom,
+      montant: numMontant,
+      devise: dev,
+    })
+  }
 })
 
 router.get('/categories', (_req: Request, res: Response) => {

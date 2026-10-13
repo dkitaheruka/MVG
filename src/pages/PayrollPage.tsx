@@ -10,19 +10,26 @@ import {
   Printer,
   CheckCircle,
   FilePdf,
+  Coins,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
+import { NewEtatBesoinModal } from '../components/NewEtatBesoinModal'
 
 export function PayrollPage() {
   const queryClient = useQueryClient()
   const token = useAppStore((state) => state.session?.token)
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [activeTab, setActiveTab] = useState<'bulletins' | 'avances' | 'agents'>('bulletins')
   const [showNewAgentModal, setShowNewAgentModal] = useState(false)
+  const [showEBModal, setShowEBModal] = useState(false)
   const [showNewAvanceModal, setShowNewAvanceModal] = useState(false)
   const [showGenerateBulletinModal, setShowGenerateBulletinModal] = useState(false)
   const [voucherBulletin, setVoucherBulletin] = useState<any | null>(null)
@@ -210,7 +217,15 @@ export function PayrollPage() {
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="secondary-action"
+            onClick={() => setShowEBModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour les salaires, primes ou charges sociales"
+          >
+            <Coins size={18} /> Demande de Fonds RH & Salaires
+          </button>
           <button className="secondary-action" onClick={() => setShowNewAvanceModal(true)}>
             <Wallet size={18} /> Demande d Avance
           </button>
@@ -648,6 +663,13 @@ export function PayrollPage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN RH & PAIE */}
+      <NewEtatBesoinModal
+        isOpen={showEBModal}
+        onClose={() => setShowEBModal(false)}
+        defaultService="Service Ressources Humaines & Paie"
+        agenceId={agenceId}
+      />
     </section>
   )
 }

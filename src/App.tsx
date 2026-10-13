@@ -57,7 +57,22 @@ import {
   Warning,
   Sidebar,
   CaretLeft,
+  Camera,
+  Sliders,
+  Power,
+  Key,
+  Crown,
+  Devices,
 } from '@phosphor-icons/react'
+import {
+  RealQrCode,
+  QrScannerModal,
+  parseQrPayload,
+  QrLabelPrintModal,
+  QrAccountingModal,
+  type QrCodePayload,
+} from './components/QrCodeComponents'
+import { NewEtatBesoinModal } from './components/NewEtatBesoinModal'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
@@ -166,6 +181,42 @@ function LoginPage() {
   const [code, setCode] = useState('')
   const [message, setMessage] = useState('')
 
+  // Gestion du mot de passe temporaire / premier login obligatoire
+  const [mustChangePassword, setMustChangePassword] = useState(false)
+  const [tempToken, setTempToken] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changeError, setChangeError] = useState('')
+
+  useEffect(() => {
+    let savedId = localStorage.getItem('matabishi_device_id')
+    if (!savedId) {
+      savedId = 'DEV-WEB-' + Math.random().toString(36).substring(2, 9).toUpperCase()
+      localStorage.setItem('matabishi_device_id', savedId)
+    }
+    setDeviceId(savedId)
+  }, [])
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async () => {
+      if (newPassword !== confirmPassword) {
+        throw new Error('Les deux mots de passe ne correspondent pas.')
+      }
+      if (newPassword.length < 4) {
+        throw new Error('Le mot de passe doit comporter au moins 4 caractères.')
+      }
+      return apiRequest<{ message: string; token: string }>('/api/auth/change-password', {
+        method: 'POST',
+        token: tempToken,
+        body: JSON.stringify({ newPassword }),
+      })
+    },
+    onSuccess: (data) => {
+      setSession(parseJwt(data.token))
+    },
+    onError: (err: any) => setChangeError(err.message || 'Erreur lors de la mise à jour du mot de passe'),
+  })
+
   const loginMutation = useMutation({
     mutationFn: async () => {
       if (twoFactor) {
@@ -177,14 +228,21 @@ function LoginPage() {
         })
       }
 
-      return apiRequest<{ token: string } | string>('/api/auth/login', {
+      const activeDevId = deviceId || localStorage.getItem('matabishi_device_id') || 'DEV-WEB-MAIN'
+      const activeDevName = deviceType === 'MOBILE' ? 'Terminal Mobile POS' : `Poste Web (${navigator.platform || 'PC'})`
+
+      return apiRequest<{ token: string; mustChangePassword?: boolean; user?: any } | string>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
-        deviceType,
-        deviceId,
+        body: JSON.stringify({
+          email,
+          password,
+          deviceId: activeDevId,
+          deviceName: activeDevName,
+          deviceType,
+        }),
       })
     },
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       if (typeof result === 'string') {
         if (result === '2FA_REQUIRED') {
           setTwoFactor(true)
@@ -198,6 +256,12 @@ function LoginPage() {
       }
 
       if (typeof result !== 'string') {
+        if (result.mustChangePassword) {
+          setTempToken(result.token)
+          setMustChangePassword(true)
+          setMessage('')
+          return
+        }
         setSession(parseJwt(result.token))
       }
     },
@@ -217,90 +281,173 @@ function LoginPage() {
           </div>
         </div>
 
-        <form
-          className="login-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            loginMutation.mutate()
-          }}
-        >
-          <label>
-            {t('email')}
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
-          </label>
-          {!twoFactor && (
-            <label>
-              {t('password')}
-              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
-            </label>
-          )}
-          {twoFactor && (
-            <label>
-              Code 2FA
-              <input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" required />
-            </label>
-          )}
+        {mustChangePassword ? (
+          /* FORMULAIRE DE CHANGEMENT OBLIGATOIRE DU MOT DE PASSE (PREMIER LOGIN / MDP TEMPORAIRE) */
+          <div style={{ background: 'var(--surface-2)', padding: 20, borderRadius: 12, border: '2px solid var(--accent-strong)' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+              <Key size={22} />
+              Premier Login : Définir votre Mot de Passe
+            </h3>
+            <p style={{ fontSize: '0.86rem', color: 'var(--muted)', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Votre compte utilise un mot de passe temporaire défini par l'administrateur. Pour des raisons de sécurité, vous devez choisir un mot de passe personnel avant d'accéder au système.
+            </p>
 
-          <div className="segmented">
-            <button type="button" className={clsx(deviceType === 'WEB' && 'active')} onClick={() => setDeviceType('WEB')}>
-              <Desktop size={18} /> Web
-            </button>
-            <button type="button" className={clsx(deviceType === 'MOBILE' && 'active')} onClick={() => setDeviceType('MOBILE')}>
-              <DeviceMobile size={18} /> Mobile
-            </button>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                changePasswordMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                Nouveau Mot de Passe :
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min. 4 caractères"
+                  style={{ width: '100%', padding: '10px 12px', marginTop: 4 }}
+                  autoFocus
+                />
+              </label>
+
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                Confirmer le Mot de Passe :
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Répétez le mot de passe"
+                  style={{ width: '100%', padding: '10px 12px', marginTop: 4 }}
+                />
+              </label>
+
+              {changeError && (
+                <div style={{ padding: '8px 12px', background: '#fee2e2', color: '#dc2626', borderRadius: 6, fontSize: '0.84rem' }}>
+                  {changeError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={changePasswordMutation.isPending}
+                style={{ padding: '12px 18px', fontWeight: 700, marginTop: 6 }}
+              >
+                <CheckCircle size={18} />
+                {changePasswordMutation.isPending ? 'Enregistrement...' : 'Valider & Accéder à l ERP'}
+              </button>
+            </form>
           </div>
-
-          {deviceType === 'MOBILE' && (
+        ) : (
+          <form
+            className="login-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              loginMutation.mutate()
+            }}
+          >
             <label>
-              Identifiant appareil
-              <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} placeholder="ex: MATABISHI-GOMA-001" />
+              {t('email')}
+              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
             </label>
-          )}
+            {!twoFactor && (
+              <label>
+                {t('password')}
+                <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
+              </label>
+            )}
+            {twoFactor && (
+              <label>
+                Code 2FA
+                <input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" required />
+              </label>
+            )}
 
-          {message && <p className="form-message">{message}</p>}
-
-          <button className="primary-action" type="submit" disabled={loginMutation.isPending}>
-            <LockKey size={18} />
-            {loginMutation.isPending ? 'Connexion...' : t('signIn')}
-          </button>
-
-          <div style={{ marginTop: 14 }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-              Profils de test & simulation des rôles :
-            </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {[
-                { email: 'dkitaheruka@gmail.com', label: 'Super Admin' },
-                { email: 'admin.siege@mvg.cd', label: 'Admin Siège' },
-                { email: 'chef.goma@mvg.cd', label: 'Chef Agence' },
-                { email: 'vendeur.goma@mvg.cd', label: 'Vendeur' },
-                { email: 'caissier.goma@mvg.cd', label: 'Caissière' },
-                { email: 'magasinier.goma@mvg.cd', label: 'Magasinier' },
-                { email: 'comptable.senior@mvg.cd', label: 'Comptable Senior' },
-              ].map((p) => (
-                <button
-                  key={p.email}
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '3px 8px', fontSize: '0.75rem' }}
-                  onClick={() => {
-                    setEmail(p.email)
-                    setPassword('admin123')
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
+            <div className="segmented">
+              <button type="button" className={clsx(deviceType === 'WEB' && 'active')} onClick={() => setDeviceType('WEB')}>
+                <Desktop size={18} /> Web
+              </button>
+              <button type="button" className={clsx(deviceType === 'MOBILE' && 'active')} onClick={() => setDeviceType('MOBILE')}>
+                <DeviceMobile size={18} /> Mobile
+              </button>
             </div>
-          </div>
-        </form>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: 'var(--muted)', margin: '4px 0' }}>
+              <span>Empreinte Appareil : <code>{deviceId ? deviceId.substring(0, 16) : 'Auto-détecté'}</code></span>
+              <span title="Sécurité mono-appareil active">Politique Mono-Appareil</span>
+            </div>
+
+            {deviceType === 'MOBILE' && (
+              <label>
+                Identifiant appareil
+                <input value={deviceId} onChange={(event) => setDeviceId(event.target.value)} placeholder="ex: MATABISHI-GOMA-001" />
+              </label>
+            )}
+
+            {message && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  fontSize: '0.85rem',
+                  lineHeight: 1.4,
+                  margin: '8px 0',
+                  background: message.includes('bloqué') || message.includes('BLOQUÉ') || message.includes('Sécurité') ? '#fee2e2' : '#fef3c7',
+                  color: message.includes('bloqué') || message.includes('BLOQUÉ') || message.includes('Sécurité') ? '#b91c1c' : '#92400e',
+                  border: message.includes('bloqué') || message.includes('BLOQUÉ') || message.includes('Sécurité') ? '1px solid #f87171' : '1px solid #fcd34d',
+                }}
+              >
+                <strong>{message.includes('bloqué') || message.includes('BLOQUÉ') ? '🔒 Accès Bloqué' : 'Attention :'}</strong> {message}
+              </div>
+            )}
+
+            <button className="primary-action" type="submit" disabled={loginMutation.isPending}>
+              <LockKey size={18} />
+              {loginMutation.isPending ? 'Connexion...' : t('signIn')}
+            </button>
+
+            <div style={{ marginTop: 14 }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                Profils de test & simulation des rôles :
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { email: 'dkitaheruka@gmail.com', label: 'Super Admin (VIP)' },
+                  { email: 'admin.siege@mvg.cd', label: 'Admin Siège (VIP)' },
+                  { email: 'chef.goma@mvg.cd', label: 'Chef Agence' },
+                  { email: 'vendeur.goma@mvg.cd', label: 'Vendeur' },
+                  { email: 'caissier.goma@mvg.cd', label: 'Caissière' },
+                  { email: 'magasinier.goma@mvg.cd', label: 'Magasinier' },
+                  { email: 'comptable.senior@mvg.cd', label: 'Comptable Senior' },
+                ].map((p) => (
+                  <button
+                    key={p.email}
+                    type="button"
+                    className="secondary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.75rem' }}
+                    onClick={() => {
+                      setEmail(p.email)
+                      setPassword('admin123')
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </form>
+        )}
       </section>
       <aside className="login-aside">
-        <h2>Conçu pour une exploitation multi-agences</h2>
-        <div className="login-feature"><ShieldCheck size={22} /> Rôles personnalisés et permissions fines</div>
-        <div className="login-feature"><DeviceMobile size={22} /> Appareils mobiles autorisés pour vendeurs</div>
-        <div className="login-feature"><WifiSlash size={22} /> Opérations terrain hors ligne avec synchronisation</div>
-        <div className="login-feature"><QrCode size={22} /> QR lots générés à la production et lus à la vente</div>
+        <h2>Sécurité & Gouvernance Entreprise</h2>
+        <div className="login-feature"><ShieldCheck size={22} /> Blocage automatique après 5 tentatives infructueuses</div>
+        <div className="login-feature"><Desktop size={22} /> Politique stricte mono-appareil (sauf comptes VIP)</div>
+        <div className="login-feature"><Key size={22} /> Mot de passe temporaire & changement obligatoire au 1er login</div>
+        <div className="login-feature"><Power size={22} /> Déconnexion forcée des utilisateurs par le Super Admin</div>
+        <div className="login-feature"><QrCode size={22} /> Étiquettes QR lots certifiées & passation comptable instantanée</div>
       </aside>
     </main>
   )
@@ -329,6 +476,9 @@ function AppShell() {
 
   const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
   const setSelectedAgenceId = useAppStore((state) => state.setSelectedAgenceId)
+  const [showGlobalEB, setShowGlobalEB] = useState(false)
+  const [globalEBService, setGlobalEBService] = useState('Service Général')
+
   const agencesQuery = useQuery({
     queryKey: ['agences'],
     queryFn: () => apiRequest<any[]>('/api/agences', { token: session?.token }),
@@ -336,7 +486,8 @@ function AppShell() {
   })
 
   return (
-    <div className={clsx('app-shell', sidebarCollapsed && 'sidebar-collapsed')}>
+    <>
+      <div className={clsx('app-shell', sidebarCollapsed && 'sidebar-collapsed')}>
       <aside className={clsx('sidebar', sidebarOpen && 'open', sidebarCollapsed && 'collapsed')}>
         <div className="sidebar-head" style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', paddingBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' }}>
@@ -498,6 +649,7 @@ function AppShell() {
                 <option value="comptable@mvg.cd">Claire (Comptable)</option>
               </select>
             </div>
+
             <span className={clsx('network-pill', online ? 'online' : 'offline')}>
               {online ? <WifiHigh size={17} /> : <WifiSlash size={17} />}
               {online ? 'En ligne' : 'Hors ligne'}
@@ -532,20 +684,68 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+    </div>
 
       {printProposal && (
-        <div className="modal-backdrop" style={{ zIndex: 9999 }}>
-          <div className="modal-card" style={{ maxWidth: 520, textAlign: 'center', padding: '28px 24px' }}>
-            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <CheckCircle size={36} />
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(15, 23, 42, 0.78)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 999999,
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-card"
+            style={{
+              maxWidth: 520,
+              width: '100%',
+              margin: 'auto',
+              textAlign: 'center',
+              padding: '32px 28px',
+              borderRadius: 16,
+              background: 'var(--surface)',
+              border: '2px solid var(--accent-strong)',
+              boxShadow: '0 25px 70px rgba(0, 0, 0, 0.4)',
+              animation: 'modalSlideIn 0.25s ease-out',
+            }}
+          >
+            <div
+              style={{
+                width: 62,
+                height: 62,
+                borderRadius: '50%',
+                background: 'var(--accent-soft)',
+                color: 'var(--accent-strong)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+              }}
+            >
+              <CheckCircle size={40} />
             </div>
-            <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem' }}>{printProposal.title}</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.35rem', fontWeight: 700, color: 'var(--text)' }}>
+              {printProposal.title}
+            </h3>
             {printProposal.ref && (
-              <div style={{ fontSize: '0.9rem', color: 'var(--muted)', marginBottom: 10 }}>
-                Référence officielle : <strong>{printProposal.ref}</strong>
+              <div style={{ fontSize: '0.92rem', color: 'var(--muted)', marginBottom: 12 }}>
+                Référence officielle : <strong style={{ color: 'var(--text)' }}>{printProposal.ref}</strong>
               </div>
             )}
-            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '0 0 20px', lineHeight: 1.45 }}>
+            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 24px', lineHeight: 1.5 }}>
               {printProposal.subtitle || "L'opération a été enregistrée avec succès. Souhaitez-vous imprimer le document officiel correspondant maintenant ?"}
             </p>
 
@@ -555,10 +755,10 @@ function AppShell() {
                 target="_blank"
                 rel="noreferrer"
                 className="primary-action"
-                style={{ padding: '10px 16px', fontSize: '0.92rem', justifyContent: 'center', textDecoration: 'none' }}
+                style={{ padding: '12px 20px', fontSize: '0.95rem', justifyContent: 'center', textDecoration: 'none' }}
                 onClick={() => setPrintProposal(null)}
               >
-                <Printer size={18} /> Imprimer {printProposal.primaryDocName}
+                <Printer size={20} /> Imprimer {printProposal.primaryDocName}
               </a>
 
               {printProposal.secondaryDocUrl && (
@@ -567,17 +767,17 @@ function AppShell() {
                   target="_blank"
                   rel="noreferrer"
                   className="secondary-action"
-                  style={{ padding: '10px 16px', fontSize: '0.92rem', justifyContent: 'center', textDecoration: 'none' }}
+                  style={{ padding: '12px 20px', fontSize: '0.95rem', justifyContent: 'center', textDecoration: 'none' }}
                   onClick={() => setPrintProposal(null)}
                 >
-                  <Printer size={18} /> Imprimer {printProposal.secondaryDocName}
+                  <Printer size={20} /> Imprimer {printProposal.secondaryDocName}
                 </a>
               )}
 
               <button
                 type="button"
                 className="secondary-action"
-                style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+                style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.85rem' }}
                 onClick={() => setPrintProposal(null)}
               >
                 Continuer sans imprimer (Fermer)
@@ -586,7 +786,14 @@ function AppShell() {
           </div>
         </div>
       )}
-    </div>
+      {/* MODAL UNIVERSEL D'ENGAGEMENT D'ÉTAT DE BESOIN (DEMANDE DE FONDS) */}
+      <NewEtatBesoinModal
+        isOpen={showGlobalEB}
+        onClose={() => setShowGlobalEB(false)}
+        defaultService={globalEBService}
+        agenceId={typeof selectedAgenceId === 'number' ? selectedAgenceId : (session?.agenceId ?? 1)}
+      />
+    </>
   )
 }
 
@@ -632,18 +839,18 @@ function DashboardPage() {
 
   return (
     <section className="page-grid">
-      {/* EN-TÊTE DU TABLEAU DE BORD - DESIGN ÉPURÉ & MODERNE */}
+      {/* EN-TÊTE DU TABLEAU DE BORD - DESIGN ÉPURÉ AVEC DÉGRADÉ VERT DOUX */}
       <div
         className="panel"
         style={{
-          padding: '20px 24px',
+          padding: '22px 26px',
           borderRadius: 12,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 16,
           flexWrap: 'wrap',
-          background: 'var(--surface)',
+          background: 'linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 100%)',
           border: '1px solid var(--border)',
         }}
       >
@@ -699,13 +906,13 @@ function DashboardPage() {
               gap: 6,
               padding: '6px 12px',
               borderRadius: 8,
-              background: 'rgba(16, 185, 129, 0.1)',
-              color: '#10b981',
+              background: 'var(--accent-soft)',
+              color: 'var(--accent-strong)',
               fontSize: '0.8rem',
               fontWeight: 600,
             }}
           >
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981' }} />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-strong)' }} />
             <span>Données en temps réel</span>
           </div>
         </div>
@@ -713,7 +920,7 @@ function DashboardPage() {
 
       {error && <Notice type="warning" text="Impossible de charger le résumé du service. Données locales temporaires." />}
 
-      {/* CARTES DE KPIS HARMONIEUSES (LIGHT & DARK MODES) */}
+      {/* CARTES DE KPIS AVEC ICÔNES DIRECTES SANS BACKGROUND */}
       <div className="metric-grid">
         {(data?.kpis || []).map((kpi: any) => {
           const Icon = getIcon(kpi.icon)
@@ -733,26 +940,14 @@ function DashboardPage() {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon size={22} style={{ color: '#10b981' }} weight="duotone" />
-                </div>
+                <Icon size={26} style={{ color: 'var(--accent-strong)' }} />
                 {kpi.detail && (
                   <span
                     style={{
                       fontSize: '0.74rem',
                       fontWeight: 600,
-                      color: '#10b981',
-                      background: 'rgba(16, 185, 129, 0.1)',
+                      color: 'var(--accent-strong)',
+                      background: 'var(--accent-soft)',
                       padding: '3px 8px',
                       borderRadius: 6,
                     }}
@@ -781,7 +976,7 @@ function DashboardPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
-                <ChartBar size={19} style={{ color: '#10b981' }} />
+                <ChartBar size={19} style={{ color: 'var(--accent-strong)' }} />
                 {data?.diagramme?.titre || 'Synthèse d Activité'}
               </h3>
               <small style={{ color: 'var(--muted)' }}>
@@ -794,8 +989,8 @@ function DashboardPage() {
               style={{
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                background: 'rgba(16, 185, 129, 0.1)',
-                color: '#10b981',
+                background: 'var(--accent-soft)',
+                color: 'var(--accent-strong)',
                 padding: '3px 8px',
                 borderRadius: 6,
               }}
@@ -822,7 +1017,7 @@ function DashboardPage() {
                       style={{
                         width: `${Math.max(pct, 3)}%`,
                         height: '100%',
-                        background: '#10b981',
+                        background: 'var(--accent-strong)',
                         borderRadius: 4,
                         transition: 'width 0.3s ease',
                       }}
@@ -870,7 +1065,7 @@ function DashboardPage() {
             {data?.activeService === 'TRESORERIE' && (
               <>
                 <NavLink to="/tresorerie" className="primary-action" style={{ textDecoration: 'none', fontSize: '0.8rem', padding: '7px 14px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Coins size={15} /> Nouvel État de Besoin
+                  <Wallet size={15} /> Gestion Trésorerie & Caisses
                 </NavLink>
               </>
             )}
@@ -893,15 +1088,15 @@ function DashboardPage() {
         <div className="panel" style={{ background: 'var(--surface)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
-              <ClockCounterClockwise size={19} style={{ color: '#10b981' }} />
+              <ClockCounterClockwise size={19} style={{ color: 'var(--accent-strong)' }} />
               Dernières Opérations
             </h3>
             <span
               style={{
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                background: 'rgba(16, 185, 129, 0.1)',
-                color: '#10b981',
+                background: 'var(--accent-soft)',
+                color: 'var(--accent-strong)',
                 padding: '3px 8px',
                 borderRadius: 6,
               }}
@@ -967,7 +1162,11 @@ function SalesPage() {
   const token = useToken()
   const online = useOnlineStatus()
   const queryClient = useQueryClient()
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const session = useAppStore((state) => state.session)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
@@ -992,6 +1191,72 @@ function SalesPage() {
   const [modeTransport, setModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE'>('ENLEVEMENT_MAGASIN')
   const [clientVehicule, setClientVehicule] = useState('')
   const [clientChauffeur, setClientChauffeur] = useState('')
+  const [showCameraModal, setShowCameraModal] = useState(false)
+  const [scanNotice, setScanNotice] = useState<string | null>(null)
+  const [scannedQrPayload, setScannedQrPayload] = useState<QrCodePayload | null>(null)
+  const [showAccountingQrModal, setShowAccountingQrModal] = useState(false)
+  const [showSalesEB, setShowSalesEB] = useState(false)
+  const [showTauxModal, setShowTauxModal] = useState(false)
+  const [nouveauTauxPropose, setNouveauTauxPropose] = useState('')
+
+  const passerEcritureQrMutation = useMutation({
+    mutationFn: (payload: QrCodePayload & { quantite?: number }) =>
+      apiRequest<{ message: string; pieceReference: string; agence: string }>('/api/comptabilite/passer-ecriture-qr', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          type: payload.type || 'LOT',
+          reference: payload.reference || payload.codeUnique || payload.numeroLot,
+          articleId: payload.articleId,
+          codeArticle: payload.codeUnique,
+          quantite: payload.quantite || 1,
+          agenceId: agenceId, // Toujours l'agence locale de l'opérateur qui scanne
+          montantTotal: Number(payload.montantTotal || payload.prix || 0),
+          montantCdf: payload.montantCdf || Math.round(Number(payload.montantTotal || payload.prix || 0) * (payload.taux || tauxActif)),
+          devise: payload.devise || 'USD',
+        }),
+      }),
+    onSuccess: (data) => {
+      setShowAccountingQrModal(false)
+      setScanNotice(`✓ ${data.message}`)
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      setTimeout(() => setScanNotice(null), 7000)
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Erreur lors de la passation de l écriture comptable via QR Code')
+    },
+  })
+
+  const proposerTauxMutation = useMutation({
+    mutationFn: (tauxVal: number) =>
+      apiRequest(`/api/parametrage/agences/${agenceId}/taux`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          taux: tauxVal,
+          appliquerImmediatement:
+            session?.role === 'CHEF_AGENCE' ||
+            session?.role === 'SUPER_ADMIN' ||
+            session?.role === 'ADMIN_SIEGE',
+        }),
+      }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['taux-actif', agenceId] })
+      queryClient.invalidateQueries({ queryKey: ['admin-taux'] })
+      setShowTauxModal(false)
+      setCheckoutMessage(
+        res.statut === 'VALIDE'
+          ? `Nouveau taux de ${res.taux} CDF pour 1 USD appliqué avec succès pour l'agence #${agenceId}.`
+          : `Proposition de taux ${res.taux} CDF transmise pour validation.`
+      )
+      setTimeout(() => setCheckoutMessage(null), 5000)
+    },
+    onError: (err: any) => {
+      setCheckoutMessage(err.message || 'Erreur lors de la mise à jour du taux')
+      setTimeout(() => setCheckoutMessage(null), 5000)
+    },
+  })
 
   // Formulaire Bon de Livraison
   const [showNewBLModal, setShowNewBLModal] = useState(false)
@@ -1403,23 +1668,55 @@ function SalesPage() {
     )
   }
 
-  function handleBarcodeSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!barcodeInput.trim()) return
+  function handleQrScan(rawText: string) {
+    if (!rawText.trim()) return
+    const payload = parseQrPayload(rawText)
 
-    const match = (stockQuery.data ?? []).find(
-      (s) =>
-        s.article?.codeUnique?.toLowerCase() === barcodeInput.trim().toLowerCase() ||
-        s.numeroLot?.toLowerCase() === barcodeInput.trim().toLowerCase() ||
-        s.article?.designation.toLowerCase().includes(barcodeInput.trim().toLowerCase()),
-    )
+    if (payload.type === 'VENTE') {
+      const agId = payload.agenceId || agenceId
+      setScannedQrPayload(payload)
+      setShowAccountingQrModal(true)
+      setScanNotice(`✓ QR Code Vente certifié ${payload.reference || ''} (${payload.nomAgence || `Agence #${agId}`}) scanné. Lecture réussie !`)
+      return
+    }
+
+    if (payload.agenceId && payload.agenceId !== agenceId) {
+      setScanNotice(`QR Code de l'Agence #${payload.agenceId} détecté. Vérification du stock local...`)
+    }
+
+    const match = (stockQuery.data ?? []).find((s) => {
+      if (payload.numeroLot && s.numeroLot && s.numeroLot.toLowerCase() === payload.numeroLot.toLowerCase()) return true
+      if (payload.articleId && s.articleId === payload.articleId) return true
+      if (payload.codeUnique && s.article?.codeUnique?.toLowerCase() === payload.codeUnique.toLowerCase()) return true
+      const q = (payload.codeUnique || rawText).toLowerCase().trim()
+      return (
+        s.article?.codeUnique?.toLowerCase() === q ||
+        s.numeroLot?.toLowerCase() === q ||
+        s.article?.designation.toLowerCase().includes(q)
+      )
+    })
 
     if (match) {
       addToCart(match)
-      setBarcodeInput('')
+      setScanNotice(`✓ Produit scanné et ajouté au panier : ${match.article?.designation} (${match.numeroLot || 'Lot standard'})`)
+      setTimeout(() => setScanNotice(null), 4500)
     } else {
-      alert(`Produit introuvable pour "${barcodeInput}"`)
+      // Si ce n'est pas un article du catalogue direct, offrir la possibilité de passer l'écriture comptable
+      if (payload.numeroLot || payload.reference || payload.codeUnique) {
+        setScannedQrPayload(payload)
+        setShowAccountingQrModal(true)
+      } else {
+        setScanNotice(`Aucun stock disponible pour ce QR Code dans l'agence #${agenceId}.`)
+        setTimeout(() => setScanNotice(null), 5000)
+      }
     }
+  }
+
+  function handleBarcodeSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!barcodeInput.trim()) return
+    handleQrScan(barcodeInput.trim())
+    setBarcodeInput('')
   }
 
   // Filtrage du catalogue
@@ -1440,14 +1737,24 @@ function SalesPage() {
 
   return (
     <section className="page-grid">
-      <div className="module-header">
-        <div className="module-icon">
-          <Receipt size={28} weight="duotone" />
+      <div className="module-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="module-icon">
+            <Receipt size={28} weight="duotone" />
+          </div>
+          <div>
+            <h1 style={{ margin: 0 }}>Vente & Caisse POS</h1>
+            <p style={{ margin: 0 }}>Terminal de point de vente, encaissement bidevise USD/CDF, gestion des crédits et tickets thermiques.</p>
+          </div>
         </div>
-        <div>
-          <h1>Vente & Caisse POS</h1>
-          <p>Terminal de point de vente, encaissement bidevise USD/CDF, gestion des crédits et tickets thermiques.</p>
-        </div>
+        <button
+          className="secondary-action"
+          onClick={() => setShowSalesEB(true)}
+          style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+          title="Faire une demande de fonds pour le service commercial (frais de prospection, promotion, transport)"
+        >
+          <Coins size={18} /> État de Besoin Commercial
+        </button>
       </div>
 
       {/* Barre d'onglets */}
@@ -1495,8 +1802,8 @@ function SalesPage() {
         <div className="pos-layout">
           {/* CATALOGUE PRODUITS */}
           <div className="pos-catalog">
-            <div className="pos-toolbar">
-              <form onSubmit={handleBarcodeSubmit} className="pos-search" style={{ maxWidth: '280px' }}>
+            <div className="pos-toolbar" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <form onSubmit={handleBarcodeSubmit} className="pos-search" style={{ maxWidth: '220px' }}>
                 <input
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
@@ -1504,18 +1811,59 @@ function SalesPage() {
                   autoFocus
                 />
               </form>
-              <div className="pos-search">
+
+              {/* BOUTON DÉMARRAGE CAMÉRA QR SCANNER */}
+              <button
+                type="button"
+                className="primary-action"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', fontSize: '0.84rem' }}
+                onClick={() => setShowCameraModal(true)}
+                title="Démarrer la caméra pour scanner le QR Code du lot ou produit"
+              >
+                <Camera size={18} />
+                Scanner Caméra
+              </button>
+
+              <div className="pos-search" style={{ flex: 1, minWidth: '170px' }}>
                 <input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher un article ou désignation..."
+                  placeholder="Rechercher un article..."
                 />
               </div>
-              <div className="pos-rate-badge">
+
+              {/* BADGE DU TAUX DE CHANGE AJUSTABLE PAR LE CHEF D'AGENCE */}
+              <div
+                className="pos-rate-badge"
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={() => {
+                  setNouveauTauxPropose(String(tauxActif))
+                  setShowTauxModal(true)
+                }}
+                title="Taux actif pour l'agence. Cliquez pour proposer ou ajuster le taux de change."
+              >
                 <CurrencyCircleDollar size={18} />
-                1 USD = {tauxActif.toLocaleString()} CDF
+                <span>1 USD = {tauxActif.toLocaleString()} CDF</span>
+                <span style={{ fontSize: '0.72rem', textDecoration: 'underline', opacity: 0.85 }}>Ajuster</span>
               </div>
             </div>
+
+            {scanNotice && (
+              <div
+                style={{
+                  margin: '8px 0 12px',
+                  padding: '8px 14px',
+                  background: 'var(--accent-soft)',
+                  color: 'var(--accent-strong)',
+                  borderRadius: 8,
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {scanNotice}
+              </div>
+            )}
 
             {stockQuery.isLoading && <p>Chargement du catalogue...</p>}
 
@@ -1730,15 +2078,26 @@ function SalesPage() {
             <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
               Journal certifié des ventes ({salesQuery.data?.length ?? 0} opérations enregistrées)
             </span>
-            <a
-              href={`/api/export/excel/ventes?agenceId=${agenceId}`}
-              className="secondary-action"
-              target="_blank"
-              rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', padding: '6px 14px', textDecoration: 'none' }}
-            >
-              <FileXls size={17} /> Exporter Journal des Ventes Excel (.xlsx)
-            </a>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={downloadUrl(`/api/export/print/ventes?agenceId=${agenceId}`)}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', padding: '6px 14px', textDecoration: 'none' }}
+              >
+                <Printer size={17} /> Imprimer Ventes (PDF)
+              </a>
+              <a
+                href={`/api/export/excel/ventes?agenceId=${agenceId}`}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', padding: '6px 14px', textDecoration: 'none' }}
+              >
+                <FileXls size={17} /> Exporter Journal des Ventes Excel (.xlsx)
+              </a>
+            </div>
           </div>
           <DataTable
             columns={['Réf Vente', 'Date', 'Client', 'Total', 'Devise', 'Règlement', 'Statut Crédit', 'Annulation / Contrôle', 'Actions']}
@@ -2427,6 +2786,35 @@ function SalesPage() {
                 {modeTransport === 'FLOTTE_ENTREPRISE' && `Camion société : ${flotteQuery.data?.find((v: any) => v.id === selectedVehiculeId)?.marqueModele || 'Flotte Entreprise'}`}
               </div>
 
+              <div className="ticket-line" />
+
+              {/* VRAI QR CODE CERTIFIÉ DE LA VENTE CONTENANT L'AGENCE ET LES MONTANTS */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '8px 0 6px', textAlign: 'center' }}>
+                <RealQrCode
+                  value={{
+                    type: 'VENTE',
+                    reference: activeReceipt.referenceVente || `VNT-${activeReceipt.id}`,
+                    agenceId: activeReceipt.agenceId || agenceId,
+                    nomAgence: activeReceipt.agence?.nom || `Agence #${activeReceipt.agenceId || agenceId}`,
+                    dateVente: activeReceipt.dateVente,
+                    montantTotal: activeReceipt.montantTotal,
+                    montantCdf: Math.round((activeReceipt.montantTotal ?? 0) * tauxActif),
+                    devise: activeReceipt.devise || 'USD',
+                    taux: tauxActif,
+                    lignes: (activeReceipt.details ?? []).map((d: any) => ({
+                      artId: d.articleId,
+                      qte: d.quantite,
+                      pu: d.prixUnitaireApplique,
+                    })),
+                  }}
+                  size={120}
+                  includeLabel={false}
+                />
+                <span style={{ fontSize: '9px', color: '#64748b', marginTop: 4, fontWeight: 600 }}>
+                  QR Code certifié • Agence #{activeReceipt.agenceId || agenceId} • Scan & Écritures
+                </span>
+              </div>
+
               <div className="ticket-footer">
                 <p style={{ margin: 0 }}>Les marchandises vendues ne sont ni reprises ni échangées.</p>
                 <p style={{ margin: '4px 0 0', fontWeight: 'bold' }}>MERCI POUR VOTRE VISITE !</p>
@@ -2551,6 +2939,121 @@ function SalesPage() {
           </div>
         </div>
       )}
+
+      {/* MODAL SCANNER CAMÉRA QR CODE */}
+      <QrScannerModal
+        isOpen={showCameraModal}
+        onClose={() => setShowCameraModal(false)}
+        onScan={handleQrScan}
+        title="Scanner Caméra - QR Code Produit, Lot ou Vente Agence"
+      />
+
+      {/* MODAL DE PASSATION DES ÉCRITURES COMPTABLES DIRECTEMENT DEPUIS LE QR CODE SCANNÉ */}
+      <QrAccountingModal
+        isOpen={showAccountingQrModal}
+        onClose={() => {
+          setShowAccountingQrModal(false)
+          setScannedQrPayload(null)
+        }}
+        payload={scannedQrPayload}
+        onPasserEcritures={(p) => passerEcritureQrMutation.mutate(p)}
+        isPending={passerEcritureQrMutation.isPending}
+      />
+
+      {/* MODAL PROPOSITION / AJUSTEMENT DU TAUX DE CHANGE PAR LE CHEF D'AGENCE */}
+      {showTauxModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowTauxModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            padding: 16,
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 460,
+              width: '100%',
+              margin: 'auto',
+              padding: 26,
+              borderRadius: 14,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.15rem', fontWeight: 700 }}>
+                <CurrencyCircleDollar size={24} style={{ color: 'var(--accent-strong)' }} />
+                Ajuster / Proposer le Taux de Change
+              </h3>
+              <button className="icon-button" onClick={() => setShowTauxModal(false)} aria-label="Fermer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.86rem', color: 'var(--muted)', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Le taux de change n'est pas codé en dur : le chef d'agence peut proposer ou actualiser le taux de change actif pour les opérations de vente et écritures de caisse.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const val = Number(nouveauTauxPropose)
+                if (!val || val <= 0) return
+                proposerTauxMutation.mutate(val)
+              }}
+              style={{ display: 'grid', gap: 14 }}
+            >
+              <div style={{ background: 'var(--surface-2)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted)', display: 'block' }}>Taux actuellement actif (Agence #{agenceId}) :</span>
+                <strong style={{ fontSize: '1.15rem', color: 'var(--text)' }}>1 USD = {tauxActif.toLocaleString()} CDF</strong>
+              </div>
+
+              <label style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                Nouveau Taux proposé (1 USD en CDF) :
+                <input
+                  type="number"
+                  step="10"
+                  required
+                  min="1000"
+                  max="10000"
+                  value={nouveauTauxPropose}
+                  onChange={(e) => setNouveauTauxPropose(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', fontSize: '1.05rem', marginTop: 6 }}
+                  placeholder="ex: 2850"
+                  autoFocus
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowTauxModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={proposerTauxMutation.isPending}>
+                  {proposerTauxMutation.isPending ? 'Enregistrement...' : 'Valider & Appliquer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN COMMERCIAL */}
+      <NewEtatBesoinModal
+        isOpen={showSalesEB}
+        onClose={() => setShowSalesEB(false)}
+        defaultService="Service Commercial & Ventes"
+        agenceId={agenceId}
+      />
     </section>
   )
 }
@@ -2558,10 +3061,15 @@ function SalesPage() {
 function StockPage() {
   const token = useToken()
   const queryClient = useQueryClient()
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const [activeTab, setActiveTab] = useState<'inventory' | 'corrections' | 'catalogue'>('inventory')
   const [showModal, setShowModal] = useState(false)
   const [showNewArticleModal, setShowNewArticleModal] = useState(false)
+  const [showStockEB, setShowStockEB] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedStockId, setSelectedStockId] = useState<number | ''>('')
   const [quantiteNouvelle, setQuantiteNouvelle] = useState('')
@@ -2679,6 +3187,14 @@ function StockPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader title="Gestion des stocks et lots" text="Suivi en temps réel des stocks, numéros de lots, DLUO et circuit de correction validé." icon={Package} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="secondary-action"
+            onClick={() => setShowStockEB(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour le matériel de stockage, sacs ou entretien dépôt"
+          >
+            <Coins size={18} /> État de Besoin Stock & Dépôt
+          </button>
           <a
             className="secondary-action"
             href={downloadUrl(`/api/stocks/export/inventaire?agenceId=${agenceId}`)}
@@ -2687,6 +3203,15 @@ function StockPage() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
           >
             <FilePdf size={18} /> État des Stocks PMP
+          </a>
+          <a
+            className="secondary-action"
+            href={downloadUrl(`/api/export/print/inventaire?agenceId=${agenceId}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+          >
+            <Printer size={18} /> Imprimer Inventaire (PDF)
           </a>
           <a
             className="secondary-action"
@@ -2931,6 +3456,13 @@ function StockPage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN STOCK & DÉPÔT */}
+      <NewEtatBesoinModal
+        isOpen={showStockEB}
+        onClose={() => setShowStockEB(false)}
+        defaultService="Service Stock & Magasin"
+        agenceId={agenceId}
+      />
     </section>
   )
 }
@@ -2956,6 +3488,7 @@ function ProductionPage() {
   const [quantitePrevue, setQuantitePrevue] = useState('50')
   const [generatedLotInfo, setGeneratedLotInfo] = useState<{ ordre: any; numeroLot: string } | null>(null)
   const [bonProductionOrdre, setBonProductionOrdre] = useState<any | null>(null)
+  const [showProdEB, setShowProdEB] = useState(false)
 
   const { data: agencesList } = useQuery({
     queryKey: ['agences'],
@@ -3055,7 +3588,15 @@ function ProductionPage() {
     <section className="page-grid">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <ModuleHeader title="Production et traçabilité des lots" text="Gestion des ordres de fabrication, composition matières et étiquetage sécurisé." icon={Barcode} />
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="secondary-action"
+            onClick={() => setShowProdEB(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour les intrants de fabrication, sacs ou maintenance minoterie"
+          >
+            <Coins size={17} /> État de Besoin Production
+          </button>
           <button className="secondary-action" onClick={() => setShowNewRecetteModal(true)}>
             <Plus size={17} /> Nouvelle Recette
           </button>
@@ -3277,26 +3818,112 @@ function ProductionPage() {
 
       {generatedLotInfo && (
         <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 440 }}>
-            <h3>Fiche traçabilité et étiquette lot</h3>
-            <div style={{ margin: '16px 0', padding: 16, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-2)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <QrCode size={36} />
-                <div>
-                  <strong>{generatedLotInfo.numeroLot}</strong>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Signature HMAC-SHA256 intégrée</div>
+          <div className="modal-card" style={{ maxWidth: 480, width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <QrCode size={24} style={{ color: 'var(--accent-strong)' }} />
+                Étiquette QR Code Certifiée (Sac / Carton / Bidon)
+              </h3>
+              <button className="icon-button" onClick={() => setGeneratedLotInfo(null)} aria-label="Fermer"><X size={18} /></button>
+            </div>
+
+            {/* STICKER ADHÉSIF MINOTERIE MVG */}
+            <div
+              id="printable-lot-sticker"
+              style={{
+                margin: '12px 0',
+                padding: '16px 18px',
+                border: '2px solid #0284c7',
+                borderRadius: 10,
+                background: '#ffffff',
+                color: '#0f172a',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.08)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ borderBottom: '2px solid #0284c7', paddingBottom: 6, marginBottom: 8 }}>
+                <div style={{ fontSize: '13px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0284c7' }}>
+                  MINOTERIE DU VIRUNGA (MVG SARL)
+                </div>
+                <div style={{ fontSize: '9px', color: '#64748b' }}>
+                  SYSTÈME DE TRAÇABILITÉ OFFICIEL • ATELIER DE PRODUCTION
                 </div>
               </div>
-              <div style={{ fontSize: '0.88rem', display: 'grid', gap: 6 }}>
-                <div><strong>Produit :</strong> {generatedLotInfo.ordre?.articleFini?.designation || 'Article fini'}</div>
-                <div><strong>Quantité :</strong> {generatedLotInfo.ordre?.quantiteReelle || generatedLotInfo.ordre?.quantitePrevue} unités</div>
-                <div><strong>Date fabrication :</strong> {new Date().toLocaleDateString()}</div>
-                <div><strong>Date expiration :</strong> 2027-06-30</div>
+
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>
+                {generatedLotInfo.ordre?.articleFini?.designation || 'Farine de Maïs Extra 25kg'}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', margin: '6px 0', padding: '4px 8px', background: '#f8fafc', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+                <span>Code : <strong>{generatedLotInfo.ordre?.articleFini?.codeArticle || generatedLotInfo.ordre?.articleFini?.codeUnique || 'FAR-25KG'}</strong></span>
+                <span>Lot FEFO : <strong>{generatedLotInfo.numeroLot}</strong></span>
+              </div>
+
+              {/* QR CODE OFFICIEL SANS PRIX AVEC LOGO MVG AU CENTRE */}
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
+                <RealQrCode
+                  value={JSON.stringify({
+                    type: 'LOT',
+                    articleId: generatedLotInfo.ordre?.articleFiniId || generatedLotInfo.ordre?.articleFini?.id,
+                    codeArticle: generatedLotInfo.ordre?.articleFini?.codeArticle || generatedLotInfo.ordre?.articleFini?.codeUnique || 'ART-LOT',
+                    numeroLot: generatedLotInfo.numeroLot,
+                    designation: generatedLotInfo.ordre?.articleFini?.designation || 'Farine de Maïs Extra',
+                    conditionnement: 'Sac de 25 kg / Bidon / Carton',
+                    dateFabrication: (generatedLotInfo.ordre?.dateCloture || new Date().toISOString()).slice(0, 10),
+                    dateExpiration: '2027-06-30',
+                    codeUnique: generatedLotInfo.numeroLot,
+                  })}
+                  size={150}
+                  logoText="MVG"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '10px', textAlign: 'left', background: '#f1f5f9', padding: '6px 8px', borderRadius: 4 }}>
+                <div>Quantité : <strong>{generatedLotInfo.ordre?.quantiteReelle || generatedLotInfo.ordre?.quantitePrevue || 50} unités</strong></div>
+                <div>Emballage : <strong>Sac / Bidon / Carton</strong></div>
+                <div>Date Prod : <strong>{(generatedLotInfo.ordre?.dateCloture || new Date().toISOString()).slice(0, 10)}</strong></div>
+                <div>Expiration : <strong>2027-06-30</strong></div>
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: '8.5px', color: '#64748b', fontStyle: 'italic', background: '#f8fafc', padding: 4, borderRadius: 4 }}>
+                ✓ QR sans prix fixe : le prix de vente sera détecté dynamiquement selon le tarif agence fixé par le Chef d'Agence lors du scan au POS ou en écriture comptable.
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button className="primary-action" onClick={() => setGeneratedLotInfo(null)}>Fermer</button>
-            </div>
+
+            {(() => {
+              const qteProduite = Number(generatedLotInfo.ordre?.quantiteReelle) || Number(generatedLotInfo.ordre?.quantitePrevue) || 50
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+                  {generatedLotInfo.ordre?.id ? (
+                    <a
+                      href={`/api/production/ordres/${generatedLotInfo.ordre.id}/etiquettes?count=${qteProduite}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="primary-action"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontSize: '0.84rem', background: '#0284c7' }}
+                      title={`Imprimer les ${qteProduite} étiquettes QR pour chaque carton/sac produit`}
+                    >
+                      <Printer size={16} /> Imprimer les {qteProduite} Étiquettes (1 par sac/bidon)
+                    </a>
+                  ) : <span />}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="secondary-action" onClick={() => setGeneratedLotInfo(null)}>
+                      Fermer
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => window.print()}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      title="Imprimer un sticker adhésif unique"
+                    >
+                      <Printer size={17} /> Sticker Unique (1/1)
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
@@ -3339,6 +3966,13 @@ function ProductionPage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN PRODUCTION */}
+      <NewEtatBesoinModal
+        isOpen={showProdEB}
+        onClose={() => setShowProdEB(false)}
+        defaultService="Service Production & Minoterie"
+        agenceId={typeof prodAgenceId === 'number' ? prodAgenceId : 1}
+      />
     </section>
   )
 }
@@ -3346,7 +3980,11 @@ function ProductionPage() {
 function TreasuryPage() {
   const token = useToken()
   const queryClient = useQueryClient()
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const can = useAppStore((state) => state.can)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
@@ -3741,6 +4379,16 @@ function TreasuryPage() {
           </button>
           <a
             className="secondary-action"
+            href={downloadUrl(`/api/export/print/etats-besoin?agenceId=${agenceId}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            title="Imprimer les états de besoin au format PDF"
+          >
+            <Printer size={17} /> Imprimer États de Besoin (PDF)
+          </a>
+          <a
+            className="secondary-action"
             href={`/api/export/excel/etats-besoin?agenceId=${agenceId}`}
             target="_blank"
             rel="noreferrer"
@@ -3748,6 +4396,16 @@ function TreasuryPage() {
             title="Exporter tous les états de besoin au format Excel"
           >
             <FileXls size={17} color="#16a34a" /> Excel États de Besoin
+          </a>
+          <a
+            className="secondary-action"
+            href={downloadUrl(`/api/export/print/tresorerie?agenceId=${agenceId}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            title="Imprimer les mouvements de trésorerie au format PDF"
+          >
+            <Printer size={17} /> Imprimer Trésorerie (PDF)
           </a>
           <a
             className="secondary-action"
@@ -4875,7 +5533,7 @@ function AccountingPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
 
-  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations'>('journal')
+  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations' | 'schemas'>('journal')
   const [mois, setMois] = useState(new Date().getMonth() + 1)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [planSearch, setPlanSearch] = useState('')
@@ -4884,6 +5542,57 @@ function AccountingPage() {
   const [nouveauLibelle, setNouveauLibelle] = useState('')
   const [compteParent, setCompteParent] = useState('')
   const [clotureNotice, setClotureNotice] = useState<string | null>(null)
+
+  // Paramétrage des comptes automatiques
+  const schemasQuery = useQuery({
+    queryKey: ['parametrage-schemas'],
+    queryFn: () => apiRequest<any>('/api/comptabilite/parametrage-schemas', { token }),
+    enabled: Boolean(token),
+  })
+  const [schemasConfig, setSchemasConfig] = useState<any>({
+    compteVenteMarchandises: '701',
+    compteTvaCollectee: '443',
+    compteClientOrdinaire: '411',
+    compteCaisseUsd: '571',
+    compteCaisseCdf: '572',
+    compteBanque: '521',
+    compteVirementsInternes: '585',
+    compteFournisseurs: '401',
+    compteAchatsMatieres: '601',
+    compteChargesExploitation: '605',
+    compteProduitsAccessoires: '706',
+    compteStocksProduitsFinis: '31',
+    compteVariationStocks: '713',
+    compteLiaisonInterAgences: '181',
+    comptePersonnelRemuneration: '421',
+    compteChargesPersonnel: '661',
+    compteChargesSocialesPatronales: '664',
+  })
+  const [schemasNotice, setSchemasNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (schemasQuery.data) {
+      setSchemasConfig(schemasQuery.data)
+    }
+  }, [schemasQuery.data])
+
+  const saveSchemasMutation = useMutation({
+    mutationFn: (updated: any) =>
+      apiRequest('/api/comptabilite/parametrage-schemas', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify(updated),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['parametrage-schemas'] })
+      setSchemasNotice(data.message || 'Paramétrage des schémas d écritures enregistré avec succès !')
+      setTimeout(() => setSchemasNotice(null), 5000)
+    },
+    onError: (err: any) => {
+      setSchemasNotice(err.message || 'Erreur lors de l enregistrement du paramétrage')
+      setTimeout(() => setSchemasNotice(null), 5000)
+    },
+  })
 
   // Immobilisations
   const [showNewImmoModal, setShowNewImmoModal] = useState(false)
@@ -5192,6 +5901,12 @@ function AccountingPage() {
         >
           <ShieldCheck size={17} /> Clôture Annuelle OHADA
         </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'schemas' && 'active')}
+          onClick={() => setActiveTab('schemas')}
+        >
+          <Sliders size={17} /> Schémas & Comptes Automatiques
+        </button>
       </div>
 
       {/* TAB 1 : JOURNAL DES ECRITURES */}
@@ -5214,6 +5929,15 @@ function AccountingPage() {
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <a
+                href={downloadUrl(`/api/export/print/grand-livre?agenceId=${agenceId}&annee=${annee}`)}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <Printer size={16} /> Imprimer Grand Livre (PDF)
+              </a>
               <a
                 href={`/api/export/excel/grand-livre?agenceId=${agenceId}&annee=${annee}`}
                 className="secondary-action"
@@ -5284,6 +6008,15 @@ function AccountingPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <a
+                href={downloadUrl(`/api/export/print/balance?agenceId=${agenceId}&annee=${annee}&mois=${mois}`)}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <Printer size={16} /> Imprimer Balance (PDF)
+              </a>
               <a
                 href={`/api/export/excel/balance?agenceId=${agenceId}&annee=${annee}&mois=${mois}`}
                 className="secondary-action"
@@ -5369,15 +6102,26 @@ function AccountingPage() {
               </label>
             </div>
 
-            <a
-              href={`/api/export/excel/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
-              className="secondary-action"
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-            >
-              <FileXls size={16} /> Exporter Compte de Résultat (.xlsx)
-            </a>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={downloadUrl(`/api/export/print/compte-resultat?agenceId=${agenceId}&annee=${annee}`)}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <Printer size={16} /> Imprimer Compte Résultat (PDF)
+              </a>
+              <a
+                href={`/api/export/excel/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <FileXls size={16} /> Exporter Compte de Résultat (.xlsx)
+              </a>
+            </div>
           </div>
 
           <div className="metric-grid" style={{ marginBottom: 20 }}>
@@ -5626,15 +6370,26 @@ function AccountingPage() {
             <span style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>
               Registre légal des immobilisations corporelles et tableau d'amortissements SYSCOHADA
             </span>
-            <a
-              href={`/api/export/excel/immobilisations?agenceId=${agenceId}&annee=${annee}`}
-              className="secondary-action"
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 12px' }}
-            >
-              <FileXls size={16} /> Exporter Tableau d'Amortissements (.xlsx)
-            </a>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={downloadUrl(`/api/export/print/immobilisations?agenceId=${agenceId}&annee=${annee}`)}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 12px' }}
+              >
+                <Printer size={16} /> Imprimer Amortissements (PDF)
+              </a>
+              <a
+                href={`/api/export/excel/immobilisations?agenceId=${agenceId}&annee=${annee}`}
+                className="secondary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 12px' }}
+              >
+                <FileXls size={16} /> Exporter Tableau d'Amortissements (.xlsx)
+              </a>
+            </div>
           </div>
           <DataTable
             columns={['Code', 'Désignation Actif', 'Compte', 'Mise en service', 'Durée / Mode', 'Valeur Acquisition', 'Amort. Cumulé', 'VNC Résiduelle', 'Emplacement']}
@@ -5659,6 +6414,357 @@ function AccountingPage() {
             ])}
             emptyText="Aucune immobilisation enregistrée."
           />
+        </div>
+      )}
+
+      {/* TAB 7 : PARAMÉTRAGE SCHÉMAS & COMPTES AUTOMATIQUES */}
+      {activeTab === 'schemas' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {schemasNotice && (
+            <div
+              className="notice"
+              style={{
+                background: 'var(--accent-soft)',
+                color: 'var(--accent-strong)',
+                border: '1px solid var(--accent-strong)',
+                padding: '12px 16px',
+                borderRadius: 8,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontWeight: 600,
+              }}
+            >
+              <span>{schemasNotice}</span>
+              <button className="icon-button" onClick={() => setSchemasNotice(null)}><X size={16} /></button>
+            </div>
+          )}
+
+          <div
+            className="panel"
+            style={{
+              padding: '18px 22px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 100%)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sliders size={22} style={{ color: 'var(--accent-strong)' }} />
+                  Paramétrage Spécifique des Comptes Comptables Automatiques (SYSCOHADA)
+                </h3>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.86rem', maxWidth: 840 }}>
+                  Définissez les comptes généraux mouvementés lors des écritures automatiques par les terminaux POS, la gestion des stocks, la meunerie et la trésorerie. Les modifications s'appliquent instantanément lors des prochaines transactions.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    setSchemasConfig({
+                      compteVenteMarchandises: '701',
+                      compteTvaCollectee: '443',
+                      compteClientOrdinaire: '411',
+                      compteCaisseUsd: '571',
+                      compteCaisseCdf: '572',
+                      compteBanque: '521',
+                      compteVirementsInternes: '585',
+                      compteFournisseurs: '401',
+                      compteAchatsMatieres: '601',
+                      compteChargesExploitation: '605',
+                      compteProduitsAccessoires: '706',
+                      compteStocksProduitsFinis: '31',
+                      compteVariationStocks: '713',
+                      compteLiaisonInterAgences: '181',
+                      comptePersonnelRemuneration: '421',
+                      compteChargesPersonnel: '661',
+                      compteChargesSocialesPatronales: '664',
+                    })
+                  }}
+                  title="Réinitialiser avec les comptes standards OHADA"
+                >
+                  <ArrowsClockwise size={16} /> Rétablir Standard OHADA
+                </button>
+                <button
+                  type="button"
+                  className="primary-action"
+                  disabled={saveSchemasMutation.isPending}
+                  onClick={() => saveSchemasMutation.mutate(schemasConfig)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <FloppyDisk size={18} />
+                  {saveSchemasMutation.isPending ? 'Enregistrement...' : 'Enregistrer le Paramétrage'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+            {/* 1. VENTES & RECOUVREMENTS */}
+            <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+                <ShoppingCart size={20} /> Ventes & Encaissements POS
+              </h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Produits des Ventes (Crédit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Compte crédité lors des ventes au comptant et à crédit (ex: 701 - Ventes de farine)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteVenteMarchandises || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteVenteMarchandises: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="701"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Créances Clients (Débit vente à crédit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Compte débité lorsque le client achète à terme/crédit (ex: 411 - Clients ordinaires)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteClientOrdinaire || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteClientOrdinaire: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="411"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Caisse Recettes USD (Débit cash USD)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Compte débité lors des encaissements en dollars (ex: 571 - Caisse Principale USD)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteCaisseUsd || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteCaisseUsd: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="571"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Caisse Recettes CDF (Débit cash CDF)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Compte débité lors des encaissements en francs congolais (ex: 572 - Caisse CDF)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteCaisseCdf || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteCaisseCdf: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="572"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte TVA Collectée / Taxes (Crédit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Taxes et droits sur chiffre d'affaires (ex: 443 - État, TVA facturée)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteTvaCollectee || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteTvaCollectee: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="443"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 2. ACHATS & FOURNISSEURS */}
+            <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+                <Package size={20} /> Achats, Matières & Fournisseurs
+              </h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Achats Matières Premières (Débit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Achats de grains de maïs, sacs et intrants (ex: 601 - Achats de matières premières)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteAchatsMatieres || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteAchatsMatieres: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="601"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Dettes Fournisseurs (Crédit achat à terme)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Dettes envers producteurs et coopératives (ex: 401 - Fournisseurs d'exploitation)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteFournisseurs || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteFournisseurs: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="401"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Autres Charges d'Exploitation (Débit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Fournitures non stockées, carburant et petits matériels (ex: 605 - Autres achats)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteChargesExploitation || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteChargesExploitation: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="605"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Produits Accessoires / Sons (Crédit)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Recettes sur ventes de sous-produits meunerie (ex: 706 - Produits accessoires)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteProduitsAccessoires || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteProduitsAccessoires: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="706"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 3. STOCKS & MEUNERIE */}
+            <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+                <Gear size={20} /> Stocks & Production Meunerie
+              </h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Stocks Produits Finis (Débit inventaire)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Actif circulant stocks de farine usine et dépôts (ex: 31 - Stocks de produits finis)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteStocksProduitsFinis || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteStocksProduitsFinis: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="31"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Variation des Stocks / Production Stockée</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Contrepartie de la production usine enregistrée (ex: 713 - Variation de stocks)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteVariationStocks || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteVariationStocks: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="713"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 4. TRÉSORERIE & COMPTES DE LIAISON */}
+            <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+                <Bank size={20} /> Trésorerie & Virements Inter-Agences
+              </h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Banques Commerciales</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Comptes bancaires Rawbank, EquityBCDC, TMB (ex: 521 - Banques)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteBanque || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteBanque: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="521"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Virements Internes de Fonds</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Compte pivot pour transferts de fonds caisse vers banque (ex: 585 - Virements de fonds)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteVirementsInternes || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteVirementsInternes: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="585"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte de Liaison Inter-Agences</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Transferts inter-agences et règlements croisés (ex: 181 - Compte de liaison)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteLiaisonInterAgences || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteLiaisonInterAgences: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="181"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 5. PAIE & CHARGES DE PERSONNEL */}
+            <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
+              <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+                <UsersThree size={20} /> Paie & Charges Salariales
+              </h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Rémunérations Directes (Débit charges)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Salaires bruts et primes de production (ex: 661 - Rémunérations directes)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteChargesPersonnel || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteChargesPersonnel: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="661"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Charges Sociales Patronales (Débit CNSS/INPP)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Cotisations patronales légales (ex: 664 - Charges sociales patronales)
+                  </span>
+                  <input
+                    value={schemasConfig?.compteChargesSocialesPatronales || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, compteChargesSocialesPatronales: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="664"
+                  />
+                </label>
+                <label style={{ fontSize: '0.84rem' }}>
+                  <strong>Compte Dettes sur Rémunérations (Crédit salaires nets dus)</strong>
+                  <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
+                    Salaires nets à verser aux employés (ex: 421 - Personnel, rémunérations dues)
+                  </span>
+                  <input
+                    value={schemasConfig?.comptePersonnelRemuneration || ''}
+                    onChange={(e) => setSchemasConfig({ ...schemasConfig, comptePersonnelRemuneration: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '0.9rem' }}
+                    placeholder="421"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, padding: '16px 0' }}>
+            <button
+              type="button"
+              className="primary-action"
+              disabled={saveSchemasMutation.isPending}
+              onClick={() => saveSchemasMutation.mutate(schemasConfig)}
+              style={{ padding: '12px 24px', fontSize: '0.95rem' }}
+            >
+              <FloppyDisk size={18} />
+              {saveSchemasMutation.isPending ? 'Enregistrement en cours...' : 'Enregistrer et Activer le Paramétrage'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -6086,6 +7192,15 @@ function ReportingPage() {
           </a>
           <a
             className="secondary-action"
+            href={downloadUrl(`/api/export/print/transactions-consolidees${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <Printer size={17} /> {isSuperOrAdminSiege ? "Imprimer Multi-Agences (PDF)" : "Imprimer Opérations (PDF)"}
+          </a>
+          <a
+            className="secondary-action"
             href={`/api/export/excel/transactions-consolidees${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`}
             target="_blank"
             rel="noreferrer"
@@ -6095,12 +7210,30 @@ function ReportingPage() {
           </a>
           <a
             className="secondary-action"
+            href={downloadUrl(`/api/export/print/balance${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <Printer size={17} /> Imprimer Balance (PDF)
+          </a>
+          <a
+            className="secondary-action"
             href={`/api/export/excel/balance${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`}
             target="_blank"
             rel="noreferrer"
             style={{ textDecoration: 'none' }}
           >
             <FileXls size={17} /> Balance (.xlsx)
+          </a>
+          <a
+            className="secondary-action"
+            href={downloadUrl(`/api/export/print/compte-resultat${effectiveReportingAgenceId ? `?agenceId=${effectiveReportingAgenceId}` : ''}`)}
+            target="_blank"
+            rel="noreferrer"
+            style={{ textDecoration: 'none' }}
+          >
+            <Printer size={17} /> Imprimer Compte Résultat (PDF)
           </a>
           <a
             className="secondary-action"
@@ -6586,9 +7719,22 @@ function AdminPage() {
   const token = useToken()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<
-    'agences' | 'roles' | 'utilisateurs' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit' | 'sauvegardes'
+    'agences' | 'roles' | 'utilisateurs' | 'appareils' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit' | 'sauvegardes'
   >('agences')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+
+  // Gestion Appareils & Déblocage
+  const [showDebloquerModal, setShowDebloquerModal] = useState(false)
+  const [debloquerTargetUser, setDebloquerTargetUser] = useState<any | null>(null)
+  const [tempPasswordInput, setTempPasswordInput] = useState('')
+  const [libererAppareilCheck, setLibererAppareilCheck] = useState(true)
+
+  const [showNewAppareilModal, setShowNewAppareilModal] = useState(false)
+  const [newAppareilNom, setNewAppareilNom] = useState('')
+  const [newAppareilId, setNewAppareilId] = useState('')
+  const [newAppareilType, setNewAppareilType] = useState('PC_BUREAU')
+  const [newAppareilAgenceId, setNewAppareilAgenceId] = useState(1)
+  const [newAppareilUserId, setNewAppareilUserId] = useState<number | ''>('')
 
   // Agences form states
   const [showNewAgenceModal, setShowNewAgenceModal] = useState(false)
@@ -6899,6 +8045,111 @@ function AdminPage() {
     onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la modification de l utilisateur'),
   })
 
+  const appareilsQuery = useQuery({
+    queryKey: ['admin-appareils'],
+    queryFn: () => apiRequest<any[]>('/api/admin/appareils', { token }),
+    enabled: Boolean(token),
+  })
+
+  const deconnecterUserMutation = useMutation({
+    mutationFn: (userId: number) =>
+      apiRequest(`/api/admin/users/${userId}/deconnecter`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-appareils'] })
+      setActionNotice(data.message || 'Utilisateur déconnecté de force avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la déconnexion forcée'),
+  })
+
+  const debloquerUserMutation = useMutation({
+    mutationFn: ({ userId, tempPassword, libererAppareil }: { userId: number; tempPassword?: string; libererAppareil?: boolean }) =>
+      apiRequest(`/api/admin/users/${userId}/debloquer-reinitialiser`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          motDePasseTemporaire: tempPassword,
+          libererAppareil,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-appareils'] })
+      setShowDebloquerModal(false)
+      setDebloquerTargetUser(null)
+      setTempPasswordInput('')
+      setActionNotice(data.message || 'Compte débloqué et mot de passe temporaire défini avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors du déblocage du compte'),
+  })
+
+  const toggleVipMutation = useMutation({
+    mutationFn: (userId: number) =>
+      apiRequest(`/api/admin/users/${userId}/toggle-vip`, {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      setActionNotice(data.message || 'Statut VIP modifié avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la modification du statut VIP'),
+  })
+
+  const createAppareilMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/admin/appareils', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          nom: newAppareilNom,
+          deviceId: newAppareilId,
+          type: newAppareilType,
+          agenceId: Number(newAppareilAgenceId),
+          userId: newAppareilUserId ? Number(newAppareilUserId) : undefined,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-appareils'] })
+      setShowNewAppareilModal(false)
+      setNewAppareilNom('')
+      setNewAppareilId('')
+      setNewAppareilUserId('')
+      setActionNotice(data.message || 'Appareil enregistré avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de l enregistrement de l appareil'),
+  })
+
+  const toggleAppareilStatutMutation = useMutation({
+    mutationFn: ({ id, statut }: { id: number; statut: string }) =>
+      apiRequest(`/api/admin/appareils/${id}/statut`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({ statut }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-appareils'] })
+      setActionNotice(data.message || 'Statut de l appareil mis à jour.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la mise à jour'),
+  })
+
+  const deleteAppareilMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest(`/api/admin/appareils/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-appareils'] })
+      setActionNotice(data.message || 'Appareil supprimé du parc.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la suppression'),
+  })
+
   const toggleUserStatutMutation = useMutation({
     mutationFn: (userId: number) =>
       apiRequest(`/api/admin/users/${userId}/toggle-statut`, {
@@ -7000,6 +8251,9 @@ function AdminPage() {
         </button>
         <button className={clsx('tab-button', activeTab === 'utilisateurs' && 'active')} onClick={() => setActiveTab('utilisateurs')}>
           <UsersThree size={17} /> Utilisateurs Agences ({usersQuery.data?.length ?? 0})
+        </button>
+        <button className={clsx('tab-button', activeTab === 'appareils' && 'active')} onClick={() => setActiveTab('appareils')}>
+          <Devices size={17} /> Appareils Enregistrés ({appareilsQuery.data?.length ?? 0})
         </button>
         <button className={clsx('tab-button', activeTab === 'entreprise' && 'active')} onClick={() => setActiveTab('entreprise')}>
           <Buildings size={17} /> Mentions Légales & Société
@@ -7264,23 +8518,105 @@ function AdminPage() {
             </button>
           </div>
           <DataTable
-            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle système', 'Agence rattachée', 'Statut', 'Actions']}
+            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', 'Actions']}
             loading={usersQuery.isLoading}
             rows={(usersQuery.data ?? []).map((u: any) => [
-              <strong>{u.nom}</strong>,
-              u.email,
-              <code>{u.role}</code>,
+              <div key={u.id + '-nom'}>
+                <strong>{u.nom}</strong>
+                {u.sessionActiveId && (
+                  <span style={{ marginLeft: 6, fontSize: '0.68rem', background: '#dcfce7', color: '#16a34a', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
+                    En Ligne
+                  </span>
+                )}
+              </div>,
+              <div key={u.id + '-email'}>
+                <div>{u.email}</div>
+                {u.doitChangerMotDePasse && (
+                  <span style={{ fontSize: '0.72rem', color: '#b45309', fontWeight: 600 }}>
+                    MDP temp. à changer au 1er login
+                  </span>
+                )}
+              </div>,
+              <div key={u.id + '-role'} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <code>{u.role}</code>
+                {u.estVip ? (
+                  <span className="badge" style={{ background: '#fef3c7', color: '#b45309', borderColor: '#fcd34d', fontSize: '0.7rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <Crown size={12} weight="fill" /> VIP Multi-Appareils
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>1 Appareil unique</span>
+                )}
+              </div>,
               u.agence?.nom ?? `Agence #${u.agenceId}`,
-              <span
-                key={u.id + '-stat'}
-                className={clsx('badge', u.actif !== false ? 'badge-success' : 'badge-danger')}
-              >
-                {u.actif !== false ? 'Actif' : 'Inactif / Bloqué'}
-              </span>,
-              <div key={u.id + '-actions'} style={{ display: 'flex', gap: 6 }}>
+              <div key={u.id + '-device-stat'}>
+                <div style={{ marginBottom: 4 }}>
+                  {u.estBloque ? (
+                    <span className="badge badge-danger" title={u.motifBlocage}>
+                      Bloqué ({u.motifBlocage === 'TENTATIVES_EXCESSIVES' ? '> 5 tentatives' : u.motifBlocage === 'CONNEXION_MULTI_APPAREILS' ? 'Multi-Appareil' : 'Sécurité'})
+                    </span>
+                  ) : u.actif !== false ? (
+                    <span className="badge badge-success">Actif</span>
+                  ) : (
+                    <span className="badge badge-danger">Inactif / Suspendu</span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Devices size={13} />
+                  <span>{u.appareilActifNom || u.appareilActifId || 'Aucun appareil lié'}</span>
+                </div>
+              </div>,
+              <div key={u.id + '-actions'} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {/* BOUTON DÉCONNEXION DE L'UTILISATEUR PAR L'ADMINISTRATEUR */}
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => deconnecterUserMutation.mutate(u.id)}
+                  title="Déconnecter immédiatement cet utilisateur et révoquer sa session active"
+                  disabled={deconnecterUserMutation.isPending}
+                >
+                  <SignOut size={14} /> Déconnecter
+                </button>
+
+                {/* BOUTON DÉBLOQUER & RÉINITIALISER MOT DE PASSE (AVEC MDP TEMPORAIRE) */}
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '0.78rem',
+                    color: u.estBloque ? '#dc2626' : undefined,
+                    borderColor: u.estBloque ? '#fca5a5' : undefined,
+                    fontWeight: u.estBloque ? 700 : 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  onClick={() => {
+                    setDebloquerTargetUser(u)
+                    setTempPasswordInput('TempPass' + Math.floor(1000 + Math.random() * 9000))
+                    setLibererAppareilCheck(true)
+                    setShowDebloquerModal(true)
+                  }}
+                  title="Débloquer le compte et lui fournir un mot de passe temporaire à changer au 1er login"
+                >
+                  <Key size={14} /> {u.estBloque ? 'Débloquer + MDP Temp' : 'Définir MDP Temp'}
+                </button>
+
+                {/* BOUTON VIP (MULTI-APPAREILS) */}
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => toggleVipMutation.mutate(u.id)}
+                  title={u.estVip ? 'Rétrograder en mono-appareil strict' : 'Déclarer VIP pour autoriser plusieurs appareils'}
+                >
+                  <Crown size={14} weight={u.estVip ? 'fill' : 'regular'} /> {u.estVip ? 'Retirer VIP' : 'Rendre VIP'}
+                </button>
+
                 <button
                   className="secondary-action"
-                  style={{ padding: '4px 10px', fontSize: '0.82rem' }}
+                  style={{ padding: '4px 8px', fontSize: '0.78rem' }}
                   onClick={() => {
                     setEditingUserId(u.id)
                     setEditUserName(u.nom)
@@ -7292,13 +8628,14 @@ function AdminPage() {
                   }}
                   title="Modifier les informations de cet utilisateur"
                 >
-                  <PencilSimple size={15} /> Modifier
+                  <PencilSimple size={14} /> Modifier
                 </button>
+
                 <button
                   className={u.actif !== false ? 'secondary-action' : 'primary-action'}
                   style={{
                     padding: '4px 8px',
-                    fontSize: '0.8rem',
+                    fontSize: '0.78rem',
                     color: u.actif !== false ? '#dc2626' : undefined,
                     borderColor: u.actif !== false ? '#fca5a5' : undefined,
                   }}
@@ -7310,6 +8647,80 @@ function AdminPage() {
               </div>,
             ])}
             emptyText="Aucun utilisateur enregistré."
+          />
+        </div>
+      )}
+
+      {/* ONGLET GESTION DU PARC D'APPAREILS ENREGISTRÉS */}
+      {activeTab === 'appareils' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Devices size={22} style={{ color: 'var(--accent-strong)' }} />
+                Registre & Sécurité du Parc d'Appareils
+              </h3>
+              <p style={{ color: 'var(--muted)', margin: '4px 0 0', fontSize: '0.88rem' }}>
+                Politique de sécurité mono-appareil : chaque utilisateur non-VIP est verrouillé sur un seul terminal. Les appareils peuvent être enregistrés, autorisés ou bloqués.
+              </p>
+            </div>
+            <button className="primary-action" onClick={() => setShowNewAppareilModal(true)}>
+              <Plus size={18} /> Enregistrer un Appareil
+            </button>
+          </div>
+
+          <DataTable
+            columns={['Nom de l Appareil', 'Identifiant Matériel (Device ID)', 'Type / Catégorie', 'Agence Affectée', 'Utilisateur Assigné', 'Statut', 'Dernière Connexion', 'Actions']}
+            loading={appareilsQuery.isLoading}
+            rows={(appareilsQuery.data ?? []).map((ap: any) => [
+              <strong>{ap.nom}</strong>,
+              <code style={{ fontSize: '0.78rem' }}>{ap.deviceId}</code>,
+              <span className="badge">{ap.type}</span>,
+              ap.agence?.nom ?? `Agence #${ap.agenceId}`,
+              ap.userNom || (ap.user?.nom ?? 'Non assigné'),
+              <span
+                key={ap.id + '-stat'}
+                className={clsx('badge', ap.statut === 'AUTORISE' ? 'badge-success' : 'badge-danger')}
+              >
+                {ap.statut}
+              </span>,
+              ap.derniereConnexion ? new Date(ap.derniereConnexion).toLocaleString('fr-FR') : 'Jamais',
+              <div key={ap.id + '-act'} style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className={ap.statut === 'AUTORISE' ? 'secondary-action' : 'primary-action'}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '0.78rem',
+                    color: ap.statut === 'AUTORISE' ? '#dc2626' : undefined,
+                    borderColor: ap.statut === 'AUTORISE' ? '#fca5a5' : undefined,
+                  }}
+                  onClick={() =>
+                    toggleAppareilStatutMutation.mutate({
+                      id: ap.id,
+                      statut: ap.statut === 'AUTORISE' ? 'BLOQUE' : 'AUTORISE',
+                    })
+                  }
+                  title={ap.statut === 'AUTORISE' ? 'Bloquer cet appareil' : 'Autoriser cet appareil'}
+                >
+                  {ap.statut === 'AUTORISE' ? 'Bloquer' : 'Autoriser'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '4px 8px', fontSize: '0.78rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                  onClick={() => {
+                    if (confirm(`Confirmez-vous la suppression de l'appareil "${ap.nom}" ?`)) {
+                      deleteAppareilMutation.mutate(ap.id)
+                    }
+                  }}
+                  title="Supprimer cet appareil"
+                >
+                  <Trash size={14} /> Supprimer
+                </button>
+              </div>,
+            ])}
+            emptyText="Aucun appareil enregistré dans le parc informatique."
           />
         </div>
       )}
@@ -8380,6 +9791,170 @@ function AdminPage() {
                 <button type="button" className="secondary-action" onClick={() => setShowNewVehiculeModal(false)}>Annuler</button>
                 <button type="submit" className="primary-action" disabled={createVehiculeMutation.isPending}>
                   {createVehiculeMutation.isPending ? 'Ajout...' : 'Ajouter le camion'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL DÉBLOCAGE UTILISATEUR & GÉNÉRATION MOT DE PASSE TEMPORAIRE */}
+      {showDebloquerModal && debloquerTargetUser && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 480 }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
+              <Key size={22} />
+              Débloquer le Compte & Définir un Mot de Passe Temporaire
+            </h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.86rem', margin: '4px 0 16px', lineHeight: 1.5 }}>
+              Déblocage du compte de <strong>{debloquerTargetUser.nom}</strong> ({debloquerTargetUser.email}). Un mot de passe temporaire sera défini et l'utilisateur devra obligatoirement le modifier lors de sa prochaine connexion (premier login).
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                debloquerUserMutation.mutate({
+                  userId: debloquerTargetUser.id,
+                  tempPassword: tempPasswordInput,
+                  libererAppareil: libererAppareilCheck,
+                })
+              }}
+            >
+              <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                Mot de passe temporaire attribué :
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <input
+                    type="text"
+                    value={tempPasswordInput}
+                    onChange={(e) => setTempPasswordInput(e.target.value)}
+                    required
+                    style={{ flex: 1, fontFamily: 'monospace', fontWeight: 700 }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => setTempPasswordInput('TempPass' + Math.floor(1000 + Math.random() * 9000))}
+                    title="Générer un autre mot de passe"
+                  >
+                    Générer
+                  </button>
+                </div>
+              </label>
+
+              <div style={{ marginTop: 14, padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0, fontSize: '0.84rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={libererAppareilCheck}
+                    onChange={(e) => setLibererAppareilCheck(e.target.checked)}
+                    style={{ width: 17, height: 17 }}
+                  />
+                  <span>Délier l'appareil actif précédent (permet la reconnexion sur un nouveau poste)</span>
+                </label>
+              </div>
+
+              <div style={{ marginTop: 12, padding: 10, background: 'var(--accent-soft)', borderRadius: 8, fontSize: '0.8rem', color: 'var(--accent-strong)' }}>
+                ℹ️ Règle de sécurité : Le compteur des 5 tentatives erronées sera remis à zéro et le compte déverrouillé immédiatement.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowDebloquerModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={debloquerUserMutation.isPending}>
+                  {debloquerUserMutation.isPending ? 'Déblocage...' : 'Valider & Débloquer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ENREGISTRER UN NOUVEL APPAREIL */}
+      {showNewAppareilModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 500 }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Devices size={22} style={{ color: 'var(--accent-strong)' }} />
+              Enregistrer un Nouvel Appareil
+            </h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.86rem', margin: '4px 0 16px' }}>
+              Enregistrement d'un terminal dans le parc informatique de l'entreprise avec autorisation préalable d'accès.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createAppareilMutation.mutate()
+              }}
+            >
+              <label>
+                Nom usuel de l'appareil
+                <input
+                  value={newAppareilNom}
+                  onChange={(e) => setNewAppareilNom(e.target.value)}
+                  placeholder="ex: Caisse Principale POS Goma #1"
+                  required
+                />
+              </label>
+
+              <label style={{ marginTop: 12 }}>
+                Identifiant matériel unique (Device ID / UUID)
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <input
+                    value={newAppareilId}
+                    onChange={(e) => setNewAppareilId(e.target.value)}
+                    placeholder="ex: DEV-POS-GOMA-01 ou UUID"
+                    required
+                    style={{ flex: 1, fontFamily: 'monospace' }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    onClick={() => setNewAppareilId('DEV-' + Math.random().toString(36).substring(2, 10).toUpperCase())}
+                  >
+                    Générer ID
+                  </button>
+                </div>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Type d'appareil
+                  <select value={newAppareilType} onChange={(e) => setNewAppareilType(e.target.value)}>
+                    <option value="PC_BUREAU">PC / Poste Bureau</option>
+                    <option value="PORTABLE">PC Portable</option>
+                    <option value="TERMINAL_POS">Terminal Caisse POS</option>
+                    <option value="TABLETTE">Tablette Magasin</option>
+                    <option value="MOBILE">Smartphone / Mobile</option>
+                  </select>
+                </label>
+
+                <label>
+                  Agence d'affectation
+                  <select value={newAppareilAgenceId} onChange={(e) => setNewAppareilAgenceId(Number(e.target.value))}>
+                    {(agencesQuery.data ?? []).map((ag: any) => (
+                      <option key={ag.id} value={ag.id}>{ag.nom} ({ag.ville})</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label style={{ marginTop: 12 }}>
+                Assigner à un utilisateur spécifique (Optionnel)
+                <select value={newAppareilUserId} onChange={(e) => setNewAppareilUserId(e.target.value ? Number(e.target.value) : '')}>
+                  <option value="">-- Aucun utilisateur assigné (Terminal libre) --</option>
+                  {(usersQuery.data ?? []).map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.nom} ({u.email} - {u.role})</option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewAppareilModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={createAppareilMutation.isPending}>
+                  {createAppareilMutation.isPending ? 'Enregistrement...' : 'Enregistrer l Appareil'}
                 </button>
               </div>
             </form>

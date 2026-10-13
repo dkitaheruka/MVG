@@ -10,19 +10,26 @@ import {
   Receipt,
   Printer,
   CheckCircle,
+  Coins,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
+import { NewEtatBesoinModal } from '../components/NewEtatBesoinModal'
 
 export function PurchasesPage() {
   const queryClient = useQueryClient()
   const token = useAppStore((state) => state.session?.token)
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const agenceId = useAppStore((state) =>
+    typeof state.selectedAgenceId === 'number'
+      ? state.selectedAgenceId
+      : (state.session?.agenceId ?? 1)
+  )
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
   const [activeTab, setActiveTab] = useState<'commandes' | 'pont_bascule' | 'achats' | 'fournisseurs'>('commandes')
   const [showNewAchatModal, setShowNewAchatModal] = useState(false)
+  const [showEBModal, setShowEBModal] = useState(false)
   const [showNewFournisseurModal, setShowNewFournisseurModal] = useState(false)
   const [showNewCommandeModal, setShowNewCommandeModal] = useState(false)
   const [showNewReceptionModal, setShowNewReceptionModal] = useState(false)
@@ -271,6 +278,14 @@ export function PurchasesPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="secondary-action"
+            onClick={() => setShowEBModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Faire une demande de fonds pour les achats de matières premières ou emballages"
+          >
+            <Coins size={18} /> Demande de Fonds Achats
+          </button>
           <button className="secondary-action" onClick={() => setShowNewFournisseurModal(true)}>
             <UserPlus size={18} /> Nouveau Fournisseur
           </button>
@@ -1018,6 +1033,13 @@ export function PurchasesPage() {
           </div>
         </div>
       )}
+      {/* DEMANDE DE FONDS / ÉTAT DE BESOIN ACHATS */}
+      <NewEtatBesoinModal
+        isOpen={showEBModal}
+        onClose={() => setShowEBModal(false)}
+        defaultService="Service Achats & Approvisionnement"
+        agenceId={agenceId}
+      />
     </section>
   )
 }
