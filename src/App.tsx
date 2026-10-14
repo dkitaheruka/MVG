@@ -13,6 +13,7 @@ import {
   Desktop,
   DeviceMobile,
   FilePdf,
+  FileText,
   Gauge,
   List,
   LockKey,
@@ -1195,36 +1196,40 @@ function SalesPage() {
   const [scanNotice, setScanNotice] = useState<string | null>(null)
   const [scannedQrPayload, setScannedQrPayload] = useState<QrCodePayload | null>(null)
   const [showAccountingQrModal, setShowAccountingQrModal] = useState(false)
+  const [lastCompletedSale, setLastCompletedSale] = useState<any | null>(null)
   const [showSalesEB, setShowSalesEB] = useState(false)
   const [showTauxModal, setShowTauxModal] = useState(false)
   const [nouveauTauxPropose, setNouveauTauxPropose] = useState('')
 
   const passerEcritureQrMutation = useMutation({
-    mutationFn: (payload: QrCodePayload & { quantite?: number }) =>
-      apiRequest<{ message: string; pieceReference: string; agence: string }>('/api/comptabilite/passer-ecriture-qr', {
+    mutationFn: (payload: any) =>
+      apiRequest<any>('/api/comptabilite/passer-ecriture-qr', {
         method: 'POST',
         token,
         body: JSON.stringify({
-          type: payload.type || 'LOT',
-          reference: payload.reference || payload.codeUnique || payload.numeroLot,
-          articleId: payload.articleId,
-          codeArticle: payload.codeUnique,
-          quantite: payload.quantite || 1,
+          ...payload,
           agenceId: agenceId, // Toujours l'agence locale de l'opérateur qui scanne
-          montantTotal: Number(payload.montantTotal || payload.prix || 0),
-          montantCdf: payload.montantCdf || Math.round(Number(payload.montantTotal || payload.prix || 0) * (payload.taux || tauxActif)),
-          devise: payload.devise || 'USD',
         }),
       }),
-    onSuccess: (data) => {
-      setShowAccountingQrModal(false)
+    onSuccess: (data: any) => {
+      setLastCompletedSale(data)
+      setShowAccountingQrModal(true)
       setScanNotice(`✓ ${data.message}`)
+      queryClient.invalidateQueries({ queryKey: ['ventes-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['ventes-credits-attente'] })
+      queryClient.invalidateQueries({ queryKey: ['livraisons'] })
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
       queryClient.invalidateQueries({ queryKey: ['ecritures'] })
       queryClient.invalidateQueries({ queryKey: ['caisses'] })
-      setTimeout(() => setScanNotice(null), 7000)
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-service'] })
+      queryClient.invalidateQueries({ queryKey: ['service-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['direction-kpis'] })
+      setTimeout(() => setScanNotice(null), 8000)
     },
     onError: (err: any) => {
-      alert(err.message || 'Erreur lors de la passation de l écriture comptable via QR Code')
+      alert(err.message || 'Erreur lors de l encaissement de la vente via QR Code')
     },
   })
 
@@ -1332,6 +1337,13 @@ function SalesPage() {
   const livraisonsQuery = useQuery({
     queryKey: ['livraisons', agenceId],
     queryFn: () => apiRequest<BonLivraison[]>(`/api/logistique/livraisons?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  // 7. Caisses de l'agence
+  const caissesQuery = useQuery({
+    queryKey: ['caisses', agenceId],
+    queryFn: () => apiRequest<CompteCaisse[]>(`/api/tresorerie/caisses?agenceId=${agenceId}`, { token }),
     enabled: Boolean(token),
   })
 
@@ -2948,16 +2960,29 @@ function SalesPage() {
         title="Scanner Caméra - QR Code Produit, Lot ou Vente Agence"
       />
 
-      {/* MODAL DE PASSATION DES ÉCRITURES COMPTABLES DIRECTEMENT DEPUIS LE QR CODE SCANNÉ */}
+      {/* MODAL DE PASSATION DES ÉCRITURES ET ENCAISSEMENT POS DEPUIS LE QR CODE SCANNÉ */}
       <QrAccountingModal
         isOpen={showAccountingQrModal}
         onClose={() => {
           setShowAccountingQrModal(false)
           setScannedQrPayload(null)
+          setLastCompletedSale(null)
         }}
         payload={scannedQrPayload}
         onPasserEcritures={(p) => passerEcritureQrMutation.mutate(p)}
         isPending={passerEcritureQrMutation.isPending}
+        userAgenceNom="Votre Agence Locale"
+        prixFixeChefAgence={
+          scannedQrPayload?.prix ||
+          prixAgenceQuery.data?.find((p: any) => p.articleId === scannedQrPayload?.articleId && p.actif)?.prix ||
+          25
+        }
+        clients={clientsQuery.data ?? []}
+        vehicules={flotteQuery.data ?? []}
+        caisses={caissesQuery.data ?? []}
+        tauxDuJour={tauxActif}
+        lastCompletedSale={lastCompletedSale}
+        onResetCompletedSale={() => setLastCompletedSale(null)}
       />
 
       {/* MODAL PROPOSITION / AJUSTEMENT DU TAUX DE CHANGE PAR LE CHEF D'AGENCE */}
@@ -5533,10 +5558,16 @@ function AccountingPage() {
   const queryClient = useQueryClient()
   const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
 
-  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations' | 'schemas'>('journal')
+  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations' | 'schemas' | 'bilan'>('journal')
   const [mois, setMois] = useState(new Date().getMonth() + 1)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [planSearch, setPlanSearch] = useState('')
+
+  const bilanQuery = useQuery({
+    queryKey: ['bilan', agenceId, annee],
+    queryFn: () => apiRequest<any>(`/api/comptabilite/bilan?agenceId=${agenceId}&annee=${annee}`, { token }),
+    enabled: Boolean(token),
+  })
   const [showNewCompteModal, setShowNewCompteModal] = useState(false)
   const [nouveauNumero, setNouveauNumero] = useState('')
   const [nouveauLibelle, setNouveauLibelle] = useState('')
@@ -5840,6 +5871,15 @@ function AccountingPage() {
           >
             <Printer size={17} /> Tableau Amortissements
           </a>
+          <a
+            className="secondary-action"
+            href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
+            target="_blank"
+            rel="noreferrer"
+            title="Imprimer le Bilan Officiel SYSCOHADA (Actif & Passif équilibré)"
+          >
+            <Printer size={17} /> Bilan SYSCOHADA
+          </a>
           {activeTab === 'immobilisations' && (
             <button className="primary-action" onClick={() => setShowNewImmoModal(true)}>
               <Plus size={17} /> Nouvelle Immobilisation
@@ -5853,6 +5893,16 @@ function AccountingPage() {
           {activeTab === 'balance' && (
             <a className="primary-action" href={balancePdfUrl} target="_blank" rel="noreferrer">
               <FilePdf size={17} /> Télécharger Balance PDF
+            </a>
+          )}
+          {activeTab === 'bilan' && (
+            <a
+              className="primary-action"
+              href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FilePdf size={17} /> Télécharger Bilan Officiel (PDF)
             </a>
           )}
           {activeTab === 'plan' && (
@@ -5876,6 +5926,12 @@ function AccountingPage() {
           onClick={() => setActiveTab('balance')}
         >
           <Calculator size={17} /> Balance Générale OHADA
+        </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'bilan' && 'active')}
+          onClick={() => setActiveTab('bilan')}
+        >
+          <FileText size={17} /> Bilan SYSCOHADA ({annee})
         </button>
         <button
           className={clsx('tab-btn', activeTab === 'performance' && 'active')}
@@ -6073,6 +6129,179 @@ function AccountingPage() {
             ].filter((r) => r.length > 0)}
             emptyText="Aucune transaction validée sur cette période."
           />
+        </div>
+      )}
+
+      {/* TAB : BILAN COMPTABLE NORMALISÉ SYSCOHADA (ACTIF & PASSIF) */}
+      {activeTab === 'bilan' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
+                Exercice comptable :
+                <select value={annee} onChange={(e) => setAnnee(Number(e.target.value))}>
+                  <option value={2026}>Exercice 2026</option>
+                  <option value={2025}>Exercice 2025</option>
+                  <option value={2027}>Exercice 2027</option>
+                </select>
+              </label>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontSize: '0.82rem', fontWeight: 700 }}>
+                <CheckCircle size={16} weight="fill" /> Bilan Équilibré (Actif Net = Passif)
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <a
+                href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
+                className="primary-action"
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                <Printer size={16} /> Imprimer Bilan Officiel (PDF)
+              </a>
+            </div>
+          </div>
+
+          {bilanQuery.isLoading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>Chargement du Bilan SYSCOHADA...</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(460px, 1fr))', gap: 18 }}>
+              {/* ACTIF */}
+              <div className="card" style={{ padding: 18, background: 'var(--surface)', borderRadius: 12, border: '1.5px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 8, borderBottom: '2px solid #0284c7' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#0284c7', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Package size={20} /> ACTIF (EMPLOIS)
+                  </h4>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--muted)' }}>VALEURS EN USD</span>
+                </div>
+
+                {/* Section I : Actif Immobilisé */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    I. ACTIF IMMOBILISÉ (CLASSE 2)
+                  </div>
+                  {(bilanQuery.data?.actifImmobilise?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'ai-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Actif Immobilisé Net</span>
+                    <span>${Number(bilanQuery.data?.actifImmobilise?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Section II : Actif Circulant */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    II. ACTIF CIRCULANT (CLASSES 3 & 4)
+                  </div>
+                  {(bilanQuery.data?.actifCirculant?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'ac-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Actif Circulant Net</span>
+                    <span>${Number(bilanQuery.data?.actifCirculant?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Section III : Trésorerie Actif */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    III. TRÉSORERIE - ACTIF (CLASSE 5)
+                  </div>
+                  {(bilanQuery.data?.tresorerieActif?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'ta-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Trésorerie Actif</span>
+                    <span>${Number(bilanQuery.data?.tresorerieActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Grand Total Actif */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0284c7', color: '#fff', padding: '10px 14px', borderRadius: 8, fontWeight: 900, fontSize: '1.05rem', marginTop: 10 }}>
+                  <span>TOTAL GÉNÉRAL ACTIF (NET)</span>
+                  <span>${Number(bilanQuery.data?.totalActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
+                </div>
+              </div>
+
+              {/* PASSIF */}
+              <div className="card" style={{ padding: 18, background: 'var(--surface)', borderRadius: 12, border: '1.5px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 8, borderBottom: '2px solid #0f172a' }}>
+                  <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ShieldCheck size={20} /> PASSIF (RESSOURCES)
+                  </h4>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--muted)' }}>VALEURS EN USD</span>
+                </div>
+
+                {/* Section I : Capitaux Propres */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    I. CAPITAUX PROPRES & RESSOURCES STABLES (CLASSE 1)
+                  </div>
+                  {(bilanQuery.data?.capitauxPropres?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'cp-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Capitaux Propres</span>
+                    <span>${Number(bilanQuery.data?.capitauxPropres?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Section II : Dettes Financières */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    II. DETTES FINANCIÈRES À TERME (CLASSE 16)
+                  </div>
+                  {(bilanQuery.data?.dettesFinancieres?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'df-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Dettes Financières</span>
+                    <span>${Number(bilanQuery.data?.dettesFinancieres?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Section III : Passif Circulant */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, marginBottom: 6 }}>
+                    III. PASSIF CIRCULANT (CLASSE 4)
+                  </div>
+                  {(bilanQuery.data?.passifCirculant?.lignes || []).map((l: any, idx: number) => (
+                    <div key={'pc-' + idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', padding: '4px 10px', borderBottom: '1px solid var(--border)' }}>
+                      <span><strong>{l.ref}</strong> - {l.libelle}</span>
+                      <strong style={{ color: 'var(--text)' }}>${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 800, padding: '6px 10px', background: 'var(--surface-2)', marginTop: 4, borderRadius: 4 }}>
+                    <span>Sous-total Passif Circulant</span>
+                    <span>${Number(bilanQuery.data?.passifCirculant?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Grand Total Passif */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', color: '#fff', padding: '10px 14px', borderRadius: 8, fontWeight: 900, fontSize: '1.05rem', marginTop: 10 }}>
+                  <span>TOTAL GÉNÉRAL PASSIF</span>
+                  <span>${Number(bilanQuery.data?.totalPassif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -7186,6 +7415,15 @@ function ReportingPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a className="secondary-action" href={downloadUrl(balancePath)} target="_blank" rel="noreferrer">
             <FilePdf size={17} /> Balance Générale (PDF)
+          </a>
+          <a
+            className="secondary-action"
+            href={downloadUrl(`/api/comptabilite/export/bilan?annee=${year}${effectiveReportingAgenceId ? `&agenceId=${effectiveReportingAgenceId}` : ''}`)}
+            target="_blank"
+            rel="noreferrer"
+            title="Télécharger le Bilan Officiel SYSCOHADA (Actif & Passif)"
+          >
+            <FileText size={17} /> Bilan SYSCOHADA (PDF)
           </a>
           <a className="secondary-action" href={downloadUrl(stockExportPath)} target="_blank" rel="noreferrer">
             <Package size={17} /> Inventaire PMP (PDF)

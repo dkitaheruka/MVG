@@ -128,6 +128,9 @@ export type Client = {
   telephone?: string
   adresse?: string
   soldeDette?: number
+  limiteCredit?: number
+  bloque?: boolean
+  compteComptable?: string
 }
 
 export type VenteDetail = {

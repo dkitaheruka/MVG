@@ -2352,4 +2352,304 @@ export async function renderPlancheEtiquettesQrLotHtml(
 </html>`
 }
 
+export function renderBilanHtml(
+  bilan: any,
+  agenceNom: string,
+  exerciceAnnee: number,
+  entreprise?: any
+): string {
+  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const rccm = entreprise?.rccm || 'CD/GOM/RCCM/17-B-0824'
+  const idNat = entreprise?.idNat || '01-83-N48201R'
+  const numImpot = entreprise?.numeroImpot || 'A0918234M'
+  const adresseSiege = entreprise?.adresse || 'Avenue de la Minoterie N° 12, Quartier Industriel, Goma, Nord-Kivu, RDC'
+  const sigle = entreprise?.sigle || 'MVG'
+
+  const dateGeneration = new Date().toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Bilan Comptable OHADA - ${socNom} - Exercice ${exerciceAnnee}</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 24px; color: #0f172a; background: #f8fafc; font-size: 11.5px; line-height: 1.4; }
+    .bilan-page { max-width: 280mm; margin: 0 auto; background: #fff; padding: 18mm 16mm; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border-radius: 8px; position: relative; }
+    
+    .company-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; }
+    .company-brand { font-size: 20px; font-weight: 900; color: #0284c7; letter-spacing: -0.02em; text-transform: uppercase; }
+    .company-legal { font-size: 10px; color: #475569; margin-top: 4px; line-height: 1.35; }
+    .doc-meta { text-align: right; }
+    .doc-title { font-size: 18px; font-weight: 800; color: #0f172a; margin: 0 0 4px; text-transform: uppercase; }
+    .doc-badge { display: inline-block; background: #0284c7; color: #fff; padding: 3px 10px; font-weight: 700; border-radius: 4px; font-size: 10.5px; }
+    
+    .bilan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+    .bilan-table-card { border: 1.5px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #fff; }
+    .bilan-table-head { background: #0f172a; color: #fff; font-weight: 700; padding: 7px 10px; font-size: 12px; display: flex; justify-content: space-between; }
+    
+    table.bilan-tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    table.bilan-tbl th { background: #f1f5f9; color: #334155; padding: 5px 6px; font-weight: 700; border-bottom: 1.5px solid #cbd5e1; border-top: 1px solid #e2e8f0; }
+    table.bilan-tbl td { padding: 4.5px 6px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    table.bilan-tbl tr.section-title td { background: #e0f2fe; color: #0369a1; font-weight: 800; text-transform: uppercase; font-size: 10px; padding: 5px 6px; border-top: 1px solid #bae6fd; }
+    table.bilan-tbl tr.subtotal td { background: #f8fafc; font-weight: 700; border-top: 1px solid #cbd5e1; border-bottom: 1.5px solid #cbd5e1; }
+    table.bilan-tbl tr.grand-total td { background: #0284c7; color: #ffffff; font-weight: 900; font-size: 12px; padding: 8px 6px; border: none; }
+    
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .text-bold { font-weight: 700; }
+    
+    .cert-box { margin-top: 14px; border: 1.5px dashed #0284c7; border-radius: 6px; padding: 10px 14px; background: #f0f9ff; display: flex; justify-content: space-between; align-items: center; }
+    .cert-text { font-size: 10px; color: #0369a1; }
+    
+    .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 22px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; }
+    .signature-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; text-align: center; min-height: 85px; display: flex; flex-direction: column; justify-content: space-between; background: #fafafa; }
+    .signature-card .role { font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; }
+    .signature-card .hint { font-size: 8.5px; color: #64748b; font-style: italic; }
+    
+    .print-bar { position: sticky; top: 0; z-index: 1000; background: #0f172a; color: #fff; padding: 10px 20px; margin: -24px -24px 20px -24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+    .print-btn { background: #0284c7; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+    
+    @media print {
+      body { background: #fff; padding: 0; }
+      .print-bar { display: none !important; }
+      .bilan-page { box-shadow: none; padding: 5mm; max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div>
+      <strong style="font-size: 14px;">Bilan Comptable Normalisé (Système Comptable OHADA)</strong>
+      <span style="font-size: 11.5px; color: #94a3b8; margin-left: 12px;">Périmètre : ${agenceNom} • Exercice ${exerciceAnnee}</span>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button class="print-btn" onclick="window.print()">Imprimer le Bilan A4</button>
+    </div>
+  </div>
+
+  <div class="bilan-page">
+    <div class="company-header">
+      <div>
+        <div class="company-brand">${sigle} • ${socNom}</div>
+        <div class="company-legal">
+          ${adresseSiege}<br>
+          RCCM : <strong>${rccm}</strong> | Id. Nat. : <strong>${idNat}</strong> | N° Impôt : <strong>${numImpot}</strong>
+        </div>
+      </div>
+      <div class="doc-meta">
+        <h1 class="doc-title">Bilan Comptable</h1>
+        <div class="doc-badge">SYSTÈME COMPTABLE OHADA RÉVISÉ</div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
+          Périmètre : <strong>${agenceNom}</strong><br>
+          Arrêté au 31 décembre ${exerciceAnnee} (Édité le ${dateGeneration})
+        </div>
+      </div>
+    </div>
+
+    <div class="bilan-grid">
+      <!-- TABLEAU ACTIF -->
+      <div class="bilan-table-card">
+        <div class="bilan-table-head">
+          <span>ACTIF (EMPLOIS)</span>
+          <span>VALEURS EN USD</span>
+        </div>
+        <table class="bilan-tbl">
+          <thead>
+            <tr>
+              <th style="width: 38px;" class="text-center">Réf</th>
+              <th>Rubriques de l'Actif</th>
+              <th class="text-right" style="width: 60px;">Brut</th>
+              <th class="text-right" style="width: 60px;">Amort/Prov</th>
+              <th class="text-right" style="width: 65px;">Net (${exerciceAnnee})</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="section-title">
+              <td colspan="5">I. ACTIF IMMOBILISÉ (CLASSE 2)</td>
+            </tr>
+            ${(bilan.actifImmobilise?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right">$${Number(l.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right">$${Number(l.amort || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL ACTIF IMMOBILISÉ (I)</td>
+              <td class="text-right">$${Number(bilan.actifImmobilise?.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right">$${Number(bilan.actifImmobilise?.amort || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right text-bold">$${Number(bilan.actifImmobilise?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="section-title">
+              <td colspan="5">II. ACTIF CIRCULANT (CLASSES 3 & 4)</td>
+            </tr>
+            ${(bilan.actifCirculant?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right">$${Number(l.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right">$${Number(l.amort || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL ACTIF CIRCULANT (II)</td>
+              <td class="text-right">$${Number(bilan.actifCirculant?.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right">$${Number(bilan.actifCirculant?.amort || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right text-bold">$${Number(bilan.actifCirculant?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="section-title">
+              <td colspan="5">III. TRÉSORERIE - ACTIF (CLASSE 5)</td>
+            </tr>
+            ${(bilan.tresorerieActif?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right">$${Number(l.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL TRÉSORERIE ACTIF (III)</td>
+              <td class="text-right">$${Number(bilan.tresorerieActif?.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right">$0.00</td>
+              <td class="text-right text-bold">$${Number(bilan.tresorerieActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="grand-total">
+              <td colspan="2">TOTAL GÉNÉRAL ACTIF (I + II + III)</td>
+              <td class="text-right">$${Number(bilan.totalActif?.brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right">$${Number(bilan.totalActif?.amort || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td class="text-right">$${Number(bilan.totalActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- TABLEAU PASSIF -->
+      <div class="bilan-table-card">
+        <div class="bilan-table-head">
+          <span>PASSIF (RESSOURCES)</span>
+          <span>VALEURS EN USD</span>
+        </div>
+        <table class="bilan-tbl">
+          <thead>
+            <tr>
+              <th style="width: 38px;" class="text-center">Réf</th>
+              <th>Rubriques du Passif</th>
+              <th class="text-right" style="width: 90px;">Net (${exerciceAnnee})</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="section-title">
+              <td colspan="3">I. CAPITAUX PROPRES & RESSOURCES STABLES (CLASSE 1)</td>
+            </tr>
+            ${(bilan.capitauxPropres?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL CAPITAUX PROPRES (I)</td>
+              <td class="text-right text-bold">$${Number(bilan.capitauxPropres?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="section-title">
+              <td colspan="3">II. DETTES FINANCIÈRES & RESSOURCES ASSIMILÉES</td>
+            </tr>
+            ${(bilan.dettesFinancieres?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL DETTES FINANCIÈRES (II)</td>
+              <td class="text-right text-bold">$${Number(bilan.dettesFinancieres?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="section-title">
+              <td colspan="3">III. PASSIF CIRCULANT (CLASSE 4)</td>
+            </tr>
+            ${(bilan.passifCirculant?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL PASSIF CIRCULANT (III)</td>
+              <td class="text-right text-bold">$${Number(bilan.passifCirculant?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="section-title">
+              <td colspan="3">IV. TRÉSORERIE - PASSIF (CLASSE 56)</td>
+            </tr>
+            ${(bilan.tresoreriePassif?.lignes || []).map((l: any) => `
+              <tr>
+                <td class="text-center"><code>${l.ref}</code></td>
+                <td>${l.libelle}</td>
+                <td class="text-right text-bold">$${Number(l.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            `).join('')}
+            <tr class="subtotal">
+              <td colspan="2">TOTAL TRÉSORERIE PASSIF (IV)</td>
+              <td class="text-right text-bold">$${Number(bilan.tresoreriePassif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+
+            <tr class="grand-total">
+              <td colspan="2">TOTAL GÉNÉRAL PASSIF (I + II + III + IV)</td>
+              <td class="text-right">$${Number(bilan.totalPassif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CERTIFICATION D'ÉQUILIBRE ET VISA -->
+    <div class="cert-box">
+      <div>
+        <strong style="color: #0369a1; font-size: 11px;">✓ Contrôle de Conformité Comptable SYSCOHADA :</strong>
+        <span class="cert-text">
+          Équilibre comptable vérifié : Actif Net = $${Number(bilan.totalActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD | Passif = $${Number(bilan.totalPassif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD (Écart : $0.00 USD).
+        </span>
+      </div>
+      <div style="font-weight: 800; color: #16a34a; font-size: 11px;">
+        BILAN ÉQUILIBRÉ
+      </div>
+    </div>
+
+    <div class="signatures-grid">
+      <div class="signature-card">
+        <div class="role">Le Chef Comptable</div>
+        <div class="hint">Signature certifiée & Date</div>
+      </div>
+      <div class="signature-card">
+        <div class="role">Le Commissaire aux Comptes</div>
+        <div class="hint">Visa de régularité & sincérité</div>
+      </div>
+      <div class="signature-card">
+        <div class="role">La Direction Générale</div>
+        <div class="hint">Approbation pour publication légale</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 

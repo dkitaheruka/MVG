@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
-import { Camera, X, QrCode as QrIcon, Check, Keyboard, Printer, FileText, CheckCircle, Warning, Buildings, Tag } from '@phosphor-icons/react'
+import { Camera, X, QrCode as QrIcon, Check, Keyboard, Printer, FileText, CheckCircle, Warning, Buildings, Tag, Minus, Plus, Truck, User, Wallet, Coins, Receipt } from '@phosphor-icons/react'
 
 export interface QrCodePayload {
   type?: 'ARTICLE' | 'LOT' | 'VENTE' | 'TRANSFERT'
@@ -510,17 +510,37 @@ export function QrAccountingModal({
   userAgenceNom = 'Votre Agence',
   prixFixeChefAgence = 25,
   isPending = false,
+  clients = [],
+  vehicules = [],
+  caisses = [],
+  tauxDuJour = 2850,
+  lastCompletedSale = null,
+  onResetCompletedSale,
 }: {
   isOpen: boolean
   onClose: () => void
   payload: QrCodePayload | null
-  onPasserEcritures: (payload: QrCodePayload & { quantite?: number }) => void
+  onPasserEcritures: (saleData: any) => void
   userAgenceNom?: string
   prixFixeChefAgence?: number
   isPending?: boolean
+  clients?: any[]
+  vehicules?: any[]
+  caisses?: any[]
+  tauxDuJour?: number
+  lastCompletedSale?: any
+  onResetCompletedSale?: () => void
 }) {
   const [quantite, setQuantite] = useState<number>(1)
   const [prixUnitaire, setPrixUnitaire] = useState<number>(payload?.prix || prixFixeChefAgence || 25)
+  const [selectedClientId, setSelectedClientId] = useState<string>('')
+  const [modePaiement, setModePaiement] = useState<'COMPTANT' | 'CREDIT'>('COMPTANT')
+  const [deviseChoisie, setDeviseChoisie] = useState<'USD' | 'CDF'>('USD')
+  const [selectedCaisseId, setSelectedCaisseId] = useState<string>('')
+  const [modeTransport, setModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'FLOTTE_ENTREPRISE' | 'VEHICULE_CLIENT'>('ENLEVEMENT_MAGASIN')
+  const [selectedVehiculeId, setSelectedVehiculeId] = useState<string>('')
+  const [clientVehicule, setClientVehicule] = useState<string>('')
+  const [clientChauffeur, setClientChauffeur] = useState<string>('')
 
   useEffect(() => {
     if (payload?.prix && payload.prix > 0) {
@@ -529,105 +549,404 @@ export function QrAccountingModal({
       setPrixUnitaire(prixFixeChefAgence || 25)
     }
     setQuantite(1)
-  }, [payload, prixFixeChefAgence])
+    setSelectedClientId('')
+    setModePaiement('COMPTANT')
+    setDeviseChoisie('USD')
+    setModeTransport('ENLEVEMENT_MAGASIN')
+    setSelectedVehiculeId('')
+    setClientVehicule('')
+    setClientChauffeur('')
+    if (caisses.length > 0) {
+      setSelectedCaisseId(String(caisses[0].id))
+    }
+  }, [payload, prixFixeChefAgence, caisses])
 
-  if (!isOpen || !payload) return null
+  if (!isOpen || (!payload && !lastCompletedSale)) return null
 
-  const isVente = payload.type === 'VENTE'
-  const montantTotalCalcule = Number(prixUnitaire * quantite)
-  const montantCdf = Math.round(montantTotalCalcule * (payload.taux || 2850))
+  // Si la vente vient d'être validée avec succès, afficher l'écran de confirmation et d'impression directe
+  if (lastCompletedSale) {
+    const ticketUrl = lastCompletedSale.ticketUrl || `/api/ventes/${lastCompletedSale.venteId}/ticket-80mm`
+    const blUrl = lastCompletedSale.blUrl || `/api/logistique/livraisons/${lastCompletedSale.bonLivraisonId}/document`
+    const factureUrl = lastCompletedSale.factureUrl || `/api/ventes/${lastCompletedSale.venteId}/facture?format=a4`
+
+    return (
+      <div className="modal-overlay" style={{ zIndex: 10000, position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-card" style={{ maxWidth: 540, width: '100%', background: 'var(--surface)', borderRadius: 14, padding: 26, border: '2px solid #16a34a', boxShadow: '0 25px 60px rgba(0,0,0,0.35)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle size={28} weight="fill" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#16a34a' }}>
+                Vente Encaissée avec Succès !
+              </h3>
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                Stock mis à jour, Bon de Livraison (BL) généré et écritures passées en temps réel.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--surface-2)', padding: 16, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.84rem' }}>
+              <div>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>RÉFÉRENCE VENTE</span>
+                <strong style={{ fontSize: '0.95rem' }}>{lastCompletedSale.referenceVente}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>BON DE LIVRAISON</span>
+                <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{lastCompletedSale.bonLivraison?.numeroBL || lastCompletedSale.numeroBL || 'BL ÉMIS'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>PIÈCE COMPTABLE</span>
+                <strong style={{ fontSize: '0.88rem' }}>{lastCompletedSale.pieceReference}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>MONTANT ENCAISSÉ</span>
+                <strong style={{ fontSize: '1rem', color: '#16a34a' }}>
+                  ${Number(lastCompletedSale.montant || 0).toFixed(2)} {lastCompletedSale.devise || 'USD'}
+                </strong>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', fontSize: '0.8rem', color: 'var(--muted)' }}>
+              <div><strong>Débit :</strong> Compte <code>{lastCompletedSale.debitCompte}</code></div>
+              <div><strong>Crédit :</strong> Compte <code>{lastCompletedSale.creditCompte}</code> (Produits ventes)</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+            <a
+              href={ticketUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="primary-action"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', textDecoration: 'none', background: '#0f172a', color: '#fff', borderRadius: 8, fontWeight: 700 }}
+            >
+              <Receipt size={20} />
+              Imprimer Directement le Ticket Thermique (80mm POS)
+            </a>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <a
+                href={blUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 14px', textDecoration: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.84rem' }}
+              >
+                <Truck size={18} />
+                Imprimer Bon de Livraison (BL)
+              </a>
+
+              <a
+                href={factureUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 14px', textDecoration: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.84rem' }}
+              >
+                <Printer size={18} />
+                Facture Officielle A4
+              </a>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => {
+                if (onResetCompletedSale) onResetCompletedSale()
+                onClose()
+              }}
+            >
+              Fermer & Prêt pour Nouvelle Vente
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const clientSelectionne = selectedClientId ? clients.find((c) => String(c.id) === String(selectedClientId)) : null
+  const montantTotalCalcule = Math.round(Number(prixUnitaire * quantite) * 100) / 100
+  const tauxEffectif = payload?.taux || tauxDuJour || 2850
+  const montantCdf = deviseChoisie === 'CDF' ? Math.round(montantTotalCalcule) : Math.round(montantTotalCalcule * tauxEffectif)
+
+  // Aperçu du compte Débit
+  let compteDebitPreview = deviseChoisie === 'USD' ? '571 (Caisse Principale USD)' : '572 (Caisse Principale CDF)'
+  if (modePaiement === 'CREDIT') {
+    compteDebitPreview = clientSelectionne?.compteComptable || (clientSelectionne?.id ? `411${String(clientSelectionne.id).padStart(3, '0')} (${clientSelectionne.nom})` : '411000 (Compte Clients Ordinaires)')
+  }
+
+  const handleConfirmerVente = () => {
+    onPasserEcritures({
+      ...payload,
+      quantite,
+      prixUnitaire,
+      montantTotal: montantTotalCalcule,
+      montantCdf,
+      devise: deviseChoisie,
+      clientId: selectedClientId ? Number(selectedClientId) : undefined,
+      modePaiement,
+      caisseId: selectedCaisseId ? Number(selectedCaisseId) : undefined,
+      modeTransport,
+      vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
+      clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? clientVehicule : undefined,
+      clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? clientChauffeur : undefined,
+    })
+  }
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 10000, position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.78)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div className="modal-card" style={{ maxWidth: 520, width: '100%', background: 'var(--surface)', borderRadius: 14, padding: 26, border: '2px solid var(--accent-strong)', boxShadow: '0 25px 60px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div className="modal-overlay" style={{ zIndex: 10000, position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="modal-card" style={{ maxWidth: 580, width: '100%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--surface)', borderRadius: 14, padding: 24, border: '2px solid var(--accent-strong)', boxShadow: '0 25px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <h3 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8 }}>
             <QrIcon size={24} style={{ color: 'var(--accent-strong)' }} />
-            Données du QR Code Scanné (Minoterie MVG)
+            Encaissement Vente POS par Scan QR (Minoterie MVG)
           </h3>
           <button className="icon-button" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
         </div>
 
-        <div style={{ background: 'var(--surface-2)', padding: 16, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>TYPE DE SCAN RECONNU</span>
-            <span className="badge badge-success" style={{ textTransform: 'uppercase' }}>
-              {isVente ? 'Vente Certifiée POS' : 'Lot Atelier Production'}
+        {/* FICHE PRODUIT / LOT SCANNÉ */}
+        <div style={{ background: 'var(--surface-2)', padding: 14, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: '0.76rem', color: 'var(--muted)', fontWeight: 600 }}>ARTICLE CERTIFIÉ PAR QR CODE</span>
+            <span className="badge badge-success">CERTIFICATION MVG</span>
+          </div>
+
+          <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
+            {payload?.designation || payload?.reference || payload?.codeUnique || payload?.numeroLot || 'Produit MVG'}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--muted)' }}>
+            <span>N° Lot FEFO : <strong style={{ color: 'var(--text)' }}>{payload?.numeroLot || payload?.codeUnique || 'LOT-STANDARD'}</strong></span>
+            <span>Agence : <strong style={{ color: 'var(--accent-strong)' }}>{userAgenceNom}</strong></span>
+          </div>
+        </div>
+
+        {/* QUANTITÉ AVEC BOUTONS + ET - ET PRIX DÉTECTÉ */}
+        <div style={{ background: 'var(--surface)', padding: 14, borderRadius: 10, border: '1.5px solid var(--accent-strong)', marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--accent-strong)' }}>
+              Prix unitaire fixé (Chef d'Agence) :
             </span>
+            <strong style={{ fontSize: '1.2rem', color: 'var(--accent-strong)' }}>
+              ${prixUnitaire.toFixed(2)} USD
+            </strong>
           </div>
 
-          <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
-            {payload.designation || payload.reference || payload.codeUnique || payload.numeroLot || 'Lot / Produit'}
-          </div>
-
-          <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: 8 }}>
-            N° Lot FEFO : <strong style={{ color: 'var(--text)' }}>{payload.numeroLot || payload.codeUnique || 'LOT-STD'}</strong>
-          </div>
-
-          <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: 12 }}>
-            Agence opératrice (Vous) : <strong style={{ color: 'var(--accent-strong)' }}>{userAgenceNom}</strong>
-          </div>
-
-          {/* DÉTECTION DU PRIX FIXÉ PAR LE CHEF D'AGENCE */}
-          <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, border: '1.5px solid var(--accent-strong)', marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-strong)' }}>
-                Prix de vente fixé par le Chef d'Agence :
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+            <div>
+              <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600, marginBottom: 4 }}>
+                QUANTITÉ À VENDRE (Sacs / Unités)
               </span>
-              <strong style={{ fontSize: '1.1rem', color: 'var(--accent-strong)' }}>
-                ${prixUnitaire.toFixed(2)} USD
-              </strong>
-            </div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '4px 6px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => setQuantite((q) => Math.max(1, q - 1))}
+                  style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: '1.1rem', fontWeight: 900 }}
+                  title="Diminuer d'une unité"
+                >
+                  <Minus size={16} />
+                </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8 }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                Quantité scannée :
                 <input
                   type="number"
                   min="1"
                   value={quantite}
                   onChange={(e) => setQuantite(Math.max(1, Number(e.target.value) || 1))}
-                  style={{ width: 80, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 700 }}
+                  style={{ width: 68, textAlign: 'center', padding: '6px 4px', fontSize: '1.1rem', fontWeight: 800, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
                 />
-                <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>sac(s) / carton(s)</span>
-              </label>
 
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'block' }}>Total de l'écriture :</span>
-                <strong style={{ fontSize: '1.15rem', color: 'var(--accent-strong)' }}>
-                  ${montantTotalCalcule.toFixed(2)} USD
-                </strong>
-                <span style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block' }}>
-                  ({montantCdf.toLocaleString()} CDF)
-                </span>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => setQuantite((q) => q + 1)}
+                  style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: '1.1rem', fontWeight: 900 }}
+                  title="Ajouter une unité"
+                >
+                  <Plus size={16} />
+                </button>
               </div>
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'block' }}>TOTAL ENCAISSEMENT :</span>
+              <strong style={{ fontSize: '1.35rem', color: 'var(--accent-strong)', display: 'block' }}>
+                ${montantTotalCalcule.toFixed(2)} USD
+              </strong>
+              <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                ({montantCdf.toLocaleString()} CDF)
+              </span>
             </div>
           </div>
         </div>
 
-        <div style={{ background: 'var(--accent-soft)', padding: 12, borderRadius: 8, marginBottom: 20, fontSize: '0.84rem', color: 'var(--accent-strong)', lineHeight: 1.4 }}>
-          ✓ Le QR code a authentifié le produit et détecté le barème actuel de votre agence. Cliquez ci-dessous pour passer directement l'écriture comptable correspondante pour votre agence.
+        {/* SÉLECTION DU CLIENT & DÉTECTION DU COMPTE CLIENT */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4 }}>
+            <User size={15} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            Sélection du Client & Fiche Crédit :
+          </label>
+          <select
+            value={selectedClientId}
+            onChange={(e) => setSelectedClientId(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)' }}
+          >
+            <option value="">Client Comptoir Magasin (Vente directe au comptant)</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nom} {c.telephone ? `(${c.telephone})` : ''} - Dette actuelle : ${Number(c.soldeDette || 0).toFixed(2)} / Plafond : ${c.limiteCredit || 1000}
+              </option>
+            ))}
+          </select>
+          {clientSelectionne && (
+            <div style={{ fontSize: '0.78rem', color: '#0284c7', marginTop: 4 }}>
+              Compte comptable associé : <strong>{clientSelectionne.compteComptable || `411${String(clientSelectionne.id).padStart(3, '0')}`}</strong> | Dette restante : <strong>${Number(clientSelectionne.soldeDette || 0).toFixed(2)}</strong>
+            </div>
+          )}
+        </div>
+
+        {/* MOYEN DE LIVRAISON (VÉHICULE & CHAUFFEUR) POUR LE BON DE LIVRAISON */}
+        <div style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 6 }}>
+            <Truck size={15} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            Moyen de Livraison (Génération automatique du BL) :
+          </label>
+
+          <select
+            value={modeTransport}
+            onChange={(e) => setModeTransport(e.target.value as any)}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', marginBottom: 8 }}
+          >
+            <option value="ENLEVEMENT_MAGASIN">Retrait immédiat sur place (Comptoir Dépôt Minoterie)</option>
+            <option value="FLOTTE_ENTREPRISE">Camion de la Minoterie MVG (Flotte Interne)</option>
+            <option value="VEHICULE_CLIENT">Véhicule apporté par le Client (Chauffeur externe)</option>
+          </select>
+
+          {modeTransport === 'FLOTTE_ENTREPRISE' && (
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'block', marginBottom: 2 }}>Choisir le camion de livraison :</span>
+              <select
+                value={selectedVehiculeId}
+                onChange={(e) => setSelectedVehiculeId(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+              >
+                <option value="">-- Sélectionner un camion disponible --</option>
+                {vehicules.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.plaqueImmatriculation} - {v.marqueModele} (Chauffeur: {v.chauffeurNom || 'Assigné'}) [{v.statut}]
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {modeTransport === 'VEHICULE_CLIENT' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Plaque Véhicule Client"
+                value={clientVehicule}
+                onChange={(e) => setClientVehicule(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: '0.84rem' }}
+              />
+              <input
+                type="text"
+                placeholder="Nom du Chauffeur"
+                value={clientChauffeur}
+                onChange={(e) => setClientChauffeur(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', fontSize: '0.84rem' }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* MODE DE PAIEMENT & CAISSE */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: 4 }}>
+              <Wallet size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              Modalité de Paiement :
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className={modePaiement === 'COMPTANT' ? 'primary-action' : 'secondary-action'}
+                onClick={() => setModePaiement('COMPTANT')}
+                style={{ flex: 1, padding: '7px 8px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                Comptant (Cash)
+              </button>
+              <button
+                type="button"
+                className={modePaiement === 'CREDIT' ? 'primary-action' : 'secondary-action'}
+                onClick={() => setModePaiement('CREDIT')}
+                style={{ flex: 1, padding: '7px 8px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                À Crédit
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: 4 }}>
+              <Coins size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              Devise de Facturation :
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className={deviseChoisie === 'USD' ? 'primary-action' : 'secondary-action'}
+                onClick={() => setDeviseChoisie('USD')}
+                style={{ flex: 1, padding: '7px 8px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                USD ($)
+              </button>
+              <button
+                type="button"
+                className={deviseChoisie === 'CDF' ? 'primary-action' : 'secondary-action'}
+                onClick={() => setDeviseChoisie('CDF')}
+                style={{ flex: 1, padding: '7px 8px', fontSize: '0.82rem', fontWeight: 700 }}
+              >
+                CDF (FC)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* GOUVERNANCE COMPTABLE : APERÇU DES ÉCRITURES */}
+        <div style={{ background: 'var(--accent-soft)', padding: 10, borderRadius: 8, marginBottom: 18, fontSize: '0.78rem', color: 'var(--accent-strong)', lineHeight: 1.4 }}>
+          <strong>✓ Mouvements comptables & stocks réels :</strong>
+          <div style={{ marginTop: 2 }}>
+            • <strong>Stock :</strong> Diminution automatique de <strong>{quantite} sac(s)</strong> sur le lot {payload?.numeroLot || 'actuel'}.
+          </div>
+          <div>
+            • <strong>Débit :</strong> {compteDebitPreview} (+${montantTotalCalcule.toFixed(2)})
+          </div>
+          <div>
+            • <strong>Crédit :</strong> 701 (Vente de Produits Finis - Minoterie MVG)
+          </div>
+          <div>
+            • <strong>Logistique :</strong> Émission automatique du Bon de Livraison (BL).
+          </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" className="secondary-action" onClick={onClose} disabled={isPending}>
-            Fermer
+            Annuler
           </button>
           <button
             type="button"
             className="primary-action"
-            onClick={() => onPasserEcritures({
-              ...payload,
-              montantTotal: montantTotalCalcule,
-              montantCdf,
-              prix: prixUnitaire,
-              quantite,
-            })}
+            onClick={handleConfirmerVente}
             disabled={isPending}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontWeight: 700 }}
           >
-            <FileText size={18} />
-            {isPending ? 'Enregistrement écritures...' : 'Passer les Écritures Comptables Directement'}
+            <Receipt size={18} />
+            {isPending ? 'Enregistrement en cours...' : 'Encaisser la Vente & Émettre le BL'}
           </button>
         </div>
       </div>

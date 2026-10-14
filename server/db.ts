@@ -99,6 +99,7 @@ export interface DbClient {
   soldeDette: number
   limiteCredit: number
   bloque: boolean
+  compteComptable?: string
 }
 
 export interface DbVenteDetail {

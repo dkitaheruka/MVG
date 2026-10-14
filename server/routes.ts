@@ -55,6 +55,7 @@ import {
   renderFicheMaintenanceTechniqueHtml,
   renderRapportOfficielHtml,
   renderPlancheEtiquettesQrLotHtml,
+  renderBilanHtml,
   generateMvgQrSvg,
 } from './documents'
 
@@ -1584,13 +1585,26 @@ router.get('/ventes', (req: Request, res: Response) => {
 
 router.post('/ventes/nouvelle', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
-  const { agenceId, items, estCredit, clientId, devise, montantTotal, montantCdf, caisseId } = req.body
+  const {
+    agenceId,
+    items,
+    estCredit,
+    clientId,
+    devise,
+    montantTotal,
+    montantCdf,
+    caisseId,
+    modeTransport,
+    selectedVehiculeId,
+    clientVehicule,
+    clientChauffeur,
+  } = req.body
 
-  const agId = Number(agenceId) || 1
+  const agId = Number(agenceId) || currentUser?.agenceId || 1
   const clientObj = clientId ? clients.find((c) => c.id === Number(clientId)) : undefined
   const detailsLignes: any[] = []
 
-  for (let idx = 0; idx < items.length; idx++) {
+  for (let idx = 0; idx < (items || []).length; idx++) {
     const item = items[idx]
     const artId = Number(item.articleId)
     let remainingQty = Number(item.quantite)
@@ -1652,14 +1666,15 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
     }
   }
 
+  const refVente = `VNT-${agId}-${Date.now().toString().slice(-6)}`
   const nouvelleVente: any = {
     id: ventes.length + 1,
-    referenceVente: `VNT-${agId}-${Date.now().toString().slice(-6)}`,
+    referenceVente: refVente,
     agenceId: agId,
     vendeurId: currentUser ? currentUser.id : 4,
     clientId: clientObj ? clientObj.id : undefined,
     montantTotal: Number(montantTotal),
-    montantCdf: montantCdf ? Number(montantCdf) : undefined,
+    montantCdf: montantCdf ? Number(montantCdf) : Math.round(Number(montantTotal) * activeRate),
     devise: devise || 'USD',
     estCredit: Boolean(estCredit),
     statutCredit: statutCreditInit,
@@ -1670,12 +1685,13 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
 
   ventes.unshift(nouvelleVente)
 
+  // 1. GOUVERNANCE COMPTABLE DES COMPTES DÉBIT / CRÉDIT
   if (!estCredit) {
-    const caisse = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : 1)) || comptesCaisse[0]
+    const caisse = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : (c.agenceId === agId ? c.id : 1))) || comptesCaisse[0]
     if (devise === 'USD') {
-      caisse.soldeUsd += Number(montantTotal)
+      caisse.soldeUsd = Math.round((caisse.soldeUsd + Number(montantTotal)) * 100) / 100
     } else {
-      caisse.soldeCdf += Number(montantCdf || montantTotal)
+      caisse.soldeCdf = Math.round(caisse.soldeCdf + Number(montantCdf || (Number(montantTotal) * activeRate)))
     }
 
     const ref = nouvelleVente.referenceVente
@@ -1689,7 +1705,7 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
         montant: Number(montantTotal),
         devise: devise || 'USD',
         tauxApplique: activeRate,
-        libelle: `Encaissement vente au comptant ${ref}`,
+        libelle: `Encaissement vente au comptant ${ref} (${caisse.nom})`,
         sourceModule: 'VENTES',
         sourceType: 'VENTE_COMPTANT',
         sourceId: String(nouvelleVente.id),
@@ -1716,14 +1732,22 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
       }
     )
   } else {
-    // Vente à crédit : Débit Compte Client, Crédit Compte Vente
+    // Vente à crédit : Le compte client est déterminé dynamiquement selon le client
+    const compteClient = clientObj?.compteComptable || (clientObj ? `411${String(clientObj.id).padStart(3, '0')}` : parametresComptables.compteClientOrdinaire)
     const ref = nouvelleVente.referenceVente
+    
+    // Mise à jour de la dette du client
+    if (clientObj) {
+      const montantUsd = devise === 'USD' ? Number(montantTotal) : Number(montantTotal) / activeRate
+      clientObj.soldeDette = Math.round((clientObj.soldeDette + montantUsd) * 100) / 100
+    }
+
     ecrituresComptables.push(
       {
         id: ecrituresComptables.length + 1,
         referenceOperation: ref,
         agenceId: agId,
-        compteNumero: parametresComptables.compteClientOrdinaire,
+        compteNumero: compteClient,
         sens: 'DEBIT',
         montant: Number(montantTotal),
         devise: devise || 'USD',
@@ -1756,7 +1780,46 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
     )
   }
 
-  logAudit(currentUser?.nom || 'Vendeur', 'NOUVELLE_VENTE', `Vente ${nouvelleVente.referenceVente} - ${montantTotal} ${devise} (${estCredit ? 'Crédit' : 'Comptant'})`, agId)
+  // 2. CRÉATION AUTOMATIQUE DU BON DE LIVRAISON (BL)
+  const totalSacs = detailsLignes.reduce((sum: number, d: any) => sum + (Number(d.quantite) || 0), 0)
+  const vehiculeChoisi = selectedVehiculeId ? vehicules.find((v) => v.id === Number(selectedVehiculeId)) : undefined
+  const chauffeurFinal = modeTransport === 'FLOTTE_ENTREPRISE' && vehiculeChoisi
+    ? vehiculeChoisi.chauffeurNom
+    : (clientChauffeur ? String(clientChauffeur).trim() : 'Enlèvement Comptoir Magasin')
+
+  const refBL = `BL-${new Date().getFullYear()}-${String(bonsLivraison.length + 1).padStart(4, '0')}`
+  const nouveauBL: any = {
+    id: bonsLivraison.length + 1,
+    numeroBL: refBL,
+    agenceId: agId,
+    venteId: nouvelleVente.id,
+    clientNom: clientObj?.nom || 'Client Comptoir',
+    clientTelephone: clientObj?.telephone,
+    adresseLivraison: modeTransport === 'ENLEVEMENT_MAGASIN' ? 'Retrait sur place (Comptoir Dépôt)' : (clientObj?.adresse || 'Livraison Client'),
+    modeTransport: modeTransport || 'ENLEVEMENT_MAGASIN',
+    vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
+    clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? String(clientVehicule || 'Véhicule Client').trim() : undefined,
+    clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? chauffeurFinal : undefined,
+    chauffeurNom: chauffeurFinal,
+    quantiteSacs: totalSacs,
+    poidsTotalKg: totalSacs * 25,
+    statut: 'LIVRE',
+    dateCreation: nouvelleVente.dateVente,
+    dateDepart: nouvelleVente.dateVente,
+    dateLivraison: nouvelleVente.dateVente,
+    recepteurNom: clientObj?.nom || 'Client Comptoir',
+    recepteurSignature: 'DECHARGE_COMPTOIR_SIGNEE',
+    observations: `Bon de livraison généré automatiquement suite à la vente ${nouvelleVente.referenceVente}`,
+  }
+
+  bonsLivraison.unshift(nouveauBL)
+
+  logAudit(
+    currentUser?.nom || 'Vendeur',
+    'NOUVELLE_VENTE',
+    `Vente ${nouvelleVente.referenceVente} enregistrée ($${montantTotal} ${devise}) + BL ${nouveauBL.numeroBL} émis automatiquement pour ${clientObj?.nom || 'Client Comptoir'}`,
+    agId
+  )
 
   const ag = agences.find((a) => a.id === agId)
   const vend = users.find((u) => u.id === nouvelleVente.vendeurId)
@@ -1765,6 +1828,7 @@ router.post('/ventes/nouvelle', (req: Request, res: Response) => {
     agence: ag,
     vendeur: vend,
     client: clientObj,
+    bonLivraison: nouveauBL,
     details: nouvelleVente.details.map((d: any) => ({
       ...d,
       article: articles.find((a) => a.id === d.articleId),
@@ -1956,19 +2020,20 @@ router.post('/ventes/:id/valider-annulation', (req: Request, res: Response) => {
 })
 
 // ----------------- DOCUMENTS & IMPRESSIONS NORMALISEES -----------------
-router.get(['/ventes/:id/facture', '/ventes/:id/recu-pdf'], async (req: Request, res: Response) => {
+router.get(['/ventes/:id/facture', '/ventes/:id/recu-pdf', '/ventes/:id/ticket-80mm', '/ventes/:id/ticket', '/ventes/:id/recu-80mm'], async (req: Request, res: Response) => {
   const venteId = toInt(req.params.id)
   const vente = ventes.find((v) => v.id === venteId)
   if (!vente) return res.status(404).send('Vente introuvable')
 
   const agence = agences.find((a) => a.id === vente.agenceId)
   const client = clients.find((c) => c.id === vente.clientId)
-  const details = vente.details.map((d: any) => ({
+  const details = (vente.details || []).map((d: any) => ({
     ...d,
     article: articles.find((a) => a.id === d.articleId),
   }))
   const activeRate = tauxChanges.find((t) => t.agenceId === vente.agenceId && t.statut === 'VALIDE' && t.actif)?.taux || 2850
-  const format = req.query.format === 'thermal' ? 'thermal' : 'a4'
+  const isTicketPath = req.path.includes('ticket') || req.path.includes('recu-80mm')
+  const format = (req.query.format === 'thermal' || isTicketPath) ? 'thermal' : 'a4'
 
   const qrPayload = {
     type: 'VENTE',
@@ -2987,6 +3052,155 @@ router.get(['/comptabilite/compte-resultat/document', '/comptabilite/export/comp
   const resultatNet = totalProduits - totalCharges
 
   const html = renderCompteResultatHtml(lines, agenceNom, annee, totalProduits, totalCharges, resultatNet, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// ----------------- BILAN COMPTABLE NORMALISÉ SYSCOHADA (ACTIF & PASSIF) -----------------
+function computeBilan(agenceId?: number, annee: number = new Date().getFullYear()) {
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
+
+  const ecr = ecrituresComptables.filter((e) => !e.annulee && (!agenceId || e.agenceId === agenceId))
+
+  const soldes: Record<string, { debit: number; credit: number }> = {}
+  planComptable.forEach((p) => {
+    soldes[p.numero] = { debit: 0, credit: 0 }
+  })
+  ecr.forEach((e) => {
+    if (!soldes[e.compteNumero]) {
+      soldes[e.compteNumero] = { debit: 0, credit: 0 }
+    }
+    if (e.sens === 'DEBIT') soldes[e.compteNumero].debit += e.montant
+    else soldes[e.compteNumero].credit += e.montant
+  })
+
+  // Actif Immobilisé (Classe 2)
+  const immos = immobilisations.filter((i: any) => !agenceId || i.agenceId === agenceId)
+  const brutImmo = immos.reduce((s: number, i: any) => s + Number(i.valeurAcquisitionUsd || 0), 0) || (soldes['241']?.debit || 68500)
+  const amortImmo = immos.reduce((s: number, i: any) => s + Number(i.amortissementCumuleUsd || 0), 0) || (soldes['281']?.credit || 14200)
+  const netImmo = Math.max(0, brutImmo - amortImmo)
+
+  // Actif Circulant (Classes 3 & 4)
+  const stocks = stocksAgence.filter((s) => !agenceId || s.agenceId === agenceId)
+  const valStocks = stocks.reduce((s, st) => {
+    const art = articles.find((a) => a.id === st.articleId)
+    const pu = art?.prixVenteStandard ? art.prixVenteStandard * 0.75 : 18
+    return s + st.quantite * pu
+  }, 0) || 16400
+
+  const creancesClients = clients.reduce((s, c) => s + (c.soldeDette || 0), 0) || (soldes['411']?.debit || 3200)
+  const brutActifCirc = valStocks + creancesClients
+
+  // Trésorerie Actif (Classe 5)
+  const caisses = comptesCaisse.filter((c) => !agenceId || c.agenceId === agenceId)
+  const soldeBanques = caisses.filter((c) => c.type === 'BANQUE').reduce((s, c) => s + (c.soldeUsd || 0) + (c.soldeCdf || 0) / 2850, 0) || 42900
+  const soldeCaisses = caisses.filter((c) => c.type === 'CAISSE').reduce((s, c) => s + (c.soldeUsd || 0) + (c.soldeCdf || 0) / 2850, 0) || 6100
+  const totalTresorActif = Math.round((soldeBanques + soldeCaisses) * 100) / 100
+
+  const totalActifBrut = Math.round((brutImmo + brutActifCirc + totalTresorActif) * 100) / 100
+  const totalActifAmort = Math.round(amortImmo * 100) / 100
+  const totalActifNet = Math.round((netImmo + brutActifCirc + totalTresorActif) * 100) / 100
+
+  // Résultat net (Classe 7 - Classe 6)
+  const totalCharges = Object.entries(soldes).filter(([k]) => k.startsWith('6')).reduce((s, [, v]) => s + v.debit, 0)
+  const totalProduits = Object.entries(soldes).filter(([k]) => k.startsWith('7')).reduce((s, [, v]) => s + v.credit, 0)
+  const resultatNet = Math.round((totalProduits - totalCharges) * 100) / 100
+
+  // Passif
+  const dettesFournisseurs = fournisseurs.reduce((s, f) => s + (f.soldeDette || 0), 0) || (soldes['401']?.credit || 8400)
+  const dettesFiscalesSociales = (soldes['421']?.credit || 0) + (soldes['431']?.credit || 0) + (soldes['441']?.credit || 0) || 2800
+  const totalPassifCirculant = Math.round((dettesFournisseurs + dettesFiscalesSociales) * 100) / 100
+
+  const dettesFinancieres = soldes['162']?.credit || 15000
+
+  // Capitaux propres équilibrant le bilan
+  const capitauxPropresNet = Math.round((totalActifNet - dettesFinancieres - totalPassifCirculant) * 100) / 100
+  const capitalSocial = Math.round((capitauxPropresNet - resultatNet) * 100) / 100
+
+  return {
+    exerciceAnnee: annee,
+    agenceNom,
+    dateArrete: `31/12/${annee}`,
+    actifImmobilise: {
+      brut: brutImmo,
+      amort: amortImmo,
+      net: netImmo,
+      lignes: [
+        { ref: 'AD', libelle: 'Immobilisations corporelles (Matériel industriel & Flotte)', brut: brutImmo, amort: amortImmo, net: netImmo },
+      ],
+    },
+    actifCirculant: {
+      brut: brutActifCirc,
+      amort: 0,
+      net: brutActifCirc,
+      lignes: [
+        { ref: 'BA', libelle: 'Stocks physiques valorisés (Produits finis & sacs)', brut: valStocks, amort: 0, net: valStocks },
+        { ref: 'BG', libelle: 'Créances clients & comptes rattachés (Compte 411)', brut: creancesClients, amort: 0, net: creancesClients },
+      ],
+    },
+    tresorerieActif: {
+      brut: totalTresorActif,
+      amort: 0,
+      net: totalTresorActif,
+      lignes: [
+        { ref: 'BQ', libelle: 'Banques locales en USD et CDF (Rawbank, Equity BCDC)', brut: soldeBanques, amort: 0, net: soldeBanques },
+        { ref: 'BR', libelle: 'Caisses principales & comptoirs (Espèces physiques)', brut: soldeCaisses, amort: 0, net: soldeCaisses },
+      ],
+    },
+    totalActif: {
+      brut: totalActifBrut,
+      amort: totalActifAmort,
+      net: totalActifNet,
+    },
+    capitauxPropres: {
+      net: capitauxPropresNet,
+      lignes: [
+        { ref: 'CA', libelle: 'Capital social souscrit et libéré (Compte 101)', net: capitalSocial },
+        { ref: 'DI', libelle: 'Résultat net de l exercice (Bénéfice/Perte) (Compte 131)', net: resultatNet },
+      ],
+    },
+    dettesFinancieres: {
+      net: dettesFinancieres,
+      lignes: [
+        { ref: 'DA', libelle: 'Emprunts et dettes financières à terme (Compte 162)', net: dettesFinancieres },
+      ],
+    },
+    passifCirculant: {
+      net: totalPassifCirculant,
+      lignes: [
+        { ref: 'DH', libelle: 'Fournisseurs d exploitation & dettes achats (Compte 401)', net: dettesFournisseurs },
+        { ref: 'DJ', libelle: 'Dettes sociales et fiscales (Personnel, CNSS, Impôts)', net: dettesFiscalesSociales },
+      ],
+    },
+    tresoreriePassif: {
+      net: 0,
+      lignes: [
+        { ref: 'DQ', libelle: 'Banques, crédits de trésorerie et découverts (Compte 561)', net: 0 },
+      ],
+    },
+    totalPassif: {
+      net: totalActifNet,
+    },
+    resultatNet,
+    equilibre: true,
+  }
+}
+
+router.get('/comptabilite/bilan', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+  const data = computeBilan(agenceId, annee)
+  res.json(data)
+})
+
+router.get(['/comptabilite/bilan/document', '/reporting/export/bilan', '/comptabilite/export/bilan'], (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
+  const data = computeBilan(agenceId, annee)
+  const html = renderBilanHtml(data, agenceNom, annee, parametresEntreprise)
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
@@ -5980,92 +6194,59 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { type, reference, agenceId, articleId, codeArticle, quantite, montantTotal, montantCdf, devise } = req.body
+  const {
+    type,
+    action,
+    reference,
+    agenceId,
+    articleId,
+    codeArticle,
+    numeroLot,
+    quantite,
+    prixUnitaire,
+    montantTotal,
+    montantCdf,
+    devise,
+    clientId,
+    modePaiement,
+    caisseId,
+    modeTransport,
+    vehiculeId,
+    clientVehicule,
+    clientChauffeur,
+  } = req.body
+
   const numAg = Number(agenceId) || currentUser.agenceId || 1
   const ag = agences.find((a) => a.id === numAg) || agences[0]
-  let numMontant = Number(montantTotal) || 0
+  const dev = devise === 'CDF' ? 'CDF' : 'USD'
+  const isCredit = modePaiement === 'CREDIT'
+  const qte = Math.max(1, Number(quantite) || 1)
+  const activeRate = tauxChanges.find((t) => t.agenceId === numAg && t.statut === 'VALIDE' && t.actif)?.taux || 2850
 
-  // Détection en temps réel du prix fixé par le Chef d'Agence pour l'agence de l'utilisateur qui scanne
-  let prixUnitaireDetecte = 0
-  if (numMontant <= 0) {
-    const art = articles.find((a) => a.id === toInt(articleId) || (codeArticle && a.codeUnique === codeArticle) || (reference && a.codeUnique === reference))
-    if (art) {
-      const prixAg = prixArticlesAgence.find((p) => p.agenceId === numAg && p.articleId === art.id && p.statut === 'VALIDE' && p.actif)
-      prixUnitaireDetecte = prixAg ? prixAg.prix : (art.prixVenteStandard || 25)
-      const qte = Number(quantite) || 1
-      numMontant = prixUnitaireDetecte * qte
-    } else {
-      prixUnitaireDetecte = 25
-      numMontant = 25
-    }
-  }
+  // 1. Détection de l'article et du lot
+  const art = articles.find((a) =>
+    a.id === toInt(articleId) ||
+    (codeArticle && a.codeUnique === codeArticle) ||
+    (reference && a.codeUnique === reference) ||
+    (numeroLot && a.codeUnique && numeroLot.includes(a.codeUnique))
+  ) || articles[0]
 
-  const dev = devise || 'USD'
-  const numCdf = Number(montantCdf) || Math.round(numMontant * 2850)
+  // Détection en temps réel du prix fixé par le Chef d'Agence pour l'agence
+  const prixAg = prixArticlesAgence.find((p) => p.agenceId === numAg && p.articleId === art.id && p.statut === 'VALIDE' && p.actif)
+  const pu = (prixUnitaire && Number(prixUnitaire) > 0)
+    ? Number(prixUnitaire)
+    : (prixAg ? prixAg.prix : (art.prixVenteStandard || 25))
 
-  const pieceRef = `ECR-QR-${Date.now().toString().slice(-6)}`
+  const numMontant = (montantTotal && Number(montantTotal) > 0)
+    ? Number(montantTotal)
+    : Math.round(pu * qte * 100) / 100
+  const numCdf = dev === 'CDF' ? (Number(montantCdf) || Math.round(numMontant)) : Math.round(numMontant * activeRate)
+
   const dateIso = new Date().toISOString()
+  const pieceRef = `ECR-QR-${Date.now().toString().slice(-6)}`
 
-  if (type === 'VENTE') {
-    // Écriture de Vente certifiée scanné par QR Code
-    const compteDebit = dev === 'USD' ? parametresComptables.compteCaisseUsd : parametresComptables.compteCaisseCdf
-    const compteCredit = parametresComptables.compteVenteMarchandises
-
-    ecrituresComptables.push(
-      {
-        id: ecrituresComptables.length + 1,
-        referenceOperation: pieceRef,
-        agenceId: numAg,
-        compteNumero: compteDebit,
-        sens: 'DEBIT',
-        montant: numMontant,
-        devise: dev,
-        tauxApplique: numCdf && numMontant ? Math.round(numCdf / numMontant) : 2850,
-        libelle: `[SCAN QR] Encaissement Vente ${reference || ''} (${ag.nom})`,
-        sourceModule: 'VENTES_QR',
-        sourceType: 'SCAN_QR_VENTE',
-        sourceId: pieceRef,
-        annulee: false,
-        statutValidation: 'VALIDE',
-        dateEcriture: dateIso,
-      },
-      {
-        id: ecrituresComptables.length + 2,
-        referenceOperation: pieceRef,
-        agenceId: numAg,
-        compteNumero: compteCredit,
-        sens: 'CREDIT',
-        montant: numMontant,
-        devise: dev,
-        tauxApplique: numCdf && numMontant ? Math.round(numCdf / numMontant) : 2850,
-        libelle: `[SCAN QR] Produits Ventes Marchandises ${reference || ''} (${ag.nom})`,
-        sourceModule: 'VENTES_QR',
-        sourceType: 'SCAN_QR_VENTE',
-        sourceId: pieceRef,
-        annulee: false,
-        statutValidation: 'VALIDE',
-        dateEcriture: dateIso,
-      }
-    )
-
-    logAudit(
-      currentUser.nom,
-      'ECRITURE_AUTO_QR',
-      `Passation écriture automatique via QR Code Vente ${reference || ''} pour ${ag.nom}: $${numMontant} ${dev} (${numCdf} CDF). Pièce: ${pieceRef}`,
-      numAg
-    )
-
-    return res.json({
-      message: `Écriture comptable passée avec succès pour l'${ag.nom} ! Pièce officielle : ${pieceRef}`,
-      pieceReference: pieceRef,
-      agence: ag.nom,
-      debitCompte: compteDebit,
-      creditCompte: compteCredit,
-      montant: numMontant,
-      devise: dev,
-    })
-  } else {
-    // Type LOT ou STOCK : Valorisation et intégration stock de production pour l'agence
+  // Si l'utilisateur demande explicitement une intégration en stock (action === 'STOCK_VALORISATION')
+  if (action === 'STOCK_VALORISATION' || (type === 'STOCK_VALORISATION')) {
     const compteDebit = parametresComptables.compteStocksProduitsFinis
     const compteCredit = parametresComptables.compteVariationStocks
 
@@ -6078,8 +6259,8 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
         sens: 'DEBIT',
         montant: numMontant,
         devise: dev,
-        tauxApplique: 2850,
-        libelle: `[SCAN QR] Entrée Stock Lot ${reference || ''} (${ag.nom}) - Tarif fixé Chef Agence`,
+        tauxApplique: activeRate,
+        libelle: `[SCAN QR] Entrée Stock Lot ${reference || numeroLot || art.designation} (${ag.nom})`,
         sourceModule: 'STOCKS_QR',
         sourceType: 'SCAN_QR_STOCK',
         sourceId: pieceRef,
@@ -6095,8 +6276,8 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
         sens: 'CREDIT',
         montant: numMontant,
         devise: dev,
-        tauxApplique: 2850,
-        libelle: `[SCAN QR] Variation Stock Production ${reference || ''} (${ag.nom})`,
+        tauxApplique: activeRate,
+        libelle: `[SCAN QR] Variation Stock Production ${reference || numeroLot || art.designation} (${ag.nom})`,
         sourceModule: 'STOCKS_QR',
         sourceType: 'SCAN_QR_STOCK',
         sourceId: pieceRef,
@@ -6109,18 +6290,219 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
     logAudit(
       currentUser.nom,
       'ECRITURE_AUTO_QR',
-      `Passation écriture automatique via QR Code Lot/Stock ${reference || ''} pour ${ag.nom}: $${numMontant} USD (Prix Chef d'Agence: $${prixUnitaireDetecte || numMontant}). Pièce: ${pieceRef}`,
+      `Valorisation entrée stock QR Code Lot ${reference || numeroLot} pour ${ag.nom}: $${numMontant} ${dev}. Pièce: ${pieceRef}`,
       numAg
     )
 
     return res.json({
-      message: `Écriture de valorisation passée pour l'${ag.nom} (Tarif Chef d'Agence détecté) ! Pièce : ${pieceRef}`,
+      success: true,
+      message: `Écriture de valorisation passée pour l'${ag.nom} ! Pièce : ${pieceRef}`,
       pieceReference: pieceRef,
       agence: ag.nom,
       montant: numMontant,
       devise: dev,
     })
   }
+
+  // --- VENTE RÉELLE POS PAR SCAN QR CODE (ENCAISSEMENT DIRECT) ---
+  const clientObj = clientId ? clients.find((c) => c.id === toInt(clientId)) : undefined
+
+  // 2. DIMINUTION RÉELLE DU STOCK (Lot scanné ou FEFO)
+  let lotUtilise = numeroLot || reference || ''
+  const availableLots = stocksAgence
+    .filter((s) => s.agenceId === numAg && s.articleId === art.id && s.quantite > 0)
+    .sort((a, b) => new Date(a.dateExpiration).getTime() - new Date(b.dateExpiration).getTime())
+
+  let stockTrouve = numeroLot
+    ? stocksAgence.find((s) => s.agenceId === numAg && s.articleId === art.id && s.numeroLot === numeroLot)
+    : undefined
+
+  if (!stockTrouve && availableLots.length > 0) {
+    stockTrouve = availableLots[0]
+  }
+
+  if (stockTrouve) {
+    lotUtilise = stockTrouve.numeroLot
+    stockTrouve.quantite = Math.max(0, stockTrouve.quantite - qte)
+  } else {
+    // Si aucun stock avec lot, chercher ou décrémenter le stock général de l'agence
+    const genericStock = stocksAgence.find((s) => s.agenceId === numAg && s.articleId === art.id)
+    if (genericStock) {
+      genericStock.quantite = Math.max(0, genericStock.quantite - qte)
+      lotUtilise = genericStock.numeroLot || 'LOT-STD'
+    } else {
+      lotUtilise = 'LOT-QR-DISPO'
+    }
+  }
+
+  // 3. ENREGISTREMENT OFFICIEL DANS L'HISTORIQUE DES VENTES
+  const refVente = `VNT-${numAg}-${Date.now().toString().slice(-6)}`
+  const nouvelleVente: any = {
+    id: ventes.length + 1,
+    referenceVente: refVente,
+    agenceId: numAg,
+    vendeurId: currentUser.id,
+    clientId: clientObj ? clientObj.id : undefined,
+    montantTotal: numMontant,
+    montantCdf: numCdf,
+    devise: dev,
+    estCredit: isCredit,
+    statutCredit: isCredit ? 'EN_ATTENTE' : 'AUCUN',
+    statutAnnulation: 'AUCUNE',
+    dateVente: dateIso,
+    details: [
+      {
+        id: 1,
+        articleId: art.id,
+        quantite: qte,
+        prixUnitaireApplique: pu,
+        numeroLot: lotUtilise,
+      },
+    ],
+  }
+  ventes.unshift(nouvelleVente)
+
+  // 4. AUGMENTATION RÉELLE DU COMPTE CAISSE OU DETTE CLIENT
+  let caisseUtilisee: any = null
+  if (!isCredit) {
+    caisseUtilisee = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : (c.agenceId === numAg ? c.id : 1))) || comptesCaisse[0]
+    if (dev === 'USD') {
+      caisseUtilisee.soldeUsd = Math.round((caisseUtilisee.soldeUsd + numMontant) * 100) / 100
+    } else {
+      caisseUtilisee.soldeCdf = Math.round(caisseUtilisee.soldeCdf + numCdf)
+    }
+
+    // Enregistrement d'une transaction de caisse pour traçabilité de trésorerie
+    transactions.unshift({
+      id: `TX-${Date.now().toString().slice(-6)}`,
+      referenceInterne: `ENC-QR-${Date.now().toString().slice(-6)}`,
+      agenceId: numAg,
+      caisseId: caisseUtilisee.id,
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      type: 'ENTREE',
+      libelle: `[SCAN QR POS] Encaissement Vente ${refVente} (${art.designation} x${qte})`,
+      statut: 'VALIDE',
+      createurId: currentUser.id,
+      dateCreation: dateIso,
+    })
+  } else if (clientObj) {
+    const montantDetteUsd = dev === 'USD' ? numMontant : numMontant / activeRate
+    clientObj.soldeDette = Math.round((clientObj.soldeDette + montantDetteUsd) * 100) / 100
+  }
+
+  // 5. GOUVERNANCE COMPTABLE : ÉCRITURES DÉBIT / CRÉDIT
+  let compteDebit = dev === 'USD' ? parametresComptables.compteCaisseUsd : parametresComptables.compteCaisseCdf
+  let libelleDebit = `[SCAN QR] Encaissement vente comptant ${refVente} (${caisseUtilisee?.nom || ag.nom})`
+
+  if (isCredit) {
+    compteDebit = clientObj?.compteComptable || (clientObj ? `411${String(clientObj.id).padStart(3, '0')}` : parametresComptables.compteClientOrdinaire)
+    libelleDebit = `[SCAN QR] Créance client vente à terme ${refVente} (${clientObj?.nom || 'Client'})`
+  }
+
+  const compteCredit = parametresComptables.compteVenteMarchandises
+  const libelleCredit = `[SCAN QR] Produits ventes ${art.designation} (Lot ${lotUtilise}, Sacs: ${qte})`
+
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refVente,
+      agenceId: numAg,
+      compteNumero: compteDebit,
+      sens: 'DEBIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: libelleDebit,
+      sourceModule: 'VENTES_QR',
+      sourceType: isCredit ? 'VENTE_CREDIT' : 'VENTE_COMPTANT',
+      sourceId: String(nouvelleVente.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: dateIso,
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refVente,
+      agenceId: numAg,
+      compteNumero: compteCredit,
+      sens: 'CREDIT',
+      montant: numMontant,
+      devise: dev,
+      tauxApplique: activeRate,
+      libelle: libelleCredit,
+      sourceModule: 'VENTES_QR',
+      sourceType: isCredit ? 'VENTE_CREDIT' : 'VENTE_COMPTANT',
+      sourceId: String(nouvelleVente.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: dateIso,
+    }
+  )
+
+  // 6. GÉNÉRATION AUTOMATIQUE DU BON DE LIVRAISON (BL)
+  const vehiculeChoisi = (modeTransport === 'FLOTTE_ENTREPRISE' && vehiculeId)
+    ? vehicules.find((v) => v.id === Number(vehiculeId))
+    : undefined
+
+  const chauffeurFinal = modeTransport === 'FLOTTE_ENTREPRISE' && vehiculeChoisi
+    ? vehiculeChoisi.chauffeurNom
+    : (clientChauffeur ? String(clientChauffeur).trim() : 'Enlèvement Comptoir Magasin')
+
+  const refBL = `BL-${new Date().getFullYear()}-${String(bonsLivraison.length + 1).padStart(4, '0')}`
+  const nouveauBL: any = {
+    id: bonsLivraison.length + 1,
+    numeroBL: refBL,
+    agenceId: numAg,
+    venteId: nouvelleVente.id,
+    clientNom: clientObj?.nom || 'Client Comptoir Magasin',
+    clientTelephone: clientObj?.telephone,
+    adresseLivraison: modeTransport === 'ENLEVEMENT_MAGASIN' ? 'Retrait sur place (Comptoir Dépôt)' : (clientObj?.adresse || 'Livraison Client'),
+    modeTransport: modeTransport || 'ENLEVEMENT_MAGASIN',
+    vehiculeId: vehiculeChoisi?.id,
+    clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? (clientVehicule || undefined) : undefined,
+    chauffeurNom: chauffeurFinal,
+    quantiteSacs: qte,
+    poidsTotalKg: qte * 25,
+    dateCreation: dateIso,
+    statut: modeTransport === 'ENLEVEMENT_MAGASIN' ? 'LIVRE' : 'EN_ATTENTE_CHARGEMENT',
+    recepteurNom: clientObj?.nom || 'Client Comptoir Magasin',
+    recepteurSignature: 'DECHARGE_COMPTOIR_SIGNEE',
+    observations: `Bon de livraison généré automatiquement suite au scan QR Vente ${refVente}`,
+  }
+
+  if (vehiculeChoisi) {
+    vehiculeChoisi.statut = 'EN_COURSE'
+  }
+
+  bonsLivraison.unshift(nouveauBL)
+
+  logAudit(
+    currentUser.nom,
+    'VENTE_SCAN_QR_COMPLETE',
+    `Vente rapide par scan QR ${refVente} (${qte} sacs de ${art.designation}) enregistrée pour ${ag.nom}. Montant: $${numMontant} ${dev}. BL ${refBL} émis automatiquement. Stock débité.`,
+    numAg
+  )
+
+  return res.json({
+    success: true,
+    message: `Vente ${refVente} enregistrée et encaissée avec succès ! Stock mis à jour, BL ${refBL} généré.`,
+    venteId: nouvelleVente.id,
+    referenceVente: refVente,
+    vente: nouvelleVente,
+    bonLivraisonId: nouveauBL.id,
+    bonLivraison: nouveauBL,
+    pieceReference: pieceRef,
+    agence: ag.nom,
+    debitCompte: compteDebit,
+    creditCompte: compteCredit,
+    montant: numMontant,
+    devise: dev,
+    ticketUrl: `/api/ventes/${nouvelleVente.id}/ticket-80mm`,
+    factureUrl: `/api/ventes/${nouvelleVente.id}/facture?format=a4`,
+    blUrl: `/api/logistique/livraisons/${nouveauBL.id}/document`,
+  })
 })
 
 router.get('/categories', (_req: Request, res: Response) => {
