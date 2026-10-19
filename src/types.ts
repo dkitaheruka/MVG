@@ -23,8 +23,10 @@ export type PermissionCode =
   | 'tresorerie.voir'
   | 'production.gerer'
   | 'production.qr_generer'
+  | 'comptabilite.voir'
   | 'comptabilite.plan_gerer'
   | 'comptabilite.ecritures_voir'
+  | 'comptabilite.od_creer'
   | 'reporting.voir'
   | 'reporting.exporter'
   | 'sync.voir'
@@ -154,6 +156,13 @@ export type Vente = {
   statutCredit?: 'AUCUN' | 'EN_ATTENTE' | 'DEPASSEMENT_PLAFOND' | 'VALIDE' | 'REJETE'
   dateVente?: string
   details?: VenteDetail[]
+  fraisTransport?: number
+  modeTransport?: 'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE' | string
+  vehiculeId?: number
+  selectedVehiculeId?: number
+  clientVehicule?: string
+  clientChauffeur?: string
+  comptabilisee?: boolean
 }
 
 export type CartItem = {
@@ -181,10 +190,15 @@ export type SyncOperation = {
 export type CompteCaisse = {
   id?: number
   nom: string
+  agenceId?: number
   soldeUsd: number
   soldeCdf: number
   type?: 'CAISSE' | 'BANQUE'
   numeroCompteBancaire?: string
+  numeroCompteComptable?: string
+  deviseDefaut?: 'USD' | 'CDF' | 'MULTI'
+  responsableNom?: string
+  actif?: boolean
   agence?: Agence
 }
 
@@ -196,6 +210,10 @@ export type PlanComptable = {
   libelle: string
   estModifiable: boolean
   parent?: PlanComptable
+  parentNumero?: string
+  classe?: number
+  nature?: 'ACTIF' | 'PASSIF' | 'CHARGE' | 'PRODUIT' | 'SPECIAL'
+  actif?: boolean
 }
 
 export type ServiceEntreprise = {

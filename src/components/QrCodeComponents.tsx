@@ -541,6 +541,7 @@ export function QrAccountingModal({
   const [selectedVehiculeId, setSelectedVehiculeId] = useState<string>('')
   const [clientVehicule, setClientVehicule] = useState<string>('')
   const [clientChauffeur, setClientChauffeur] = useState<string>('')
+  const [fraisTransport, setFraisTransport] = useState<number>(0)
 
   useEffect(() => {
     if (payload?.prix && payload.prix > 0) {
@@ -556,6 +557,7 @@ export function QrAccountingModal({
     setSelectedVehiculeId('')
     setClientVehicule('')
     setClientChauffeur('')
+    setFraisTransport(0)
     if (caisses.length > 0) {
       setSelectedCaisseId(String(caisses[0].id))
     }
@@ -565,23 +567,26 @@ export function QrAccountingModal({
 
   // Si la vente vient d'être validée avec succès, afficher l'écran de confirmation et d'impression directe
   if (lastCompletedSale) {
+    const isCredit = Boolean(lastCompletedSale.isCredit || lastCompletedSale.vente?.estCredit)
     const ticketUrl = lastCompletedSale.ticketUrl || `/api/ventes/${lastCompletedSale.venteId}/ticket-80mm`
     const blUrl = lastCompletedSale.blUrl || `/api/logistique/livraisons/${lastCompletedSale.bonLivraisonId}/document`
     const factureUrl = lastCompletedSale.factureUrl || `/api/ventes/${lastCompletedSale.venteId}/facture?format=a4`
 
     return (
       <div className="modal-overlay" style={{ zIndex: 10000, position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-        <div className="modal-card" style={{ maxWidth: 540, width: '100%', background: 'var(--surface)', borderRadius: 14, padding: 26, border: '2px solid #16a34a', boxShadow: '0 25px 60px rgba(0,0,0,0.35)' }}>
+        <div className="modal-card" style={{ maxWidth: 540, width: '100%', background: 'var(--surface)', borderRadius: 14, padding: 26, border: `2px solid ${isCredit ? '#0284c7' : '#16a34a'}`, boxShadow: '0 25px 60px rgba(0,0,0,0.35)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: isCredit ? '#e0f2fe' : '#dcfce7', color: isCredit ? '#0284c7' : '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CheckCircle size={28} weight="fill" />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#16a34a' }}>
-                Vente Encaissée avec Succès !
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: isCredit ? '#0284c7' : '#16a34a' }}>
+                {isCredit ? 'Vente à Crédit Enregistrée !' : 'Vente Validée et Encaissée !'}
               </h3>
               <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
-                Stock mis à jour, Bon de Livraison (BL) généré et écritures passées en temps réel.
+                {isCredit
+                  ? 'En attente d’approbation du Chef d’Agence pour inscription au journal (évite les déséquilibres). Bon de Livraison émis.'
+                  : 'Stock décrémenté, Bon de Livraison (BL) généré et écritures passées en temps réel.'}
               </p>
             </div>
           </div>
@@ -597,21 +602,35 @@ export function QrAccountingModal({
                 <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>{lastCompletedSale.bonLivraison?.numeroBL || lastCompletedSale.numeroBL || 'BL ÉMIS'}</strong>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>PIÈCE COMPTABLE</span>
-                <strong style={{ fontSize: '0.88rem' }}>{lastCompletedSale.pieceReference}</strong>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>PIÈCE COMPTABLE / STATUT</span>
+                <strong style={{ fontSize: '0.88rem', color: isCredit ? '#d97706' : 'var(--text)' }}>
+                  {isCredit ? 'EN ATTENTE VALIDATION CHEF' : lastCompletedSale.pieceReference}
+                </strong>
               </div>
               <div>
-                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>MONTANT ENCAISSÉ</span>
-                <strong style={{ fontSize: '1rem', color: '#16a34a' }}>
+                <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>TOTAL FACTURÉ</span>
+                <strong style={{ fontSize: '1rem', color: isCredit ? '#0284c7' : '#16a34a' }}>
                   ${Number(lastCompletedSale.montant || 0).toFixed(2)} {lastCompletedSale.devise || 'USD'}
                 </strong>
               </div>
             </div>
 
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', fontSize: '0.8rem', color: 'var(--muted)' }}>
-              <div><strong>Débit :</strong> Compte <code>{lastCompletedSale.debitCompte}</code></div>
-              <div><strong>Crédit :</strong> Compte <code>{lastCompletedSale.creditCompte}</code> (Produits ventes)</div>
-            </div>
+            {lastCompletedSale.fraisTransport > 0 && (
+              <div style={{ marginTop: 8, fontSize: '0.78rem', color: '#0369a1' }}>
+                Dont Frais de Transport : <strong>${Number(lastCompletedSale.fraisTransport).toFixed(2)} USD</strong>
+              </div>
+            )}
+
+            {!isCredit ? (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                <div><strong>Débit :</strong> Compte <code>{lastCompletedSale.debitCompte}</code></div>
+                <div><strong>Crédit :</strong> Compte <code>{lastCompletedSale.creditCompte}</code> (Produits ventes)</div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)', fontSize: '0.78rem', color: '#b45309' }}>
+                ℹ️ <strong>Règle de gouvernance :</strong> L'écriture au compte 411 du client sera passée dès que le Chef d'Agence aura cliqué sur « Approuver le crédit ».
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
@@ -669,7 +688,9 @@ export function QrAccountingModal({
   }
 
   const clientSelectionne = selectedClientId ? clients.find((c) => String(c.id) === String(selectedClientId)) : null
-  const montantTotalCalcule = Math.round(Number(prixUnitaire * quantite) * 100) / 100
+  const montantMarchandises = Math.round(Number(prixUnitaire * quantite) * 100) / 100
+  const numFraisTransport = Math.max(0, Number(fraisTransport) || 0)
+  const montantTotalCalcule = Math.round((montantMarchandises + numFraisTransport) * 100) / 100
   const tauxEffectif = payload?.taux || tauxDuJour || 2850
   const montantCdf = deviseChoisie === 'CDF' ? Math.round(montantTotalCalcule) : Math.round(montantTotalCalcule * tauxEffectif)
 
@@ -684,6 +705,8 @@ export function QrAccountingModal({
       ...payload,
       quantite,
       prixUnitaire,
+      montantMarchandise: montantMarchandises,
+      fraisTransport: numFraisTransport,
       montantTotal: montantTotalCalcule,
       montantCdf,
       devise: deviseChoisie,
@@ -773,7 +796,9 @@ export function QrAccountingModal({
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'block' }}>TOTAL ENCAISSEMENT :</span>
+              <span style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'block' }}>
+                TOTAL ENCAISSEMENT {numFraisTransport > 0 ? `(dont transp: $${numFraisTransport.toFixed(2)})` : ''} :
+              </span>
               <strong style={{ fontSize: '1.35rem', color: 'var(--accent-strong)', display: 'block' }}>
                 ${montantTotalCalcule.toFixed(2)} USD
               </strong>
@@ -845,7 +870,7 @@ export function QrAccountingModal({
           )}
 
           {modeTransport === 'VEHICULE_CLIENT' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <input
                 type="text"
                 placeholder="Plaque Véhicule Client"
@@ -862,6 +887,26 @@ export function QrAccountingModal({
               />
             </div>
           )}
+
+          {/* FRAIS DE TRANSPORT S'IL Y EN A */}
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'var(--surface)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text)', display: 'block' }}>Frais de transport s'il y a ($ USD) :</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>Indiquer 0 si enlèvement magasin sans frais de port</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0.00"
+                value={fraisTransport || ''}
+                onChange={(e) => setFraisTransport(Math.max(0, Number(e.target.value) || 0))}
+                style={{ width: 85, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', textAlign: 'right', fontWeight: 800, fontSize: '0.95rem', background: 'var(--surface-2)' }}
+              />
+              <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>USD</span>
+            </div>
+          </div>
         </div>
 
         {/* MODE DE PAIEMENT & CAISSE */}
@@ -924,14 +969,19 @@ export function QrAccountingModal({
             • <strong>Stock :</strong> Diminution automatique de <strong>{quantite} sac(s)</strong> sur le lot {payload?.numeroLot || 'actuel'}.
           </div>
           <div>
+            • <strong>Marchandises :</strong> ${montantMarchandises.toFixed(2)} USD {numFraisTransport > 0 ? `+ Transport: $${numFraisTransport.toFixed(2)} USD` : ''}
+          </div>
+          <div>
             • <strong>Débit :</strong> {compteDebitPreview} (+${montantTotalCalcule.toFixed(2)})
           </div>
           <div>
-            • <strong>Crédit :</strong> 701 (Vente de Produits Finis - Minoterie MVG)
+            • <strong>Crédit :</strong> 701 (Produits finis) {numFraisTransport > 0 ? `& 706 (Transport: +$${numFraisTransport.toFixed(2)})` : ''}
           </div>
-          <div>
-            • <strong>Logistique :</strong> Émission automatique du Bon de Livraison (BL).
-          </div>
+          {modePaiement === 'CREDIT' && (
+            <div style={{ color: '#b45309', fontWeight: 700, marginTop: 3 }}>
+              ⚠️ Vente à crédit : l'écriture au journal sera inscrite après approbation du Chef d'Agence pour éviter les déséquilibres.
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -943,10 +993,24 @@ export function QrAccountingModal({
             className="primary-action"
             onClick={handleConfirmerVente}
             disabled={isPending}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontWeight: 700 }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '11px 22px',
+              fontWeight: 800,
+              fontSize: '0.96rem',
+              background: modePaiement === 'COMPTANT' ? '#16a34a' : '#0284c7',
+              color: '#fff',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+            }}
           >
-            <Receipt size={18} />
-            {isPending ? 'Enregistrement en cours...' : 'Encaisser la Vente & Émettre le BL'}
+            <Receipt size={20} />
+            {isPending
+              ? 'Traitement en cours...'
+              : modePaiement === 'COMPTANT'
+                ? 'Vente Validée et Encaissée !'
+                : 'Soumettre pour Approbation Crédit (Chef)'}
           </button>
         </div>
       </div>

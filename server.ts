@@ -10,10 +10,21 @@ async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production'
 
   app.use(cors())
-  app.use(express.json())
+  app.use(express.json({ limit: '50mb' }))
+  app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
   // API router
   app.use('/api', apiRouter)
+
+  // Error handling middleware for oversized payloads or malformed JSON
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+      return res.status(413).json({
+        message: 'La charge utile ou le fichier envoyé dépasse la taille maximale autorisée (50 Mo).',
+      })
+    }
+    next(err)
+  })
 
   if (!isProduction) {
     // Vite middleware for dev mode

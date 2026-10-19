@@ -64,6 +64,7 @@ import {
   Key,
   Crown,
   Devices,
+  MapPin,
 } from '@phosphor-icons/react'
 import {
   RealQrCode,
@@ -133,7 +134,7 @@ const navItems: NavItem[] = [
   { to: '/production', labelKey: 'production', icon: Barcode, permission: 'production.gerer' },
   { to: '/tresorerie', labelKey: 'treasury', icon: Bank, permission: 'tresorerie.voir' },
   { to: '/paie', labelKey: 'payroll', icon: UsersThree, permission: 'rh.gerer' },
-  { to: '/comptabilite', labelKey: 'accounting', icon: Books, permission: 'comptabilite.plan_gerer' },
+  { to: '/comptabilite', labelKey: 'accounting', icon: Books, permission: 'comptabilite.voir' },
   { to: '/reporting', labelKey: 'reporting', icon: ChartLineUp, permission: 'reporting.voir' },
   { to: '/admin', labelKey: 'admin', icon: ShieldCheck, permission: 'roles.gerer' },
   { to: '/sync', labelKey: 'sync', icon: ArrowsClockwise, permission: 'sync.voir' },
@@ -401,7 +402,7 @@ function LoginPage() {
                   border: message.includes('bloqué') || message.includes('BLOQUÉ') || message.includes('Sécurité') ? '1px solid #f87171' : '1px solid #fcd34d',
                 }}
               >
-                <strong>{message.includes('bloqué') || message.includes('BLOQUÉ') ? '🔒 Accès Bloqué' : 'Attention :'}</strong> {message}
+                <strong>{message.includes('bloqué') || message.includes('BLOQUÉ') ? 'Accès Bloqué :' : 'Attention :'}</strong> {message}
               </div>
             )}
 
@@ -626,7 +627,7 @@ function AppShell() {
                   try {
                     const res = await apiRequest<{ token: string }>('/api/auth/login', {
                       method: 'POST',
-                      body: JSON.stringify({ email: targetEmail, password: 'demo' }),
+                      body: JSON.stringify({ email: targetEmail, password: 'admin123' }),
                     })
                     setSession(parseJwt(res.token))
                   } catch (err) {
@@ -1169,9 +1170,10 @@ function SalesPage() {
       : (state.session?.agenceId ?? 1)
   )
   const session = useAppStore((state) => state.session)
+  const isSiegeAdmin = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
-  const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'credits' | 'clients' | 'livraisons'>('pos')
+  const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'credits' | 'clients' | 'livraisons' | 'tarifs'>('pos')
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [paymentMode, setPaymentMode] = useState<'CASH_USD' | 'CASH_CDF' | 'CREDIT'>('CASH_USD')
@@ -1192,6 +1194,7 @@ function SalesPage() {
   const [modeTransport, setModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE'>('ENLEVEMENT_MAGASIN')
   const [clientVehicule, setClientVehicule] = useState('')
   const [clientChauffeur, setClientChauffeur] = useState('')
+  const [posFraisTransport, setPosFraisTransport] = useState<number | ''>('')
   const [showCameraModal, setShowCameraModal] = useState(false)
   const [scanNotice, setScanNotice] = useState<string | null>(null)
   const [scannedQrPayload, setScannedQrPayload] = useState<QrCodePayload | null>(null)
@@ -1312,6 +1315,39 @@ function SalesPage() {
     enabled: Boolean(token),
   })
 
+  // 2c. Grille des tarifs fixés par le Chef d'Agence
+  const agencyPricesListQuery = useQuery({
+    queryKey: ['agence-articles-prix', agenceId],
+    queryFn: () => apiRequest<any[]>(`/api/agences/${agenceId}/articles/prix`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const [priceFormArticleId, setPriceFormArticleId] = useState<number | null>(null)
+  const [newAgencyPriceValue, setNewAgencyPriceValue] = useState('')
+  const [priceNotice, setPriceNotice] = useState<string | null>(null)
+
+  const updateAgencyPriceMutation = useMutation({
+    mutationFn: ({ articleId, prix }: { articleId: number; prix: number }) =>
+      apiRequest(`/api/agences/${agenceId}/articles/${articleId}/prix`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ prix, devise: 'USD' }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['agence-articles-prix'] })
+      queryClient.invalidateQueries({ queryKey: ['prix-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
+      setPriceFormArticleId(null)
+      setNewAgencyPriceValue('')
+      setPriceNotice(data.message || 'Prix agence mis à jour avec succès !')
+      setTimeout(() => setPriceNotice(null), 5000)
+    },
+    onError: (err: any) => {
+      setPriceNotice(err.message || 'Erreur lors de la mise à jour du prix')
+      setTimeout(() => setPriceNotice(null), 5000)
+    },
+  })
+
   // 3. Liste des clients
   const clientsQuery = useQuery({
     queryKey: ['clients'],
@@ -1408,7 +1444,9 @@ function SalesPage() {
     mutationFn: async () => {
       if (cart.length === 0) throw new Error('Le panier est vide')
 
-      const totalUsd = cart.reduce((acc, item) => acc + item.prix * item.quantite, 0)
+      const numFraisTransport = Math.max(0, Number(posFraisTransport) || 0)
+      const totalMarchandisesUsd = cart.reduce((acc, item) => acc + item.prix * item.quantite, 0)
+      const totalNetUsd = Math.round((totalMarchandisesUsd + numFraisTransport) * 100) / 100
       const selectedClient = clientsQuery.data?.find((c) => c.id === selectedClientId)
 
       if (!online) {
@@ -1419,11 +1457,16 @@ function SalesPage() {
           agence: { id: agenceId, nom: 'Mon Agence', estSiege: false },
           vendeur: { email: session?.email ?? 'vendeur@mvg.cd' },
           client: selectedClient ?? { nom: 'Client Comptant' },
-          montantTotal: totalUsd,
+          montantTotal: totalNetUsd,
           devise: paymentMode === 'CASH_CDF' ? 'CDF' : 'USD',
           estCredit: paymentMode === 'CREDIT',
           statutCredit: paymentMode === 'CREDIT' ? 'EN_ATTENTE' : 'AUCUN',
           dateVente: new Date().toISOString(),
+          fraisTransport: numFraisTransport,
+          modeTransport,
+          vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
+          clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? clientVehicule.trim() : undefined,
+          clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? clientChauffeur.trim() : undefined,
           details: cart.map((item) => ({
             article: { id: item.articleId, designation: item.designation, uniteMesure: item.uniteMesure },
             quantite: item.quantite,
@@ -1443,14 +1486,28 @@ function SalesPage() {
       }
 
       // Enregistrement de la vente (Mode En ligne ou Hors-Ligne)
-      const payload: Vente = {
+      const payload: any = {
+        agenceId,
         agence: { id: agenceId, nom: 'Agence locale', estSiege: false },
+        clientId: selectedClient ? selectedClient.id : undefined,
         client: selectedClient ? { id: selectedClient.id, nom: selectedClient.nom } : undefined,
-        montantTotal: totalUsd,
+        montantTotal: totalNetUsd,
+        fraisTransport: numFraisTransport,
+        modeTransport,
+        vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
+        selectedVehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
+        clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? clientVehicule.trim() : undefined,
+        clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? clientChauffeur.trim() : undefined,
         devise: paymentMode === 'CASH_CDF' ? 'CDF' : 'USD',
         estCredit: paymentMode === 'CREDIT',
         details: cart.map((item) => ({
+          articleId: item.articleId,
           article: { id: item.articleId, designation: item.designation },
+          quantite: item.quantite,
+          prixUnitaireApplique: item.prix,
+        })),
+        items: cart.map((item) => ({
+          articleId: item.articleId,
           quantite: item.quantite,
           prixUnitaireApplique: item.prix,
         })),
@@ -1504,10 +1561,21 @@ function SalesPage() {
     onSuccess: (savedVente) => {
       setActiveReceipt(savedVente)
       setCart([])
+      setPosFraisTransport('')
+      setClientVehicule('')
+      setClientChauffeur('')
+      setSelectedVehiculeId('')
+      setModeTransport('ENLEVEMENT_MAGASIN')
       setCheckoutMessage(null)
       queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
       queryClient.invalidateQueries({ queryKey: ['ventes-agence'] })
       queryClient.invalidateQueries({ queryKey: ['sync-operations'] })
+      queryClient.invalidateQueries({ queryKey: ['livraisons'] })
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['classes-comptables'] })
+      queryClient.invalidateQueries({ queryKey: ['comptes-auxiliaires-clients'] })
       if (savedVente && savedVente.id && savedVente.id > 0) {
         setPrintProposal({
           title: 'Vente Validée et Encaissée !',
@@ -1742,8 +1810,10 @@ function SalesPage() {
     )
   })
 
-  const totalUsd = cart.reduce((acc, item) => acc + item.prix * item.quantite, 0)
-  const totalCdf = Math.round(totalUsd * tauxActif)
+  const totalMarchandisesUsd = cart.reduce((acc, item) => acc + item.prix * item.quantite, 0)
+  const numPosFraisTransp = Math.max(0, Number(posFraisTransport) || 0)
+  const totalUsd = Math.round((totalMarchandisesUsd + numPosFraisTransp) * 100) / 100
+  const totalCdf = paymentMode === 'CASH_CDF' ? Math.round(totalUsd) : Math.round(totalUsd * tauxActif)
   const selectedClient = clientsQuery.data?.find((c) => c.id === selectedClientId)
   const pendingCreditsCount = creditsQuery.data?.length ?? 0
 
@@ -1806,6 +1876,13 @@ function SalesPage() {
         >
           <Truck size={19} />
           Bons de Livraison (BL) ({livraisonsQuery.data?.length ?? 0})
+        </button>
+        <button
+          className={clsx('pos-tab-btn', activeTab === 'tarifs' && 'active')}
+          onClick={() => setActiveTab('tarifs')}
+        >
+          <Tag size={19} />
+          Prix Agence (Chef)
         </button>
       </div>
 
@@ -1882,7 +1959,13 @@ function SalesPage() {
             <div className="pos-product-grid">
               {catalog.map((stock) => {
                 const dispo = stock.quantite ?? 0
-                const prixUsd = stock.article?.prixVenteStandard ?? 10.0
+                const specialPrice = (prixAgenceQuery.data ?? []).find(
+                  (p: any) => p.articleId === stock.article?.id && p.statut === 'VALIDE' && p.actif
+                )
+                const proposedPrice = (prixAgenceQuery.data ?? []).find(
+                  (p: any) => p.articleId === stock.article?.id && p.statut === 'PROPOSE'
+                )
+                const prixUsd = specialPrice ? Number(specialPrice.prix) : (stock.article?.prixVenteStandard ?? 10.0)
                 const prixCdf = Math.round(prixUsd * tauxActif)
                 const isOutOfStock = dispo <= 0
                 const isLow = dispo > 0 && dispo <= (stock.seuilAlerte ?? 5)
@@ -1904,6 +1987,19 @@ function SalesPage() {
                     <div className="price-block">
                       <span className="price-usd">${prixUsd.toFixed(2)}</span>
                       <span className="price-cdf">{prixCdf.toLocaleString()} CDF</span>
+                      {specialPrice ? (
+                        <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <span>✓ Tarif Spécifique Validé Siège</span>
+                        </div>
+                      ) : proposedPrice ? (
+                        <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <span>⏳ Proposition ${Number(proposedPrice.prix).toFixed(2)} en attente Siège</span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.70rem', color: 'var(--muted)', marginTop: 2 }}>
+                          <span>Tarif standard Siège</span>
+                        </div>
+                      )}
                       {stock.numeroLot && (
                         <small style={{ color: 'var(--muted)', display: 'block', fontSize: '0.74rem' }}>
                           Lot: {stock.numeroLot}
@@ -1975,10 +2071,18 @@ function SalesPage() {
                 </button>
               </div>
 
-              {selectedClient && (selectedClient.soldeDette ?? 0) > 0 && (
-                <div className="debt-alert">
-                  <WarningCircle size={15} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                  Dette en cours : ${selectedClient.soldeDette?.toFixed(2)} USD
+              {selectedClient && (
+                <div style={{ marginTop: 6, padding: '6px 8px', background: 'var(--surface-2)', borderRadius: 6, fontSize: '0.76rem', border: '1px solid var(--border)' }}>
+                  <div>Compte Client : <strong><code>{selectedClient.compteComptable || `411${String(selectedClient.id).padStart(3, '0')}`}</code></strong></div>
+                  {(selectedClient.soldeDette ?? 0) > 0 ? (
+                    <div style={{ color: 'var(--danger)', fontWeight: 700, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Warning size={14} /> Dette en cours : ${selectedClient.soldeDette?.toFixed(2)} USD / Plafond : ${selectedClient.limiteCredit || 1000} USD
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--success)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle size={14} /> Compte régularisé (Plafond : ${selectedClient.limiteCredit || 1000} USD)
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2017,10 +2121,97 @@ function SalesPage() {
               )}
             </div>
 
+            {/* INFORMATIONS DE TRANSPORT & EXPÉDITION (Facture A4, BL & Ticket) */}
+            <div style={{ background: 'var(--surface-2)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', margin: '10px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text)' }}>
+                  <Truck size={16} style={{ color: 'var(--accent-strong)' }} /> Mode de Transport & Expédition :
+                </span>
+              </div>
+
+              <select
+                value={modeTransport}
+                onChange={(e) => setModeTransport(e.target.value as any)}
+                style={{ width: '100%', padding: '6px 8px', fontSize: '0.82rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', marginBottom: 6 }}
+              >
+                <option value="ENLEVEMENT_MAGASIN">Retrait comptoir (Enlèvement direct dépôt)</option>
+                <option value="FLOTTE_ENTREPRISE">Camion Minoterie MVG (Flotte Interne)</option>
+                <option value="VEHICULE_CLIENT">Véhicule apporté par le Client</option>
+              </select>
+
+              {modeTransport === 'FLOTTE_ENTREPRISE' && (
+                <div style={{ marginBottom: 6 }}>
+                  <select
+                    value={selectedVehiculeId}
+                    onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                    style={{ width: '100%', padding: '5px 8px', fontSize: '0.8rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+                  >
+                    <option value="">-- Sélectionner camion & chauffeur --</option>
+                    {(flotteQuery.data ?? []).map((v: any) => (
+                      <option key={v.id} value={v.id}>
+                        {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom || 'Chauffeur'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {modeTransport === 'VEHICULE_CLIENT' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+                  <input
+                    type="text"
+                    placeholder="Plaque Véhicule"
+                    value={clientVehicule}
+                    onChange={(e) => setClientVehicule(e.target.value)}
+                    style={{ padding: '5px 8px', fontSize: '0.8rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Nom Chauffeur"
+                    value={clientChauffeur}
+                    onChange={(e) => setClientChauffeur(e.target.value)}
+                    style={{ padding: '5px 8px', fontSize: '0.8rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+                  />
+                </div>
+              )}
+
+              {/* FRAIS DE TRANSPORT S'IL Y EN A */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                <div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, display: 'block' }}>Frais de transport ($ USD) :</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>0 si enlèvement magasin</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="0.00"
+                    value={posFraisTransport}
+                    onChange={(e) => setPosFraisTransport(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
+                    style={{ width: 80, padding: '4px 6px', fontSize: '0.9rem', fontWeight: 800, textAlign: 'right', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+                  />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>$</span>
+                </div>
+              </div>
+            </div>
+
             {/* TOTAUX & MODE DE RÈGLEMENT */}
             <div className="pos-cart-totals">
+              {numPosFraisTransp > 0 && (
+                <div className="pos-total-row" style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  <span>Marchandises HT :</span>
+                  <span>${totalMarchandisesUsd.toFixed(2)} USD</span>
+                </div>
+              )}
+              {numPosFraisTransp > 0 && (
+                <div className="pos-total-row" style={{ fontSize: '0.82rem', color: '#0284c7', fontWeight: 600 }}>
+                  <span>Frais de Transport :</span>
+                  <span>+${numPosFraisTransp.toFixed(2)} USD</span>
+                </div>
+              )}
               <div className="pos-total-row">
-                <span>Total à Payer :</span>
+                <span>Total Net à Payer :</span>
                 <strong>${totalUsd.toFixed(2)} USD</strong>
               </div>
               <div className="pos-total-row">
@@ -2053,7 +2244,7 @@ function SalesPage() {
                   className={clsx(paymentMode === 'CREDIT' && 'active')}
                   onClick={() => {
                     if (!selectedClientId) {
-                      alert('Veuillez sélectionner un client enregistré avant de vendre à crédit !')
+                      setCheckoutMessage('Veuillez sélectionner un client enregistré avant de vendre à crédit !')
                       return
                     }
                     setPaymentMode('CREDIT')
@@ -2367,6 +2558,119 @@ function SalesPage() {
             ])}
             emptyText="Aucun bon de livraison enregistré pour cette agence."
           />
+        </div>
+      )}
+
+      {/* ONGLET 6 : TARIFS DE L'AGENCE (FIXATION DES PRIX PAR LE CHEF D'AGENCE) */}
+      {activeTab === 'tarifs' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Tag size={22} style={{ color: 'var(--accent-strong)' }} />
+                Grille Tarifaire de l'Agence (Fixation des Prix par le Chef)
+              </h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Fixez et ajustez les prix de vente au sac/unité pour votre agence locale. Ces prix sont appliqués immédiatement aux caisses POS et aux encaissements QR Code.
+              </p>
+            </div>
+          </div>
+
+          {priceNotice && (
+            <div style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)', padding: '10px 14px', borderRadius: 8, fontWeight: 600 }}>
+              {priceNotice}
+            </div>
+          )}
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <DataTable
+              columns={['Article / Produit', 'Type & Catégorie', 'Prix Référence Siège', 'Prix Appliqué en Caisse', 'Statut Proposition / Validation', 'Action Chef d\'Agence']}
+              rows={(agencyPricesListQuery.data ?? []).map((art: any) => {
+                const isCustom = art.aPrixSpecifique || (art.statut === 'VALIDE' && art.prixActifAgence !== art.prixStandardSiege)
+                const isEditing = priceFormArticleId === art.articleId
+                const hasPendingProposal = Boolean(art.propositionEnAttente)
+
+                return [
+                  <div>
+                    <strong>{art.designation}</strong>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Code : {art.codeUnique}</div>
+                  </div>,
+                  <span className="badge">{art.type === 'PRODUIT_FINI' ? 'Farine MVG' : 'Sous-produit'}</span>,
+                  <span style={{ color: 'var(--muted)', fontWeight: 600 }}>${Number(art.prixStandardSiege || art.prixVenteStandard || 0).toFixed(2)} USD</span>,
+                  <div>
+                    <span style={{ fontSize: '1.05rem', fontWeight: 800, color: isCustom ? '#16a34a' : 'var(--text)' }}>
+                      ${Number(art.prixActifAgence || art.prixEffectif || art.prixVenteStandard || 0).toFixed(2)} USD
+                    </span>
+                    {isCustom && <span className="badge badge-success" style={{ marginLeft: 6, fontSize: '0.7rem' }}>Spécifique Validé</span>}
+                  </div>,
+                  <div>
+                    {hasPendingProposal ? (
+                      <div>
+                        <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                          ⏳ Proposition $ {Number(art.propositionEnAttente.prix).toFixed(2)} USD en attente Siège
+                        </span>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 2 }}>
+                          {art.propositionEnAttente.proposePar || 'Chef d\'Agence'}
+                        </div>
+                      </div>
+                    ) : isCustom ? (
+                      <span className="badge badge-success">✓ Homologué par la Direction Siège</span>
+                    ) : (
+                      <span className="badge">Tarif Standard Siège</span>
+                    )}
+                  </div>,
+                  <div>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.1"
+                          style={{ width: 85, padding: '5px 8px', fontSize: '0.88rem' }}
+                          value={newAgencyPriceValue}
+                          onChange={(e) => setNewAgencyPriceValue(e.target.value)}
+                          placeholder="Ex: 27.0"
+                          autoFocus
+                        />
+                        <button
+                          className="primary-action"
+                          style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                          disabled={updateAgencyPriceMutation.isPending}
+                          onClick={() => {
+                            const p = Number(newAgencyPriceValue)
+                            if (p > 0) {
+                              updateAgencyPriceMutation.mutate({ articleId: art.articleId, prix: p })
+                            }
+                          }}
+                        >
+                          {isSiegeAdmin ? 'Valider' : 'Soumettre au Siège'}
+                        </button>
+                        <button
+                          className="secondary-action"
+                          style={{ padding: '5px 8px', fontSize: '0.8rem' }}
+                          onClick={() => setPriceFormArticleId(null)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="secondary-action"
+                        style={{ padding: '5px 12px', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                        onClick={() => {
+                          setPriceFormArticleId(art.articleId)
+                          setNewAgencyPriceValue(String(art.propositionEnAttente?.prix || art.prixActifAgence || art.prixEffectif || art.prixStandardSiege || ''))
+                        }}
+                      >
+                        <PencilSimple size={15} /> {hasPendingProposal ? 'Modifier proposition' : 'Proposer nouveau prix'}
+                      </button>
+                    )}
+                  </div>,
+                ]
+              })}
+              emptyText="Aucun article disponible."
+            />
+          </div>
         </div>
       )}
 
@@ -4177,12 +4481,29 @@ function TreasuryPage() {
   const [selectedServiceId, setSelectedServiceId] = useState<number | ''>('')
   const [libelle, setLibelle] = useState('')
 
-  // Formulaire nouvelle caisse
+  // Formulaire nouvelle caisse avec compte comptable préenregistré
   const [nomCaisse, setNomCaisse] = useState('')
+  const [typeCaisse, setTypeCaisse] = useState<'CAISSE' | 'BANQUE'>('CAISSE')
+  const [caisseAgenceId, setCaisseAgenceId] = useState<number>(agenceId)
+  const [compteComptableCaisse, setCompteComptableCaisse] = useState('571')
+  const [numeroBancaire, setNumeroBancaire] = useState('')
+  const [caisseResponsable, setCaisseResponsable] = useState('')
   const [soldeInitialUsd, setSoldeInitialUsd] = useState('0')
   const [soldeInitialCdf, setSoldeInitialCdf] = useState('0')
 
   // Requêtes
+  const planComptableCaisseQuery = useQuery({
+    queryKey: ['plan-comptable'],
+    queryFn: () => apiRequest<PlanComptable[]>('/api/comptabilite/plan', { token }),
+    enabled: Boolean(token),
+  })
+
+  const agencesListQuery = useQuery({
+    queryKey: ['agences'],
+    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    enabled: Boolean(token),
+  })
+
   const caissesQuery = useQuery({
     queryKey: ['caisses', agenceId],
     queryFn: () => apiRequest<CompteCaisse[]>(`/api/tresorerie/caisses?agenceId=${agenceId}`, { token }),
@@ -4330,17 +4651,26 @@ function TreasuryPage() {
         token,
         body: JSON.stringify({
           nom: nomCaisse,
+          type: typeCaisse,
+          agenceId: caisseAgenceId || agenceId,
+          numeroCompteComptable: compteComptableCaisse,
+          numeroCompteBancaire: typeCaisse === 'BANQUE' ? numeroBancaire : undefined,
+          responsableNom: caisseResponsable || undefined,
           soldeUsd: Number(soldeInitialUsd),
           soldeCdf: Number(soldeInitialCdf),
-          agence: { id: agenceId },
         }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['plan-comptable'] })
       setShowNewCaisseModal(false)
       setNomCaisse('')
+      setNumeroBancaire('')
+      setCaisseResponsable('')
+      setCompteComptableCaisse('571')
       setSoldeInitialUsd('0')
       setSoldeInitialCdf('0')
+      setActionError(null)
     },
     onError: (err: any) => {
       setActionError(err.message || 'Erreur lors de la création de la caisse')
@@ -4731,9 +5061,21 @@ function TreasuryPage() {
           <div className="caisse-grid">
             {caisses.map((c) => (
               <div className="caisse-card" key={c.id}>
-                <div className="caisse-card-header">
-                  <strong>{c.nom}</strong>
-                  <span className="badge badge-neutral">Agence #{c.agence?.id ?? agenceId}</span>
+                <div className="caisse-card-header" style={{ alignItems: 'flex-start' }}>
+                  <div>
+                    <strong style={{ fontSize: '1rem', display: 'block' }}>{c.nom}</strong>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: 2 }}>
+                      {c.type === 'BANQUE' ? 'Compte Bancaire' : 'Caisse d\'Espèces'}
+                      {c.numeroCompteBancaire && ` • ${c.numeroCompteBancaire}`}
+                      {c.responsableNom && ` • Resp: ${c.responsableNom}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <span className="badge badge-neutral">Agence #{c.agence?.id ?? c.agenceId ?? agenceId}</span>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                      OHADA : {c.numeroCompteComptable || (c.type === 'BANQUE' ? '521' : '571')}
+                    </span>
+                  </div>
                 </div>
                 <div className="caisse-balances">
                   <div className="balance-item">
@@ -5257,12 +5599,17 @@ function TreasuryPage() {
         </div>
       )}
 
-      {/* MODAL : NOUVELLE CAISSE */}
+      {/* MODAL : NOUVEAU COMPTE CAISSE OU BANQUE */}
       {showNewCaisseModal && (
         <div className="modal-overlay" onClick={() => setShowNewCaisseModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>Nouveau Compte Caisse</h3>
+              <div>
+                <h3 style={{ margin: 0 }}>Nouveau Compte de Trésorerie</h3>
+                <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Rattachement obligatoire à un compte comptable OHADA préenregistré
+                </p>
+              </div>
               <button className="icon-button" onClick={() => setShowNewCaisseModal(false)}>
                 <X size={18} />
               </button>
@@ -5273,15 +5620,129 @@ function TreasuryPage() {
                 e.preventDefault()
                 createCaisseMutation.mutate()
               }}
-              style={{ display: 'grid', gap: 12, marginTop: 12 }}
+              style={{ display: 'grid', gap: 12, marginTop: 14 }}
             >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Type de compte
+                  <select
+                    value={typeCaisse}
+                    onChange={(e) => {
+                      const t = e.target.value as 'CAISSE' | 'BANQUE'
+                      setTypeCaisse(t)
+                      if (t === 'BANQUE') {
+                        setCompteComptableCaisse('521')
+                      } else {
+                        setCompteComptableCaisse('571')
+                      }
+                    }}
+                  >
+                    <option value="CAISSE">Caisse d'Espèces</option>
+                    <option value="BANQUE">Compte Bancaire</option>
+                  </select>
+                </label>
+
+                {isSiegeOrSuperAdmin ? (
+                  <label>
+                    Agence d'affectation
+                    <select
+                      value={caisseAgenceId}
+                      onChange={(e) => setCaisseAgenceId(Number(e.target.value))}
+                    >
+                      {(agencesListQuery.data ?? []).map((ag: any) => (
+                        <option key={ag.id} value={ag.id}>
+                          {ag.nom} ({ag.ville})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label>
+                    Agence d'affectation
+                    <input
+                      disabled
+                      value={`Agence locale #${agenceId}`}
+                      style={{ background: 'var(--surface-2)', cursor: 'not-allowed' }}
+                    />
+                  </label>
+                )}
+              </div>
+
               <label>
-                Nom du compte
+                Intitulé du compte
                 <input
                   required
                   value={nomCaisse}
                   onChange={(e) => setNomCaisse(e.target.value)}
-                  placeholder="ex: Caisse Principale, M-Pesa Agence, Airtel Money"
+                  placeholder={typeCaisse === 'BANQUE' ? 'ex: Rawbank USD Compte Courant' : 'ex: Caisse Ventes Comptoir USD'}
+                />
+              </label>
+
+              {/* NUMERO DE COMPTE OHADA PRÉENREGISTRÉ */}
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 12px', borderRadius: 6, display: 'grid', gap: 6 }}>
+                <label style={{ margin: 0, fontWeight: 600, color: '#166534', fontSize: '0.85rem' }}>
+                  Numéro de compte préenregistré dans le Plan Comptable OHADA (Classe 5) *
+                </label>
+                <select
+                  required
+                  value={compteComptableCaisse}
+                  onChange={(e) => setCompteComptableCaisse(e.target.value)}
+                  style={{ background: '#ffffff', borderColor: '#86efac' }}
+                >
+                  {(planComptableCaisseQuery.data ?? [])
+                    .filter((p) => p.numero.startsWith('5'))
+                    .map((p) => (
+                      <option key={p.numero} value={p.numero}>
+                        {p.numero} - {p.libelle}
+                      </option>
+                    ))}
+                  {/* Options de base au cas où */}
+                  {!(planComptableCaisseQuery.data ?? []).some((p) => p.numero === '571') && (
+                    <option value="571">571 - Caisse principale Devises USD</option>
+                  )}
+                  {!(planComptableCaisseQuery.data ?? []).some((p) => p.numero === '5711') && (
+                    <option value="5711">5711 - Caisse Ventes Comptoir USD</option>
+                  )}
+                  {!(planComptableCaisseQuery.data ?? []).some((p) => p.numero === '572') && (
+                    <option value="572">572 - Caisse principale CDF</option>
+                  )}
+                  {!(planComptableCaisseQuery.data ?? []).some((p) => p.numero === '521') && (
+                    <option value="521">521 - Banques locales CDF</option>
+                  )}
+                  {!(planComptableCaisseQuery.data ?? []).some((p) => p.numero === '522') && (
+                    <option value="522">522 - Banques locales USD</option>
+                  )}
+                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: '0.74rem', color: '#15803d' }}>
+                    Ou saisir un sous-compte spécifique :
+                  </span>
+                  <input
+                    value={compteComptableCaisse}
+                    onChange={(e) => setCompteComptableCaisse(e.target.value)}
+                    placeholder="ex: 57105"
+                    style={{ width: 110, fontSize: '0.78rem', padding: '3px 6px', background: '#ffffff' }}
+                  />
+                </div>
+              </div>
+
+              {typeCaisse === 'BANQUE' && (
+                <label>
+                  Numéro de compte bancaire / IBAN / RIB
+                  <input
+                    value={numeroBancaire}
+                    onChange={(e) => setNumeroBancaire(e.target.value)}
+                    placeholder="ex: 00018-05100-01293847201-92"
+                  />
+                </label>
+              )}
+
+              <label>
+                Responsable du compte / Caissier assigné (optionnel)
+                <input
+                  value={caisseResponsable}
+                  onChange={(e) => setCaisseResponsable(e.target.value)}
+                  placeholder="ex: Jean Kasongo (Guichet 1)"
                 />
               </label>
 
@@ -5312,7 +5773,7 @@ function TreasuryPage() {
                   Annuler
                 </button>
                 <button type="submit" className="primary-action" disabled={createCaisseMutation.isPending}>
-                  Créer la caisse
+                  {createCaisseMutation.isPending ? 'Enregistrement...' : 'Créer et lier au Plan OHADA'}
                 </button>
               </div>
             </form>
@@ -5556,16 +6017,58 @@ function TreasuryPage() {
 function AccountingPage() {
   const token = useToken()
   const queryClient = useQueryClient()
-  const agenceId = useAppStore((state) => state.session?.agenceId ?? 1)
+  const session = useAppStore((state) => state.session)
+  const isSiegeOrSuperAdmin = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const [selectedAgenceId, setSelectedAgenceId] = useState<number | 'CONSOLIDE'>(
+    isSiegeOrSuperAdmin ? 'CONSOLIDE' : (session?.agenceId ?? 1)
+  )
 
-  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations' | 'schemas' | 'bilan'>('journal')
+  const activeAgenceId = selectedAgenceId === 'CONSOLIDE' ? undefined : Number(selectedAgenceId)
+  const agenceParam = activeAgenceId ? `agenceId=${activeAgenceId}` : ''
+  const agenceId = activeAgenceId ?? session?.agenceId ?? 1
+
+  const agencesQuery = useQuery({
+    queryKey: ['agences'],
+    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    enabled: Boolean(token),
+  })
+
+  const [activeTab, setActiveTab] = useState<'journal' | 'balance' | 'performance' | 'plan' | 'cloture' | 'immobilisations' | 'schemas' | 'bilan' | 'classes' | 'clients-auxiliaires'>('journal')
   const [mois, setMois] = useState(new Date().getMonth() + 1)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [planSearch, setPlanSearch] = useState('')
+  const [planClasseFilter, setPlanClasseFilter] = useState<string>('TOUTES')
+
+  // Modales Plan Comptable Adaptable
+  const [showEditCompteModal, setShowEditCompteModal] = useState(false)
+  const [editingCompte, setEditingCompte] = useState<PlanComptable | null>(null)
+  const [editLibelle, setEditLibelle] = useState('')
+  const [editParent, setEditParent] = useState('')
+
+  // Rapport par classe comptable SYSCOHADA (Classes 1 à 8)
+  const classesComptablesQuery = useQuery({
+    queryKey: ['classes-comptables', selectedAgenceId, annee],
+    queryFn: () => apiRequest<any>(`/api/comptabilite/classes?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`, { token }),
+    enabled: Boolean(token) && activeTab === 'classes',
+  })
+
+  // Comptes clients 411 auxiliaires & suivi individuel
+  const comptesAuxiliairesQuery = useQuery({
+    queryKey: ['comptes-auxiliaires-clients', selectedAgenceId],
+    queryFn: () => apiRequest<any[]>(`/api/comptabilite/clients/comptes-auxiliaires?${agenceParam}`, { token }),
+    enabled: Boolean(token) && activeTab === 'clients-auxiliaires',
+  })
+
+  const [selectedAuxClient, setSelectedAuxClient] = useState<any | null>(null)
+  const clientGrandLivreQuery = useQuery({
+    queryKey: ['client-grand-livre', selectedAuxClient?.id],
+    queryFn: () => apiRequest<any>(`/api/comptabilite/clients/${selectedAuxClient?.id}/grand-livre`, { token }),
+    enabled: Boolean(token) && Boolean(selectedAuxClient),
+  })
 
   const bilanQuery = useQuery({
-    queryKey: ['bilan', agenceId, annee],
-    queryFn: () => apiRequest<any>(`/api/comptabilite/bilan?agenceId=${agenceId}&annee=${annee}`, { token }),
+    queryKey: ['bilan', selectedAgenceId, annee],
+    queryFn: () => apiRequest<any>(`/api/comptabilite/bilan?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`, { token }),
     enabled: Boolean(token),
   })
   const [showNewCompteModal, setShowNewCompteModal] = useState(false)
@@ -5648,26 +6151,26 @@ function AccountingPage() {
 
   // Requêtes
   const ecrituresQuery = useQuery({
-    queryKey: ['ecritures', agenceId],
-    queryFn: () => apiRequest<EcritureComptable[]>(`/api/comptabilite/ecritures?agenceId=${agenceId}`, { token }),
+    queryKey: ['ecritures', selectedAgenceId],
+    queryFn: () => apiRequest<EcritureComptable[]>(`/api/comptabilite/ecritures?${agenceParam}`, { token }),
     enabled: Boolean(token),
   })
 
   const balanceQuery = useQuery({
-    queryKey: ['balance', agenceId, mois, annee],
+    queryKey: ['balance', selectedAgenceId, mois, annee],
     queryFn: () =>
       apiRequest<LigneFinanciere[]>(
-        `/api/comptabilite/balance?agenceId=${agenceId}&mois=${mois}&annee=${annee}`,
+        `/api/comptabilite/balance?${agenceParam ? agenceParam + '&' : ''}mois=${mois}&annee=${annee}`,
         { token }
       ),
     enabled: Boolean(token),
   })
 
   const performanceQuery = useQuery({
-    queryKey: ['performance-services', agenceId, mois, annee],
+    queryKey: ['performance-services', selectedAgenceId, mois, annee],
     queryFn: () =>
       apiRequest<ServicePerformance[]>(
-        `/api/comptabilite/performance-services?agenceId=${agenceId}&mois=${mois}&annee=${annee}`,
+        `/api/comptabilite/performance-services?${agenceParam ? agenceParam + '&' : ''}mois=${mois}&annee=${annee}`,
         { token }
       ),
     enabled: Boolean(token),
@@ -5762,7 +6265,7 @@ function AccountingPage() {
           numero: nouveauNumero,
           libelle: nouveauLibelle,
           estModifiable: true,
-          parent: compteParent ? { numero: compteParent } : undefined,
+          parentNumero: compteParent || undefined,
         }),
       }),
     onSuccess: () => {
@@ -5775,6 +6278,40 @@ function AccountingPage() {
     },
   })
 
+  // Mutation modification compte
+  const updateCompteMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/comptabilite/plan/${editingCompte?.numero}`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({
+          libelle: editLibelle,
+          parentNumero: editParent || undefined,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plan-comptable-full'] })
+      queryClient.invalidateQueries({ queryKey: ['plan-comptable'] })
+      setShowEditCompteModal(false)
+      setEditingCompte(null)
+      setEditLibelle('')
+      setEditParent('')
+    },
+  })
+
+  // Mutation suppression compte
+  const deleteCompteMutation = useMutation({
+    mutationFn: (numero: string) =>
+      apiRequest(`/api/comptabilite/plan/${numero}`, {
+        method: 'DELETE',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plan-comptable-full'] })
+      queryClient.invalidateQueries({ queryKey: ['plan-comptable'] })
+    },
+  })
+
   // Mutation saisie écriture manuelle (OD)
   const addManualEcritureMutation = useMutation({
     mutationFn: () =>
@@ -5782,7 +6319,7 @@ function AccountingPage() {
         method: 'POST',
         token,
         body: JSON.stringify({
-          agenceId,
+          agenceId: activeAgenceId || session?.agenceId || 1,
           compteDebit,
           compteCredit,
           montant: Number(montantManuel),
@@ -5813,11 +6350,19 @@ function AccountingPage() {
   const planComptable = planQuery.data ?? []
 
   // Filtrage plan comptable
-  const filteredPlan = planComptable.filter(
-    (c) =>
+  const filteredPlan = planComptable.filter((c) => {
+    const matchText =
       c.numero.toLowerCase().includes(planSearch.toLowerCase()) ||
       c.libelle.toLowerCase().includes(planSearch.toLowerCase())
-  )
+    if (!matchText) return false
+    if (planClasseFilter && planClasseFilter !== 'TOUTES') {
+      const targetClasse = Number(planClasseFilter)
+      if (c.classe !== targetClasse && Number(c.numero.charAt(0)) !== targetClasse) {
+        return false
+      }
+    }
+    return true
+  })
 
   // Totaux balance
   const totauxBalance = balanceLines.reduce(
@@ -5846,7 +6391,7 @@ function AccountingPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a
             className="secondary-action"
-            href={`/api/comptabilite/export/grand-livre?agenceId=${agenceId}&annee=${annee}`}
+            href={`/api/comptabilite/export/grand-livre?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`}
             target="_blank"
             rel="noreferrer"
             title="Imprimer le Grand Livre général des comptes"
@@ -5855,7 +6400,7 @@ function AccountingPage() {
           </a>
           <a
             className="secondary-action"
-            href={`/api/comptabilite/export/compte-resultat?agenceId=${agenceId}&annee=${annee}`}
+            href={`/api/comptabilite/export/compte-resultat?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`}
             target="_blank"
             rel="noreferrer"
             title="Imprimer le Compte de Résultat analytique"
@@ -5864,7 +6409,7 @@ function AccountingPage() {
           </a>
           <a
             className="secondary-action"
-            href={`/api/comptabilite/export/immobilisations?agenceId=${agenceId}&annee=${annee}`}
+            href={`/api/comptabilite/export/immobilisations?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`}
             target="_blank"
             rel="noreferrer"
             title="Imprimer le Tableau des Immobilisations & Amortissements OHADA"
@@ -5873,7 +6418,7 @@ function AccountingPage() {
           </a>
           <a
             className="secondary-action"
-            href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
+            href={`/api/comptabilite/export/bilan?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`}
             target="_blank"
             rel="noreferrer"
             title="Imprimer le Bilan Officiel SYSCOHADA (Actif & Passif équilibré)"
@@ -5891,14 +6436,14 @@ function AccountingPage() {
             </button>
           )}
           {activeTab === 'balance' && (
-            <a className="primary-action" href={balancePdfUrl} target="_blank" rel="noreferrer">
+            <a className="primary-action" href={`/api/reporting/export/balance?${agenceParam ? agenceParam + '&' : ''}mois=${mois}&annee=${annee}`} target="_blank" rel="noreferrer">
               <FilePdf size={17} /> Télécharger Balance PDF
             </a>
           )}
           {activeTab === 'bilan' && (
             <a
               className="primary-action"
-              href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
+              href={`/api/comptabilite/export/bilan?${agenceParam ? agenceParam + '&' : ''}annee=${annee}`}
               target="_blank"
               rel="noreferrer"
             >
@@ -5906,12 +6451,65 @@ function AccountingPage() {
             </a>
           )}
           {activeTab === 'plan' && (
-            <button className="primary-action" onClick={() => setShowNewCompteModal(true)}>
-              <Plus size={17} /> Nouveau Compte
+            <button className="primary-action" onClick={() => {
+              setCompteParent('')
+              setNouveauNumero('')
+              setNouveauLibelle('')
+              setShowNewCompteModal(true)
+            }}>
+              <Plus size={17} /> Nouveau Compte OHADA
             </button>
           )}
         </div>
       </div>
+
+      {/* BANNIÈRE DE GOUVERNANCE COMPTABLE D'AGENCE / SIÈGE */}
+      {isSiegeOrSuperAdmin ? (
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Buildings size={22} style={{ color: 'var(--accent)' }} />
+            <div>
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text)', display: 'block' }}>Périmètre Comptable Actif :</strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+                Chaque agence dispose de son service comptable autonome. Le siège peut auditer individuellement ou consolider.
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={clsx('tab-button', selectedAgenceId === 'CONSOLIDE' && 'active')}
+              style={{ fontSize: '0.82rem', padding: '5px 12px', fontWeight: selectedAgenceId === 'CONSOLIDE' ? 700 : 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setSelectedAgenceId('CONSOLIDE')}
+            >
+              <Buildings size={15} /> Bilan & Journal Consolidé Siège (Toutes Agences)
+            </button>
+            {(agencesQuery.data ?? []).map((ag: any) => (
+              <button
+                key={ag.id}
+                type="button"
+                className={clsx('tab-button', selectedAgenceId === ag.id && 'active')}
+                style={{ fontSize: '0.82rem', padding: '5px 12px', fontWeight: selectedAgenceId === ag.id ? 700 : 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setSelectedAgenceId(ag.id)}
+              >
+                <MapPin size={15} /> {ag.nom} {ag.estSiege ? '(Siège)' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+          <Buildings size={22} style={{ color: 'var(--accent)' }} />
+          <div>
+            <strong style={{ fontSize: '0.9rem', color: 'var(--text)', display: 'block' }}>
+              Service de Comptabilité Autonome — {(agencesQuery.data ?? []).find((a: any) => a.id === (session?.agenceId ?? 1))?.nom || `Agence #${session?.agenceId || 1}`}
+            </strong>
+            <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+              Toutes les transactions, caisses et écritures de votre agence sont comptabilisées de manière indépendante selon le plan OHADA.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Navigation sous-onglets */}
       <div className="tabs-header">
@@ -5956,6 +6554,18 @@ function AccountingPage() {
           onClick={() => setActiveTab('cloture')}
         >
           <ShieldCheck size={17} /> Clôture Annuelle OHADA
+        </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'classes' && 'active')}
+          onClick={() => setActiveTab('classes')}
+        >
+          <ChartBar size={17} /> Rapport par Classe (1 à 8)
+        </button>
+        <button
+          className={clsx('tab-btn', activeTab === 'clients-auxiliaires' && 'active')}
+          onClick={() => setActiveTab('clients-auxiliaires')}
+        >
+          <UsersThree size={17} /> Comptes Clients 411
         </button>
         <button
           className={clsx('tab-btn', activeTab === 'schemas' && 'active')}
@@ -6415,41 +7025,153 @@ function AccountingPage() {
 
       {/* TAB 4 : PLAN COMPTABLE OHADA */}
       {activeTab === 'plan' && (
-        <div>
-          <div className="filter-bar">
-            <div className="filter-group" style={{ flex: 1, maxWidth: 400 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <strong style={{ fontSize: '0.94rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Books size={20} color="#0284c7" />
+                Plan Comptable Général SYSCOHADA Révisé Intégral (Classes 1 à 9)
+              </strong>
+              <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                Tous les comptes sont entièrement adaptables : modifiez les intitulés, créez des sous-comptes personnalisés pour vos agences (caisses, banques, clients, charges usine) et ajustez la nomenclature sans aucun blocage.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => {
+                setCompteParent('')
+                setNouveauNumero('')
+                setNouveauLibelle('')
+                setShowNewCompteModal(true)
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: '0.84rem' }}
+            >
+              <Plus size={17} /> + Nouveau Compte / Sous-Compte
+            </button>
+          </div>
+
+          <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 260, flex: 1, maxWidth: 380, background: 'var(--surface)', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <MagnifyingGlass size={17} color="var(--muted)" />
                 <input
-                  style={{ width: '100%' }}
-                  placeholder="Rechercher par numéro ou libellé..."
+                  style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none' }}
+                  placeholder="Rechercher par numéro ou intitulé..."
                   value={planSearch}
                   onChange={(e) => setPlanSearch(e.target.value)}
                 />
               </div>
+
+              {/* FILTRE PAR CLASSE SYSCOHADA */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--muted)' }}>Classe :</span>
+                <select
+                  value={planClasseFilter}
+                  onChange={(e) => setPlanClasseFilter(e.target.value)}
+                  style={{ padding: '6px 10px', fontSize: '0.82rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', fontWeight: 600 }}
+                >
+                  <option value="TOUTES">Toutes les Classes (1 à 9)</option>
+                  <option value="1">Classe 1 - Ressources Durables (Capitaux, Emprunts)</option>
+                  <option value="2">Classe 2 - Actif Immobilisé & Amortissements</option>
+                  <option value="3">Classe 3 - Stocks (Matières, Farines, Emballages)</option>
+                  <option value="4">Classe 4 - Comptes de Tiers (Clients, Fournisseurs, Personnel)</option>
+                  <option value="5">Classe 5 - Trésorerie (Caisses USD/CDF, Banques)</option>
+                  <option value="6">Classe 6 - Charges d'Exploitation (Achats, Transports, Salaires)</option>
+                  <option value="7">Classe 7 - Produits d'Exploitation (Ventes Farines, Services)</option>
+                  <option value="8">Classe 8 - Autres Charges & Produits HAO, Résultat</option>
+                  <option value="9">Classe 9 - Comptabilité Analytique & Engagements</option>
+                </select>
+              </div>
             </div>
-            <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+
+            <span style={{ fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 600 }}>
               {filteredPlan.length} compte(s) affiché(s)
             </span>
           </div>
 
           <DataTable
-            columns={['Numéro', 'Intitulé du Compte', 'Type', 'Statut']}
+            columns={['Numéro', 'Intitulé / Libellé du Compte', 'Classe & Nature', 'Statut', 'Actions']}
             loading={planQuery.isLoading}
             rows={filteredPlan.map((c) => [
-              <strong key={c.numero}>{c.numero}</strong>,
-              c.libelle,
-              <span key={c.numero + '-type'} className="badge badge-neutral">
-                Classe {c.numero.substring(0, 1)}
-              </span>,
+              <div key={c.numero + '-num'}>
+                <strong style={{ fontSize: '0.92rem' }}>{c.numero}</strong>
+                {c.parentNumero && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>Parent: #{c.parentNumero}</div>
+                )}
+              </div>,
+              <div key={c.numero + '-lib'}>
+                <span style={{ fontWeight: 600 }}>{c.libelle}</span>
+              </div>,
+              <div key={c.numero + '-nat'} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="badge badge-neutral">
+                  Classe {c.classe || c.numero.substring(0, 1)}
+                </span>
+                {c.nature && (
+                  <span
+                    className={clsx(
+                      'badge',
+                      c.nature === 'ACTIF' ? 'badge-success' : c.nature === 'PASSIF' ? 'badge-info' : c.nature === 'CHARGE' ? 'badge-warning' : 'badge-neutral'
+                    )}
+                    style={{ fontSize: '0.68rem' }}
+                  >
+                    {c.nature}
+                  </span>
+                )}
+              </div>,
               <span
                 key={c.numero + '-stat'}
-                className={clsx('badge', c.estModifiable ? 'badge-success' : 'badge-neutral')}
+                className={clsx('badge', c.actif !== false ? 'badge-success' : 'badge-danger')}
               >
-                {c.estModifiable ? 'Personnalisé' : 'Système racine'}
+                {c.actif !== false ? 'Actif' : 'Inactif'}
               </span>,
+              <div key={c.numero + '-actions'} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '3px 8px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => {
+                    setEditingCompte(c)
+                    setEditLibelle(c.libelle)
+                    setEditParent(c.parentNumero || '')
+                    setShowEditCompteModal(true)
+                  }}
+                  title="Modifier l'intitulé et le rattachement de ce compte"
+                >
+                  <PencilSimple size={13} /> Modifier
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '3px 8px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => {
+                    setCompteParent(c.numero)
+                    setNouveauNumero(`${c.numero}1`)
+                    setNouveauLibelle('')
+                    setShowNewCompteModal(true)
+                  }}
+                  title="Créer un sous-compte rattaché à ce compte parent"
+                >
+                  <Plus size={13} /> + Sous-compte
+                </button>
+                {c.estModifiable && (
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    style={{ padding: '3px 6px', fontSize: '0.76rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                    onClick={() => {
+                      if (confirm(`Confirmez-vous la suppression du compte ${c.numero} - ${c.libelle} ?`)) {
+                        deleteCompteMutation.mutate(c.numero)
+                      }
+                    }}
+                    title="Supprimer ce compte personnalisé"
+                  >
+                    <Trash size={13} />
+                  </button>
+                )}
+              </div>,
             ])}
-            emptyText="Aucun compte ne correspond à votre recherche."
+            emptyText="Aucun compte ne correspond à votre recherche ou filtre de classe."
           />
         </div>
       )}
@@ -6997,6 +7719,283 @@ function AccountingPage() {
         </div>
       )}
 
+      {/* TAB 8 : RAPPORT PAR CLASSE COMPTABLE (SYSCOHADA CLASSES 1 À 8) */}
+      {activeTab === 'classes' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ChartBar size={22} style={{ color: 'var(--accent-strong)' }} />
+                Rapport par Classe Comptable (SYSCOHADA Révisé - Classes 1 à 8)
+              </h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.86rem' }}>
+                Ventilation intégrale des opérations par classe comptable : capitaux, immobilisations, stocks produits, créances clients 411, trésorerie, charges et produits de ventes.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <a
+                href={`/api/comptabilite/classes/document?agenceId=${agenceId}&annee=${annee}`}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-action"
+                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', fontWeight: 700 }}
+              >
+                <Printer size={18} /> Imprimer le Rapport Officiel par Classe (SYSCOHADA)
+              </a>
+            </div>
+          </div>
+
+          {/* Synthèse équilibre global */}
+          {classesComptablesQuery.data && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div className="card" style={{ padding: 14 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>TOTAL DÉBITS CLASSES :</span>
+                <strong style={{ fontSize: '1.25rem', color: '#0f172a', display: 'block', marginTop: 4 }}>
+                  ${Number(classesComptablesQuery.data.grandTotalDebitUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                </strong>
+              </div>
+              <div className="card" style={{ padding: 14 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>TOTAL CRÉDITS CLASSES :</span>
+                <strong style={{ fontSize: '1.25rem', color: '#0f172a', display: 'block', marginTop: 4 }}>
+                  ${Number(classesComptablesQuery.data.grandTotalCreditUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                </strong>
+              </div>
+              <div className="card" style={{ padding: 14 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>ÉCART D'ÉQUILIBRE :</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <strong style={{ fontSize: '1.2rem', color: classesComptablesQuery.data.estEquilibre ? '#16a34a' : '#b91c1c' }}>
+                    ${Number(classesComptablesQuery.data.ecartEquilibre || 0).toFixed(2)} USD
+                  </strong>
+                  <span className={`badge ${classesComptablesQuery.data.estEquilibre ? 'badge-success' : 'badge-danger'}`}>
+                    {classesComptablesQuery.data.estEquilibre ? '✓ ÉQUILIBRÉ' : 'DÉSÉQUILIBRE'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Liste détaillée des 8 classes */}
+          <div style={{ display: 'grid', gap: 14 }}>
+            {(classesComptablesQuery.data?.classes ?? []).map((cl: any, idx: number) => {
+              const numClasse = cl.classeNumero ?? cl.numero ?? cl.classe ?? (idx + 1)
+              const titreClasse = cl.classeTitre ?? cl.titre ?? `Classe ${numClasse}`
+              const sousTitreClasse = cl.classeSousTitre ?? cl.sousTitre ?? ''
+              return (
+                <div key={'classe-' + numClasse} className="card" style={{ padding: 18, border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="badge" style={{ fontSize: '0.9rem', fontWeight: 800, padding: '4px 10px', background: 'var(--accent-strong)', color: '#fff' }}>
+                          CLASSE {numClasse}
+                        </span>
+                        <strong style={{ fontSize: '1.1rem' }}>{titreClasse}</strong>
+                      </div>
+                      {sousTitreClasse && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 2 }}>{sousTitreClasse}</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, textAlign: 'right' }}>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>TOTAL DÉBIT</span>
+                        <strong style={{ fontSize: '0.95rem' }}>${Number(cl.totalDebitUsd || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>TOTAL CRÉDIT</span>
+                        <strong style={{ fontSize: '0.95rem' }}>${Number(cl.totalCreditUsd || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>SOLDE NET</span>
+                        <strong style={{ fontSize: '1rem', color: cl.soldeNetUsd > 0 ? '#b91c1c' : (cl.soldeNetUsd < 0 ? '#16a34a' : 'var(--text)') }}>
+                          {cl.soldeNetUsd > 0 ? `Deb. $${cl.soldeNetUsd.toFixed(2)}` : (cl.soldeNetUsd < 0 ? `Cred. $${Math.abs(cl.soldeNetUsd).toFixed(2)}` : '$0.00')}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Table des sous-comptes dans la classe */}
+                  <DataTable
+                    columns={['N° Compte', 'Intitulé du Compte SYSCOHADA', 'Débit USD', 'Crédit USD', 'Solde Net', 'Écritures']}
+                    rows={(cl.comptes || []).map((cp: any, cpIdx: number) => {
+                      const debit = Number(cp.debitUsd ?? cp.debit ?? 0)
+                      const credit = Number(cp.creditUsd ?? cp.credit ?? 0)
+                      const net = Number(cp.soldeNetUsd ?? cp.soldeNet ?? (debit - credit))
+                      const ops = cp.nombreOperations ?? cp.nbEcritures ?? 0
+                      const rowKey = `cp-${numClasse}-${cp.numero || cpIdx}`
+                      return [
+                        <code key={rowKey + '-num'} style={{ fontWeight: 800, fontSize: '0.92rem' }}>{cp.numero}</code>,
+                        <span key={rowKey + '-lib'}>{cp.libelle}</span>,
+                        <span key={rowKey + '-deb'} style={{ fontWeight: 600 }}>{debit > 0 ? `$${debit.toFixed(2)}` : '-'}</span>,
+                        <span key={rowKey + '-crd'} style={{ fontWeight: 600 }}>{credit > 0 ? `$${credit.toFixed(2)}` : '-'}</span>,
+                        <strong key={rowKey + '-net'} style={{ color: net > 0 ? '#b91c1c' : (net < 0 ? '#16a34a' : 'var(--muted)') }}>
+                          {net > 0 ? `+ $${net.toFixed(2)}` : (net < 0 ? `- $${Math.abs(net).toFixed(2)}` : '$0.00')}
+                        </strong>,
+                        <span key={rowKey + '-ops'} className="badge" style={{ fontSize: '0.75rem' }}>{ops} op.</span>,
+                      ]
+                    })}
+                    emptyText="Aucune écriture enregistrée pour les comptes de cette classe."
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 9 : COMPTES CLIENTS 411 (GRAND LIVRE & SUIVI DES TRANSACTIONS) */}
+      {activeTab === 'clients-auxiliaires' && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UsersThree size={22} style={{ color: 'var(--accent-strong)' }} />
+                Comptes Clients Auxiliaires 411 (Suivi Individuel & Grand Livre)
+              </h3>
+              <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.86rem' }}>
+                Chaque client dispose de son propre compte auxiliaire découlant du compte collectif 411. Cela permet un suivi strict des créances sans déséquilibre du journal.
+              </p>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <DataTable
+              columns={['Compte 411xxx', 'Client & Contact', 'Solde Dette Actuelle', 'Plafond Crédit', 'Utilisation', 'Factures Crédit', 'Règlements', 'Actions']}
+              rows={(comptesAuxiliairesQuery.data ?? []).map((c: any) => [
+                <div>
+                  <code style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--accent-strong)' }}>{c.compteComptable}</code>
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--muted)' }}>Parent : 411 (Collectif)</span>
+                </div>,
+                <div>
+                  <strong>{c.nom}</strong>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{c.telephone || 'Sans tél'} | {c.adresse || 'Goma'}</div>
+                </div>,
+                <div>
+                  <strong style={{ fontSize: '1rem', color: c.soldeDette > 0 ? '#b91c1c' : '#16a34a' }}>
+                    ${Number(c.soldeDette || 0).toFixed(2)} USD
+                  </strong>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                    {c.soldeDetteCdf?.toLocaleString()} CDF
+                  </div>
+                </div>,
+                <span>${Number(c.limiteCredit || 0).toFixed(2)} USD</span>,
+                <div style={{ width: 90 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 2 }}>
+                    <span>{c.tauxUtilisationCredit}%</span>
+                    {c.bloque && <span style={{ color: '#b91c1c', fontWeight: 800 }}>DÉPASSÉ</span>}
+                  </div>
+                  <div style={{ height: 6, width: '100%', background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, c.tauxUtilisationCredit)}%`,
+                        background: c.tauxUtilisationCredit > 90 ? '#b91c1c' : (c.tauxUtilisationCredit > 60 ? '#f59e0b' : '#16a34a'),
+                      }}
+                    />
+                  </div>
+                </div>,
+                <div>
+                  <span style={{ fontWeight: 700 }}>${Number(c.totalCreditValide || 0).toFixed(2)}</span>
+                  {c.nbVentesAttenteChef > 0 && (
+                    <span className="badge badge-warning" style={{ display: 'block', marginTop: 2, fontSize: '0.68rem' }}>
+                      {c.nbVentesAttenteChef} en attente Chef
+                    </span>
+                  )}
+                </div>,
+                <strong style={{ color: '#16a34a' }}>${Number(c.totalReglements || 0).toFixed(2)}</strong>,
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    className="primary-action"
+                    style={{ padding: '5px 10px', fontSize: '0.78rem' }}
+                    onClick={() => setSelectedAuxClient(c)}
+                  >
+                    Grand Livre
+                  </button>
+                  <a
+                    href={`/api/comptabilite/clients/${c.id}/releve-pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="secondary-action"
+                    style={{ textDecoration: 'none', padding: '5px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Printer size={14} /> Relevé
+                  </a>
+                </div>,
+              ])}
+              emptyText="Aucun compte client auxiliaire trouvé."
+            />
+          </div>
+
+          {/* MODAL DU GRAND LIVRE AUXILIAIRE DU CLIENT */}
+          {selectedAuxClient && (
+            <div className="modal-overlay" onClick={() => setSelectedAuxClient(null)} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 840, width: '100%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--surface)', borderRadius: 12, padding: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div>
+                    <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <UsersThree size={22} style={{ color: 'var(--accent-strong)' }} />
+                      Grand Livre Auxiliaire : {selectedAuxClient.nom}
+                    </h3>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: 2 }}>
+                      Compte individuel : <code style={{ fontWeight: 800 }}>{selectedAuxClient.compteComptable}</code> | Plafond autorisé : ${selectedAuxClient.limiteCredit} USD
+                    </div>
+                  </div>
+                  <button className="icon-button" onClick={() => setSelectedAuxClient(null)}><X size={18} /></button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, background: 'var(--surface-2)', padding: 12, borderRadius: 8, marginBottom: 14 }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>TOTAL FACTURÉ (DÉBIT)</span>
+                    <strong style={{ fontSize: '1rem', color: '#b91c1c' }}>${Number(clientGrandLivreQuery.data?.cumulDebit || 0).toFixed(2)}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>TOTAL ENCAISSÉ (CRÉDIT)</span>
+                    <strong style={{ fontSize: '1rem', color: '#16a34a' }}>${Number(clientGrandLivreQuery.data?.cumulCredit || 0).toFixed(2)}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>SOLDE RESTANT DÛ</span>
+                    <strong style={{ fontSize: '1.1rem', color: Number(clientGrandLivreQuery.data?.soldeActuelDette || 0) > 0 ? '#b91c1c' : '#16a34a' }}>
+                      ${Number(clientGrandLivreQuery.data?.soldeActuelDette || 0).toFixed(2)} USD
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'block' }}>CRÉDIT DISPONIBLE</span>
+                    <strong style={{ fontSize: '1rem', color: '#0284c7' }}>${Number(clientGrandLivreQuery.data?.disponibleCredit || 0).toFixed(2)}</strong>
+                  </div>
+                </div>
+
+                <DataTable
+                  columns={['Date', 'Pièce Réf.', 'Libellé de l\'Opération', 'Statut', 'Débit (+)', 'Crédit (-)', 'Solde Progressif']}
+                  rows={(clientGrandLivreQuery.data?.mouvements ?? []).map((m: any) => [
+                    <span style={{ fontSize: '0.8rem' }}>{new Date(m.date).toLocaleDateString('fr-FR')}</span>,
+                    <code style={{ fontSize: '0.78rem' }}>{m.reference}</code>,
+                    <span style={{ fontSize: '0.82rem' }}>{m.libelle}</span>,
+                    <span className="badge" style={{ fontSize: '0.7rem' }}>{m.statut}</span>,
+                    <span style={{ fontWeight: 700, color: m.debit > 0 ? '#b91c1c' : 'var(--muted)' }}>{m.debit > 0 ? `$${m.debit.toFixed(2)}` : '-'}</span>,
+                    <span style={{ fontWeight: 700, color: m.credit > 0 ? '#16a34a' : 'var(--muted)' }}>{m.credit > 0 ? `$${m.credit.toFixed(2)}` : '-'}</span>,
+                    <strong style={{ fontSize: '0.85rem' }}>${Number(m.soldeCumule || 0).toFixed(2)}</strong>,
+                  ])}
+                  emptyText="Aucun mouvement trouvé dans ce compte auxiliaire."
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+                  <a
+                    href={`/api/comptabilite/clients/${selectedAuxClient.id}/releve-pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="primary-action"
+                    style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px' }}
+                  >
+                    <Printer size={16} /> Imprimer Relevé de Compte Client (PDF)
+                  </a>
+                  <button className="secondary-action" onClick={() => setSelectedAuxClient(null)}>
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* MODAL : NOUVELLE IMMOBILISATION */}
       {showNewImmoModal && (
         <div className="modal-overlay" onClick={() => setShowNewImmoModal(false)}>
@@ -7142,6 +8141,71 @@ function AccountingPage() {
                 </button>
                 <button type="submit" className="primary-action" disabled={addCompteMutation.isPending}>
                   Enregistrer le compte
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : MODIFIER / ADAPTER LE COMPTE OHADA */}
+      {showEditCompteModal && editingCompte && (
+        <div className="modal-overlay" onClick={() => setShowEditCompteModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Adapter le Compte OHADA #{editingCompte.numero}</h3>
+                <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Modifiez l'intitulé ou le rattachement hiérarchique
+                </p>
+              </div>
+              <button className="icon-button" onClick={() => setShowEditCompteModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                updateCompteMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12, marginTop: 14 }}
+            >
+              <label>
+                Numéro de Compte
+                <input disabled value={editingCompte.numero} style={{ background: 'var(--surface-2)', cursor: 'not-allowed' }} />
+              </label>
+
+              <label>
+                Intitulé / Libellé du compte *
+                <input
+                  required
+                  value={editLibelle}
+                  onChange={(e) => setEditLibelle(e.target.value)}
+                  placeholder="ex: Caisse Principale Recettes USD"
+                />
+              </label>
+
+              <label>
+                Compte parent (Optionnel)
+                <select value={editParent} onChange={(e) => setEditParent(e.target.value)}>
+                  <option value="">Aucun parent direct</option>
+                  {planComptable
+                    .filter((cp) => cp.numero !== editingCompte.numero)
+                    .map((cp) => (
+                      <option key={cp.numero} value={cp.numero}>
+                        {cp.numero} - {cp.libelle}
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowEditCompteModal(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="primary-action" disabled={updateCompteMutation.isPending}>
+                  {updateCompteMutation.isPending ? 'Enregistrement...' : 'Enregistrer les modifications'}
                 </button>
               </div>
             </form>
@@ -7956,9 +9020,14 @@ function ReportingPage() {
 function AdminPage() {
   const token = useToken()
   const queryClient = useQueryClient()
+  const session = useAppStore((state) => state.session)
+  const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const [adminAgenceFilter, setAdminAgenceFilter] = useState<number | 'TOUTES'>(
+    isSuperOrAdminSiege ? 'TOUTES' : (session?.agenceId || 1)
+  )
   const [activeTab, setActiveTab] = useState<
     'agences' | 'roles' | 'utilisateurs' | 'appareils' | 'entreprise' | 'flotte' | 'categories' | 'taux' | 'prix' | 'audit' | 'sauvegardes'
-  >('agences')
+  >(isSuperOrAdminSiege ? 'agences' : 'utilisateurs')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   // Gestion Appareils & Déblocage
@@ -8165,6 +9234,19 @@ function AdminPage() {
     },
   })
 
+  const deleteVehiculeMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest(`/api/flotte/vehicules/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-flotte'] })
+      setActionNotice('Véhicule retiré de la flotte avec succès.')
+    },
+    onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la suppression'),
+  })
+
   const usersQuery = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => apiRequest<any[]>('/api/admin/users', { token }),
@@ -8235,7 +9317,13 @@ function AdminPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-prix'] })
-      setActionNotice('Prix d agence validé et activé pour la facturation POS.')
+      queryClient.invalidateQueries({ queryKey: ['prix-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['stocks-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['agence-articles-prix'] })
+      queryClient.invalidateQueries({ queryKey: ['stocks'] })
+      queryClient.invalidateQueries({ queryKey: ['articles'] })
+      setActionNotice('Prix d agence validé par la Direction Siège et activé immédiatement pour la facturation POS.')
     },
     onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la validation du prix'),
   })
@@ -8480,40 +9568,85 @@ function AdminPage() {
         </div>
       )}
 
+      {/* BANNIÈRE DE PÉRIMÈTRE D'AGENCE / CONSOLIDATION SIÈGE */}
+      <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Buildings size={22} style={{ color: 'var(--accent)' }} />
+          <div>
+            <strong style={{ fontSize: '0.88rem', color: 'var(--text)', display: 'block' }}>
+              {isSuperOrAdminSiege ? 'Périmètre Administratif & Contrôle Siège' : `Administration Locale — ${(agencesQuery.data ?? []).find((a: any) => a.id === session?.agenceId)?.nom || `Agence #${session?.agenceId || 1}`}`}
+            </strong>
+            <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+              {isSuperOrAdminSiege
+                ? 'Consolidation Siège multi-agences ou filtrage par agence spécifique.'
+                : 'Vous administrez exclusivement les ressources, personnels, véhicules et matériels de votre agence locale.'}
+            </span>
+          </div>
+        </div>
+
+        {isSuperOrAdminSiege && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Filtrer l'administration par agence :</span>
+            <select
+              value={adminAgenceFilter}
+              onChange={(e) => setAdminAgenceFilter(e.target.value === 'TOUTES' ? 'TOUTES' : Number(e.target.value))}
+              style={{ padding: '5px 10px', fontSize: '0.82rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', fontWeight: 600 }}
+            >
+              <option value="TOUTES">Toutes les agences (Vue Consolidée Siège)</option>
+              {(agencesQuery.data ?? []).map((ag: any) => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.estSiege ? '[Siège] ' : ''}{ag.nom} ({ag.ville})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
       <div className="tab-bar">
-        <button className={clsx('tab-button', activeTab === 'agences' && 'active')} onClick={() => setActiveTab('agences')}>
-          <Buildings size={17} /> Agences & Succursales ({agencesQuery.data?.length ?? 0})
-        </button>
-        <button className={clsx('tab-button', activeTab === 'roles' && 'active')} onClick={() => setActiveTab('roles')}>
-          <ShieldCheck size={17} /> Rôles et Permissions
-        </button>
+        {isSuperOrAdminSiege && (
+          <button className={clsx('tab-button', activeTab === 'agences' && 'active')} onClick={() => setActiveTab('agences')}>
+            <Buildings size={17} /> Agences & Succursales ({(agencesQuery.data ?? []).length})
+          </button>
+        )}
+        {isSuperOrAdminSiege && (
+          <button className={clsx('tab-button', activeTab === 'roles' && 'active')} onClick={() => setActiveTab('roles')}>
+            <ShieldCheck size={17} /> Rôles et Habilitations RBAC
+          </button>
+        )}
         <button className={clsx('tab-button', activeTab === 'utilisateurs' && 'active')} onClick={() => setActiveTab('utilisateurs')}>
-          <UsersThree size={17} /> Utilisateurs Agences ({usersQuery.data?.length ?? 0})
+          <UsersThree size={17} /> Collaborateurs & Utilisateurs ({(usersQuery.data ?? []).filter((u: any) => adminAgenceFilter === 'TOUTES' ? true : u.agenceId === adminAgenceFilter).length})
         </button>
         <button className={clsx('tab-button', activeTab === 'appareils' && 'active')} onClick={() => setActiveTab('appareils')}>
-          <Devices size={17} /> Appareils Enregistrés ({appareilsQuery.data?.length ?? 0})
+          <Devices size={17} /> Appareils Enregistrés ({(appareilsQuery.data ?? []).filter((a: any) => adminAgenceFilter === 'TOUTES' ? true : a.agenceId === adminAgenceFilter).length})
         </button>
-        <button className={clsx('tab-button', activeTab === 'entreprise' && 'active')} onClick={() => setActiveTab('entreprise')}>
-          <Buildings size={17} /> Mentions Légales & Société
-        </button>
+        {isSuperOrAdminSiege && (
+          <button className={clsx('tab-button', activeTab === 'entreprise' && 'active')} onClick={() => setActiveTab('entreprise')}>
+            <Buildings size={17} /> Mentions Légales & Société
+          </button>
+        )}
         <button className={clsx('tab-button', activeTab === 'flotte' && 'active')} onClick={() => setActiveTab('flotte')}>
-          <Truck size={17} /> Camions & Flotte ({flotteQuery.data?.length ?? 0})
+          <Truck size={17} /> Camions & Flotte ({(flotteQuery.data ?? []).filter((f: any) => adminAgenceFilter === 'TOUTES' ? true : f.agenceId === adminAgenceFilter).length})
         </button>
         <button className={clsx('tab-button', activeTab === 'categories' && 'active')} onClick={() => setActiveTab('categories')}>
-          <Package size={17} /> Catégories & Services ({categoriesQuery.data?.length ?? 0})
+          <Package size={17} /> Catégories & Articles ({(categoriesQuery.data ?? []).length})
         </button>
         <button className={clsx('tab-button', activeTab === 'taux' && 'active')} onClick={() => setActiveTab('taux')}>
-          <CurrencyCircleDollar size={17} /> Validation Taux du jour
+          <CurrencyCircleDollar size={17} /> {isSuperOrAdminSiege ? 'Validation Taux du jour' : 'Taux Agence'}
         </button>
         <button className={clsx('tab-button', activeTab === 'prix' && 'active')} onClick={() => setActiveTab('prix')}>
-          <Package size={17} /> Validation Prix par agence
+          <Package size={17} /> {isSuperOrAdminSiege ? 'Validation Prix par agence' : 'Tarifs & Prix Agence'}
         </button>
-        <button className={clsx('tab-button', activeTab === 'audit' && 'active')} onClick={() => setActiveTab('audit')}>
-          <ClockCounterClockwise size={17} /> Journal d Audit
-        </button>
-        <button className={clsx('tab-button', activeTab === 'sauvegardes' && 'active')} onClick={() => setActiveTab('sauvegardes')}>
-          <FloppyDisk size={17} /> Sauvegardes & Exports
-        </button>
+        {isSuperOrAdminSiege && (
+          <button className={clsx('tab-button', activeTab === 'audit' && 'active')} onClick={() => setActiveTab('audit')}>
+            <ClockCounterClockwise size={17} /> Journal d Audit
+          </button>
+        )}
+        {isSuperOrAdminSiege && (
+          <button className={clsx('tab-button', activeTab === 'sauvegardes' && 'active')} onClick={() => setActiveTab('sauvegardes')}>
+            <FloppyDisk size={17} /> Sauvegardes & Exports
+          </button>
+        )}
       </div>
 
       {activeTab === 'agences' && (
@@ -8758,7 +9891,9 @@ function AdminPage() {
           <DataTable
             columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', 'Actions']}
             loading={usersQuery.isLoading}
-            rows={(usersQuery.data ?? []).map((u: any) => [
+            rows={(usersQuery.data ?? [])
+              .filter((u: any) => adminAgenceFilter === 'TOUTES' ? true : u.agenceId === adminAgenceFilter)
+              .map((u: any) => [
               <div key={u.id + '-nom'}>
                 <strong>{u.nom}</strong>
                 {u.sessionActiveId && (
@@ -8910,7 +10045,9 @@ function AdminPage() {
           <DataTable
             columns={['Nom de l Appareil', 'Identifiant Matériel (Device ID)', 'Type / Catégorie', 'Agence Affectée', 'Utilisateur Assigné', 'Statut', 'Dernière Connexion', 'Actions']}
             loading={appareilsQuery.isLoading}
-            rows={(appareilsQuery.data ?? []).map((ap: any) => [
+            rows={(appareilsQuery.data ?? [])
+              .filter((ap: any) => adminAgenceFilter === 'TOUTES' ? true : ap.agenceId === adminAgenceFilter)
+              .map((ap: any) => [
               <strong>{ap.nom}</strong>,
               <code style={{ fontSize: '0.78rem' }}>{ap.deviceId}</code>,
               <span className="badge">{ap.type}</span>,
@@ -8994,9 +10131,11 @@ function AdminPage() {
           <DataTable
             columns={['Date proposition', 'Agence', 'Taux proposé', 'Proposé par', 'Statut', 'État en vigueur', 'Action']}
             loading={tauxQuery.isLoading}
-            rows={(tauxQuery.data ?? []).map((t: any) => [
+            rows={(tauxQuery.data ?? [])
+              .filter((t: any) => adminAgenceFilter === 'TOUTES' ? true : t.agenceId === adminAgenceFilter)
+              .map((t: any) => [
               t.dateDebut ? new Date(t.dateDebut).toLocaleDateString() : '-',
-              'Agence Goma',
+              t.agence?.nom ?? 'Agence locale',
               <strong>1 USD = {t.taux} CDF</strong>,
               t.proposePar ?? 'Chef d agence',
               <span className={clsx('badge', t.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}>
@@ -9028,7 +10167,9 @@ function AdminPage() {
           <DataTable
             columns={['Article', 'Agence', 'Prix proposé', 'Proposé par', 'Statut', 'Action']}
             loading={prixQuery.isLoading}
-            rows={(prixQuery.data ?? []).map((p: any) => [
+            rows={(prixQuery.data ?? [])
+              .filter((p: any) => adminAgenceFilter === 'TOUTES' ? true : p.agenceId === adminAgenceFilter)
+              .map((p: any) => [
               p.article?.designation ?? `Article #${p.articleId}`,
               p.agence?.nom ?? 'Agence locale',
               <strong>{p.prix} {p.devise}</strong>,
@@ -9541,7 +10682,9 @@ function AdminPage() {
           <DataTable
             columns={['Plaque', 'Modèle & Marque', 'Capacité (T / Sacs)', 'Chauffeur Attitré', 'Agence', 'Statut', 'Actions']}
             loading={flotteQuery.isLoading}
-            rows={(flotteQuery.data ?? []).map((v: any) => [
+            rows={(flotteQuery.data ?? [])
+              .filter((v: any) => adminAgenceFilter === 'TOUTES' ? true : v.agenceId === adminAgenceFilter)
+              .map((v: any) => [
               <strong key={'plk-' + v.id}>{v.plaqueImmatriculation}</strong>,
               v.marqueModele,
               `${v.capaciteTonnes} T (${v.capaciteSacs} sacs)`,
@@ -9550,16 +10693,30 @@ function AdminPage() {
               <span key={'st-' + v.id} className={clsx('badge', v.statut === 'DISPONIBLE' ? 'badge-success' : v.statut === 'EN_COURSE' ? 'badge-warning' : 'badge-danger')}>
                 {v.statut === 'DISPONIBLE' ? 'Disponible' : v.statut === 'EN_COURSE' ? 'En course' : 'Maintenance'}
               </span>,
-              <select
-                key={'sel-' + v.id}
-                style={{ padding: '3px 8px', fontSize: '0.78rem' }}
-                value={v.statut}
-                onChange={(e) => updateVehiculeStatutMutation.mutate({ id: v.id, statut: e.target.value })}
-              >
-                <option value="DISPONIBLE">Disponible</option>
-                <option value="EN_COURSE">En course</option>
-                <option value="EN_MAINTENANCE">Maintenance</option>
-              </select>,
+              <div key={'act-' + v.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <select
+                  style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                  value={v.statut}
+                  onChange={(e) => updateVehiculeStatutMutation.mutate({ id: v.id, statut: e.target.value })}
+                >
+                  <option value="DISPONIBLE">Disponible</option>
+                  <option value="EN_COURSE">En course</option>
+                  <option value="EN_MAINTENANCE">Maintenance</option>
+                </select>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '3px 6px', fontSize: '0.76rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                  onClick={() => {
+                    if (confirm(`Confirmez-vous le retrait du véhicule ${v.marqueModele} (${v.plaqueImmatriculation}) ?`)) {
+                      deleteVehiculeMutation.mutate(v.id)
+                    }
+                  }}
+                  title="Supprimer ce véhicule"
+                >
+                  <Trash size={13} />
+                </button>
+              </div>,
             ])}
             emptyText="Aucun véhicule de transport enregistré."
           />

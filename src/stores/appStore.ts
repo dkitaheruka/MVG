@@ -60,7 +60,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sidebarCollapsed: localStorage.getItem('matabishi_sidebar_collapsed') === 'true',
   sidebarHidden: localStorage.getItem('matabishi_sidebar_hidden') === 'true',
   printProposal: null,
-  selectedAgenceId: 'CONSOLIDE',
+  selectedAgenceId:
+    savedSession && savedSession.role !== 'SUPER_ADMIN' && savedSession.role !== 'ADMIN_SIEGE'
+      ? savedSession.agenceId || 1
+      : 'CONSOLIDE',
 
   setSession: (session) => {
     if (session) {
@@ -107,12 +110,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ sidebarHidden: next })
   },
   setPrintProposal: (printProposal) => set({ printProposal }),
-  setSelectedAgenceId: (selectedAgenceId) => set({ selectedAgenceId }),
+  setSelectedAgenceId: (selectedAgenceId) => {
+    const { session } = get()
+    if (session && session.role !== 'SUPER_ADMIN' && session.role !== 'ADMIN_SIEGE') {
+      set({ selectedAgenceId: session.agenceId || 1 })
+      return
+    }
+    set({ selectedAgenceId })
+  },
 
   can: (permission) => {
     const { session } = get()
     if (!session) return false
     if (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN_SIEGE') return true
-    return session.permissions ? (session.permissions as string[]).includes(permission) : false
+    const perms = (session.permissions as string[]) || []
+    if (
+      permission === 'comptabilite.plan_gerer' ||
+      permission === 'comptabilite.ecritures_voir' ||
+      permission === 'comptabilite.voir'
+    ) {
+      if (['CHEF_AGENCE', 'COMPTABLE', 'COMPTABLE_SENIOR', 'AUDITEUR'].includes(session.role)) return true
+      return perms.some((p) => p.startsWith('comptabilite.'))
+    }
+    return perms.includes(permission)
   },
 }))

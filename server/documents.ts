@@ -158,16 +158,178 @@ export function renderFactureHtml(
 ): string {
   const isThermal = format === 'thermal'
   const totalUsd = Number(vente.montantTotal || 0)
+  const fraisTransp = Number(vente.fraisTransport || 0)
+  const totalMarchandise = Math.max(0, totalUsd - fraisTransp)
   const totalCdf = Math.round(vente.montantCdf || totalUsd * (tauxActif || 2850))
-  const socNom = entreprise?.nomSociete || 'SOCIÉTÉ INDUSTRIELLE & COMMERCIALE (SARL)'
-  const socPied = entreprise?.mentionsPiedFacture || 'Marchandises vendues et réceptionnées conformes. Aucun retour accepté sans accord formel de la direction.'
+  const socNom = entreprise?.nomSociete || 'MINOTERIE MODERNE DU VILLAGE (MVG SARL)'
+  const socSlogan = entreprise?.slogan || 'Qualité Supérieure de Farine de Maïs en RDC'
+  const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/20-B-0142'
+  const socIdNat = entreprise?.idNat || '01-83-N12044F'
+  const socNif = entreprise?.nif || 'A1209384Z'
+  const socPied = entreprise?.mentionsPiedFacture || 'Marchandises vendues et réceptionnées conformes. Ce document vaut quittance et preuve juridique en cas de contrôle ou litige.'
+  const compteClient = client?.compteComptable || (client?.id ? `411${String(client.id).padStart(3, '0')}` : '411000 (Client Comptoir)')
 
+  const modeTranspLabel = vente.modeTransport === 'FLOTTE_ENTREPRISE'
+    ? 'Camion Minoterie MVG'
+    : (vente.modeTransport === 'VEHICULE_CLIENT' ? 'Véhicule Client (Enlèvement)' : 'Retrait sur place (Comptoir Dépôt)')
+
+  const vehiculeInfo = vente.clientVehicule || (vente.selectedVehiculeId ? `Camion Flotte #${vente.selectedVehiculeId}` : '')
+  const chauffeurInfo = vente.clientChauffeur || ''
+
+  if (isThermal) {
+    // ----------------- TICKET DE CAISSE THERMIQUE 80MM (POS) -----------------
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Ticket ${vente.referenceVente || 'VTE'}</title>
+  <style>
+    * { box-sizing: border-box; font-family: "Courier New", Courier, monospace, -apple-system, sans-serif; }
+    body {
+      margin: 0;
+      padding: 6px;
+      color: #000;
+      background: #fff;
+      font-size: 11px;
+      line-height: 1.25;
+      max-width: 78mm;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .center { text-align: center; }
+    .right { text-align: right; }
+    .bold { font-weight: 800; }
+    .line { border-top: 1px dashed #000; margin: 5px 0; }
+    .double-line { border-top: 2px solid #000; margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { text-align: left; padding: 2px 0; border-bottom: 1px solid #000; }
+    td { padding: 3px 0; vertical-align: top; }
+    @media print {
+      body { max-width: 100%; padding: 0; margin: 0; }
+      .no-print { display: none !important; }
+      @page { margin: 2mm; size: 80mm auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom: 8px; text-align: center;">
+    <button onclick="window.print()" style="background: #0f172a; color: #fff; border: 0; padding: 6px 14px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 11px;">
+      Imprimer le Ticket (80mm)
+    </button>
+  </div>
+
+  <div class="center">
+    <div style="font-size: 14px; font-weight: 900; text-transform: uppercase;">${socNom}</div>
+    <div style="font-size: 9px;">${socSlogan}</div>
+    <div style="font-size: 8.5px; margin-top: 2px;">RCCM: ${socRccm} | ID.NAT: ${socIdNat} | NIF: ${socNif}</div>
+    <div style="font-size: 9.5px; font-weight: 700; margin-top: 2px;">Agence : ${agence?.nom || 'Agence Locale'}</div>
+    <div class="line"></div>
+    <div style="font-size: 12px; font-weight: 800;">TICKET DE CAISSE & PREUVE DE VENTE</div>
+    <div style="font-size: 10px; font-weight: 700;">N° ${vente.referenceVente || `VNT-${vente.id}`}</div>
+    <div style="font-size: 9px; color: #333;">${new Date(vente.dateVente || Date.now()).toLocaleString('fr-FR')}</div>
+  </div>
+
+  <div class="line"></div>
+
+  <!-- INFOS CLIENT & COMPTE 411 -->
+  <div>
+    <div><strong>Client :</strong> ${client?.nom || 'Client Comptant'}</div>
+    <div><strong>Compte Client :</strong> <code>${compteClient}</code></div>
+    ${client?.telephone ? `<div><strong>Tél :</strong> ${client.telephone}</div>` : ''}
+    ${vente.estCredit ? `<div style="font-weight: 800; color: #b91c1c;">[VENTE À CRÉDIT - ${vente.statutCredit === 'VALIDE' ? 'APPROUVÉE CHEF' : 'EN ATTENTE VALIDATION CHEF'}]</div>` : '<div><strong>Mode :</strong> COMPTANT (Espèces)</div>'}
+  </div>
+
+  <!-- INFOS TRANSPORT / VÉHICULE -->
+  <div style="margin-top: 4px; font-size: 9.5px; background: #f4f4f4; padding: 4px; border-radius: 3px;">
+    <div><strong>Transport :</strong> ${modeTranspLabel}</div>
+    ${vehiculeInfo ? `<div><strong>Véhicule / Plaque :</strong> ${vehiculeInfo}</div>` : ''}
+    ${chauffeurInfo ? `<div><strong>Chauffeur :</strong> ${chauffeurInfo}</div>` : ''}
+    ${fraisTransp > 0 ? `<div><strong>Frais acheminement :</strong> $${fraisTransp.toFixed(2)} USD</div>` : ''}
+  </div>
+
+  <div class="line"></div>
+
+  <!-- DETAIL ARTICLES -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 52%;">ARTICLE / LOT</th>
+        <th class="right" style="width: 16%;">QTÉ</th>
+        <th class="right" style="width: 16%;">P.U</th>
+        <th class="right" style="width: 16%;">TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${details.map((d: any) => `
+        <tr>
+          <td>
+            <div class="bold">${d.article?.designation || 'Produit MVG'}</div>
+            <div style="font-size: 8.5px; color: #444;">Lot: ${d.numeroLot || 'LOT-STD'}</div>
+          </td>
+          <td class="right bold">${d.quantite}</td>
+          <td class="right">$${(d.prixUnitaireApplique || 0).toFixed(2)}</td>
+          <td class="right bold">$${((d.prixUnitaireApplique || 0) * d.quantite).toFixed(2)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="line"></div>
+
+  <!-- TOTAUX & FRAIS -->
+  <table style="font-size: 11px;">
+    ${fraisTransp > 0 ? `
+    <tr>
+      <td>Sous-total Marchandises :</td>
+      <td class="right">$${totalMarchandise.toFixed(2)}</td>
+    </tr>
+    <tr>
+      <td>Frais de Transport :</td>
+      <td class="right">+$${fraisTransp.toFixed(2)}</td>
+    </tr>
+    ` : ''}
+    <tr style="font-size: 13px; font-weight: 900;">
+      <td>TOTAL NET À PAYER :</td>
+      <td class="right">$${totalUsd.toFixed(2)} USD</td>
+    </tr>
+    <tr style="font-size: 10px; font-weight: 700;">
+      <td>Contre-valeur CDF :</td>
+      <td class="right">${totalCdf.toLocaleString()} CDF</td>
+    </tr>
+  </table>
+
+  <div class="double-line"></div>
+
+  <!-- CERTIFICATION & LITIGE -->
+  <div class="center" style="font-size: 8.5px; line-height: 1.3; margin: 4px 0;">
+    <strong>PREUVE DE LIVRAISON & QUITTANCE FISCALE</strong><br/>
+    Marchandises réceptionnées conformes. Ce ticket fait foi de titre de propriété et décharge de transport en cas de contrôle ou litige sur le trajet.
+  </div>
+
+  ${qrSvg ? `
+  <div class="center" style="margin: 6px 0;">
+    <div style="display: inline-block; width: 68px; height: 68px; background: #fff; padding: 2px;">
+      ${qrSvg}
+    </div>
+    <div style="font-size: 8px; color: #333;">SCANNEZ POUR AUTHENTIFICATION MVG</div>
+  </div>
+  ` : ''}
+
+  <div class="center" style="font-size: 8px; margin-top: 6px; border-top: 1px dotted #888; padding-top: 4px;">
+    Merci de votre fidélité ! MVG Farine Extra Pure.<br/>
+    - - - - - - - Découper ici - - - - - - -
+  </div>
+</body>
+</html>`
+  }
+
+  // ----------------- FACTURE OFFICIELLE A4 STANDARD -----------------
   const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
     entreprise,
     agence,
     docTitle: vente.estCredit ? 'FACTURE DE VENTE À CRÉDIT' : 'FACTURE DE VENTE AU COMPTANT',
     docReference: vente.referenceVente || `VNT-${vente.id}`,
-    isThermal,
+    isThermal: false,
   })
 
   return `<!DOCTYPE html>
@@ -177,25 +339,25 @@ export function renderFactureHtml(
   <title>Facture ${vente.referenceVente || 'VTE'}</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: ${isThermal ? '10px' : '28px'}; color: #1e293b; background: #fff; font-size: ${isThermal ? '12px' : '14px'}; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13.5px; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
-    .company-name { font-size: ${isThermal ? '16px' : '22px'}; font-weight: 800; color: #0f172a; margin: 0; }
+    .company-name { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0; }
     .subtitle { font-size: 11px; color: #64748b; margin: 2px 0 6px; }
     .legal-info { font-size: 10px; color: #475569; line-height: 1.4; }
-    .doc-title { font-size: ${isThermal ? '14px' : '18px'}; font-weight: 700; margin: 12px 0 4px; text-transform: uppercase; color: #0284c7; }
-    .meta-grid { display: grid; grid-template-columns: ${isThermal ? '1fr' : '1fr 1fr'}; gap: 8px; margin-bottom: 16px; font-size: 12px; }
-    .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; }
+    .doc-title { font-size: 18px; font-weight: 700; margin: 12px 0 4px; text-transform: uppercase; color: #0284c7; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; font-size: 12px; }
+    .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: ${isThermal ? '5px' : '8px'}; text-align: left; font-size: 11px; font-weight: 700; }
-    td { border: 1px solid #e2e8f0; padding: ${isThermal ? '5px' : '8px'}; font-size: 12px; }
+    th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 11px; font-weight: 700; }
+    td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; }
     .right { text-align: right; }
     .center { text-align: center; }
-    .totals-box { margin-left: auto; width: ${isThermal ? '100%' : '320px'}; border: 1px solid #0f172a; border-radius: 6px; overflow: hidden; margin-bottom: 20px; }
-    .total-row { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; }
+    .totals-box { margin-left: auto; width: 340px; border: 1.5px solid #0f172a; border-radius: 6px; overflow: hidden; margin-bottom: 20px; }
+    .total-row { display: flex; justify-content: space-between; padding: 7px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
     .total-row.grand { background: #0f172a; color: #fff; font-size: 15px; font-weight: 800; border-bottom: 0; }
-    .notice { font-size: 10px; color: #64748b; text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; margin-top: 16px; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; font-size: 11px; page-break-inside: avoid; }
-    .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 60px; }
+    .notice { font-size: 10.5px; color: #475569; text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; margin-top: 16px; line-height: 1.4; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 30px; font-size: 11px; page-break-inside: avoid; }
+    .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 65px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 16px; }
     @media print {
       .no-print { display: none !important; }
@@ -212,29 +374,35 @@ export function renderFactureHtml(
 
   <div class="meta-grid">
     <div class="meta-box">
-      <strong>Informations Document :</strong><br/>
-      Date & Heure : ${new Date(vente.dateVente || Date.now()).toLocaleString('fr-FR')}<br/>
-      Mode de règlement : <strong>${vente.estCredit ? 'CRÉDIT (Accord préalable)' : 'COMPTANT (Caisse agence)'}</strong><br/>
-      Devise principale : <strong>${vente.devise || 'USD'}</strong> | Taux du jour : <strong>1 USD = ${tauxActif} CDF</strong>
+      <strong>Informations Document & Règlement :</strong><br/>
+      Date & Heure : <strong>${new Date(vente.dateVente || Date.now()).toLocaleString('fr-FR')}</strong><br/>
+      Mode de règlement : <strong>${vente.estCredit ? (vente.statutCredit === 'VALIDE' ? 'CRÉDIT (Accord préalable validé)' : 'CRÉDIT (En attente d’approbation Chef)') : 'COMPTANT (Caisse agence)'}</strong><br/>
+      Devise : <strong>${vente.devise || 'USD'}</strong> | Taux officiel : <strong>1 USD = ${tauxActif} CDF</strong><br/>
+      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-size: 11px;">
+        <strong>Transport & Expédition :</strong> ${modeTranspLabel}<br/>
+        ${vehiculeInfo ? `Véhicule : <strong>${vehiculeInfo}</strong> ` : ''}
+        ${chauffeurInfo ? `| Chauffeur : <strong>${chauffeurInfo}</strong>` : ''}
+      </div>
     </div>
     <div class="meta-box">
       <strong>Client / Destinataire :</strong><br/>
       Nom : <strong>${client?.nom || 'Client Comptant'}</strong><br/>
+      Compte Auxiliaire : <strong><code>${compteClient}</code></strong><br/>
       Téléphone : ${client?.telephone || 'Non renseigné'}<br/>
       Adresse : ${client?.adresse || 'Goma / RDC'}<br/>
-      Statut compte : ${vente.estCredit ? `Crédit en cours ($${(client?.soldeDette || 0).toFixed(2)})` : 'Solde régularisé'}
+      Statut compte : ${vente.estCredit ? `Encours dette : $${(client?.soldeDette || 0).toFixed(2)} / Plafond: $${client?.limiteCredit || 1000}` : 'Compte régularisé au comptant'}
     </div>
   </div>
 
   <table>
     <thead>
       <tr>
-        <th>N°</th>
-        <th>Désignation de l'article</th>
-        <th class="center">Lot FEFO</th>
-        <th class="right">Quantité</th>
-        <th class="right">P.U ($)</th>
-        <th class="right">Total ($ USD)</th>
+        <th class="center" style="width: 35px;">N°</th>
+        <th>Désignation de la marchandise</th>
+        <th class="center" style="width: 120px;">Lot FEFO</th>
+        <th class="right" style="width: 90px;">Quantité</th>
+        <th class="right" style="width: 100px;">P.U ($)</th>
+        <th class="right" style="width: 120px;">Total ($ USD)</th>
       </tr>
     </thead>
     <tbody>
@@ -243,19 +411,37 @@ export function renderFactureHtml(
           <td class="center">${idx + 1}</td>
           <td><strong>${d.article?.designation || 'Farine / Produit'}</strong> <small style="color:#64748b">(${d.article?.codeUnique || 'ART'})</small></td>
           <td class="center"><code>${d.numeroLot || 'LOT-STD'}</code></td>
-          <td class="right">${d.quantite} ${d.article?.uniteMesure || 'sac(s)'}</td>
+          <td class="right"><strong>${d.quantite}</strong> ${d.article?.uniteMesure || 'sac(s)'}</td>
           <td class="right">$${(d.prixUnitaireApplique || 0).toFixed(2)}</td>
           <td class="right"><strong>$${((d.prixUnitaireApplique || 0) * d.quantite).toFixed(2)}</strong></td>
         </tr>
       `).join('')}
+      ${fraisTransp > 0 ? `
+        <tr style="background: #f8fafc;">
+          <td class="center">${details.length + 1}</td>
+          <td colspan="4"><strong>Frais de Transport & Acheminement marchandise</strong> <small style="color: #64748b;">(${modeTranspLabel})</small></td>
+          <td class="right"><strong>$${fraisTransp.toFixed(2)}</strong></td>
+        </tr>
+      ` : ''}
     </tbody>
   </table>
 
   <div class="totals-box">
+    ${fraisTransp > 0 ? `
+    <div class="total-row">
+      <span>Sous-total Marchandises HT :</span>
+      <span>$${totalMarchandise.toFixed(2)} USD</span>
+    </div>
+    <div class="total-row">
+      <span>Frais de Transport & Manutention :</span>
+      <span>$${fraisTransp.toFixed(2)} USD</span>
+    </div>
+    ` : `
     <div class="total-row">
       <span>Sous-total HT :</span>
       <span>$${totalUsd.toFixed(2)} USD</span>
     </div>
+    `}
     <div class="total-row">
       <span>Taxes & Redevances :</span>
       <span>Incluses</span>
@@ -279,7 +465,7 @@ export function renderFactureHtml(
       <div>
         <div style="font-size: 11px; font-weight: 800; color: #0284c7; letter-spacing: 0.03em;">CERTIFICAT DE VENTE & SÉCURISATION FISCALE MVG</div>
         <div style="font-size: 10px; color: #475569; margin-top: 2px; line-height: 1.35;">
-          Scannez ce QR Code pour valider l'authenticité de la facture et générer automatiquement les écritures comptables d'agence.
+          Scannez ce QR Code pour valider l'authenticité de la facture et justifier de la décharge de livraison en cas de contrôle ou litige routier.
         </div>
       </div>
     </div>
@@ -291,17 +477,17 @@ export function renderFactureHtml(
   ` : ''}
 
   <div class="notice">
-    ${socPied}
+    <strong>MENTION JURIDIQUE & PREUVE DE DÉCHARGE :</strong> ${socPied}
   </div>
 
   <div class="signatures">
     <div class="sig-box">
       <strong>Pour ${socNom} (Caissier / Vendeur) :</strong><br/>
-      <small>Nom et signature</small>
+      <small>Nom, visa et cachet officiel</small>
     </div>
     <div class="sig-box right">
-      <strong>Pour Réception Client / Décharge :</strong><br/>
-      <small>Nom, date et signature</small>
+      <strong>Pour Réception Client / Décharge Transport :</strong><br/>
+      <small>Nom, date, mention "Reçu conforme" et signature</small>
     </div>
   </div>
 </body>

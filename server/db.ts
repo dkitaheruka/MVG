@@ -125,6 +125,13 @@ export interface DbVente {
   statutAnnulation?: 'AUCUNE' | 'EN_ATTENTE' | 'ANNULEE'
   dateVente: string
   details: DbVenteDetail[]
+  fraisTransport?: number
+  comptabilisee?: boolean
+  modeTransport?: string
+  vehiculeId?: number
+  clientVehicule?: string
+  clientChauffeur?: string
+  caisseId?: number
 }
 
 export interface DbCompteCaisse {
@@ -135,6 +142,10 @@ export interface DbCompteCaisse {
   soldeCdf: number
   type?: 'CAISSE' | 'BANQUE'
   numeroCompteBancaire?: string
+  numeroCompteComptable?: string
+  deviseDefaut?: 'USD' | 'CDF' | 'MULTI'
+  responsableNom?: string
+  actif?: boolean
 }
 
 export interface DbTransaction {
@@ -173,6 +184,9 @@ export interface DbPlanComptable {
   libelle: string
   estModifiable: boolean
   parentNumero?: string
+  classe?: number
+  nature?: 'ACTIF' | 'PASSIF' | 'CHARGE' | 'PRODUIT' | 'SPECIAL'
+  actif?: boolean
 }
 
 export interface DbEcritureComptable {
