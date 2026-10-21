@@ -2838,4 +2838,294 @@ export function renderBilanHtml(
 </html>`
 }
 
+// ----------------- FEUILLE DE PAIE COLLECTIVE / LIVRE DE PAIE OFFICIEL (RDC) -----------------
+export function renderFeuillePaieCollectiveHtml(params: {
+  bulletins: any[]
+  agence?: any
+  entreprise?: any
+  mois: number
+  annee: number
+}): string {
+  const { bulletins, agence, entreprise, mois, annee } = params
+  const moisNoms = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ]
+  const nomMois = moisNoms[mois - 1] || `Mois ${mois}`
+
+  // Totaux calculés
+  const totaux = bulletins.reduce(
+    (acc, b) => {
+      acc.salaireBase += Number(b.salaireBase || 0)
+      acc.indemniteTransport += Number(b.indemniteTransport || 0)
+      acc.indemniteLogement += Number(b.indemniteLogement || 0)
+      acc.salaireBrut += Number(b.salaireBrut || (b.salaireBase + (b.indemniteTransport || 0) + (b.indemniteLogement || 0) + (b.commissionsVentes || 0)))
+      acc.cnssQpo += Number(b.cnssQpo || 0)
+      acc.cnssQpp += Number(b.cnssQpp || 0)
+      acc.remunerationImposable += Number(b.remunerationImposable || 0)
+      acc.ipr += Number(b.ipr || 0)
+      acc.inpp += Number(b.inpp || 0)
+      acc.onem += Number(b.onem || 0)
+      acc.netAPayer += Number(b.netAPayer || 0)
+      return acc
+    },
+    {
+      salaireBase: 0,
+      indemniteTransport: 0,
+      indemniteLogement: 0,
+      salaireBrut: 0,
+      cnssQpo: 0,
+      cnssQpp: 0,
+      remunerationImposable: 0,
+      ipr: 0,
+      inpp: 0,
+      onem: 0,
+      netAPayer: 0,
+    }
+  )
+
+  const devise = bulletins[0]?.devise || 'CDF'
+
+  const rowsHtml = bulletins
+    .map((b, index) => {
+      const nomAgent = (b.agent?.nom || b.agentNom || `Agent #${b.agentId}`).toUpperCase()
+      const categorie = b.categorie || b.agent?.categorie || 'I'
+      const base = Number(b.salaireBase || 0)
+      const transp = Number(b.indemniteTransport || 0)
+      const logt = Number(b.indemniteLogement || 0)
+      const brut = Number(b.salaireBrut || (base + transp + logt + (b.commissionsVentes || 0)))
+      const qpo = Number(b.cnssQpo || 0)
+      const qpp = Number(b.cnssQpp || 0)
+      const imposable = Number(b.remunerationImposable || (brut - qpo))
+      const iprVal = Number(b.ipr || 0)
+      const inppVal = Number(b.inpp || 0)
+      const onemVal = Number(b.onem || 0)
+      const net = Number(b.netAPayer || 0)
+
+      return `
+        <tr>
+          <td class="text-center bold">${index + 1}</td>
+          <td class="bold text-left">${nomAgent}</td>
+          <td class="text-center">${categorie}</td>
+          <td class="text-right bold">${base.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${transp > 0 ? transp.toLocaleString('fr-FR') : '0'}</td>
+          <td class="text-right">${logt > 0 ? logt.toLocaleString('fr-FR') : '0'}</td>
+          <td class="text-right bold highlight">${brut.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${qpo.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${qpp.toLocaleString('fr-FR')}</td>
+          <td class="text-right bold">${imposable.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${iprVal.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${inppVal.toLocaleString('fr-FR')}</td>
+          <td class="text-right">${onemVal.toLocaleString('fr-FR')}</td>
+          <td class="text-right bold grand-net">${net.toLocaleString('fr-FR')}</td>
+          <td class="signature-cell"></td>
+        </tr>
+      `
+    })
+    .join('')
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Feuille de Paie - ${nomMois} ${annee} - ${agence?.nom || 'Agence'}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    @page {
+      size: landscape;
+      margin: 8mm;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      color: #000;
+      background: #fff;
+      font-size: 11px;
+    }
+    .header-box {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #000;
+    }
+    .company-title {
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #0f172a;
+    }
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: center;
+      margin: 4px 0;
+    }
+    .sheet-sub {
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 10px;
+    }
+    th, td {
+      border: 1px solid #000;
+      padding: 5px 4px;
+    }
+    th {
+      background: #ffffff;
+      color: #000;
+      font-weight: 800;
+      text-align: center;
+      font-size: 9.5px;
+      line-height: 1.15;
+    }
+    th.group-cnss {
+      background: #f1f5f9;
+    }
+    .text-center { text-align: center; }
+    .text-left { text-align: left; }
+    .text-right { text-align: right; }
+    .bold { font-weight: 800; }
+    .highlight { background: #fafafa; }
+    .grand-net { background: #f8fafc; font-weight: 900; }
+    .signature-cell { width: 90px; height: 26px; }
+    tr.total-row {
+      background: #f1f5f9;
+      font-weight: 900;
+      font-size: 10.5px;
+      border-top: 2px solid #000;
+      border-bottom: 2px solid #000;
+    }
+    .signatures-block {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 24px;
+      page-break-inside: avoid;
+    }
+    .sig-card {
+      border-top: 1px solid #000;
+      padding-top: 6px;
+      text-align: center;
+      font-size: 10px;
+      height: 70px;
+    }
+    .sig-role {
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .sig-hint {
+      color: #64748b;
+      font-style: italic;
+      font-size: 9px;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; }
+    }
+    ${COMMON_SCROLLBAR_CSS}
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Feuille de Paie - ${nomMois} ${annee} (${agence?.nom || 'Agence'})`)}
+
+  <div class="header-box">
+    <div>
+      <div class="company-title">${entreprise?.nomSociete || 'MINOTERIE VILLE DE GOMA (MVG SARL)'}</div>
+      <div style="font-size: 10px; color: #475569;">
+        RCCM : ${entreprise?.rccm || 'CD/GOM/RCCM/18-B-00892'} • ID Nat : ${entreprise?.idNat || '01-83-N48201Z'} • NIF : ${entreprise?.nif || 'A1938201P'}<br/>
+        Agence d'affectation : <strong>${agence?.nom || 'Siège Social Goma'}</strong> (${agence?.ville || 'Nord-Kivu'})
+      </div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-size: 10px; font-weight: 700;">RÉPUBLIQUE DÉMOCRATIQUE DU CONGO</div>
+      <div style="font-size: 9.5px; color: #475569;">MINISTÈRE DU TRAVAIL ET DE LA PRÉVOYANCE SOCIALE</div>
+      <div style="font-size: 9.5px; font-weight: 600; color: #0284c7;">LIVRE / ÉTAT DE PAIE MENSUEL NORMALISÉ</div>
+    </div>
+  </div>
+
+  <div class="sheet-title">FEUILLE DE PAIE • LIVRE DES SALAIRES</div>
+  <div class="sheet-sub">Période : ${nomMois.toUpperCase()} ${annee} • Devise de référence : ${devise}</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width: 32px;">N°<br/>Ordre</th>
+        <th rowspan="2" style="min-width: 140px;">NOMS & POST-NOMS</th>
+        <th rowspan="2" style="width: 55px;">CATEGOR<br/>IE</th>
+        <th rowspan="2" style="min-width: 75px;">SALAIRES DE<br/>BASE</th>
+        <th rowspan="2" style="min-width: 70px;">INDEMNITES<br/>DE<br/>TRANSPORT</th>
+        <th rowspan="2" style="min-width: 70px;">INDEMNITES<br/>DE<br/>LOGEMENT</th>
+        <th rowspan="2" style="min-width: 75px;">SALAIRE<br/>BRUTE</th>
+        <th colspan="2" class="group-cnss">CNSS</th>
+        <th rowspan="2" style="min-width: 80px;">REMUNERATI<br/>ON<br/>IMPOSABLE</th>
+        <th rowspan="2" style="min-width: 70px;">IPR<br/>(BAREME)</th>
+        <th rowspan="2" style="min-width: 60px;">INPP<br/>3,5%</th>
+        <th rowspan="2" style="min-width: 55px;">ONEM<br/>0.5%</th>
+        <th rowspan="2" style="min-width: 80px;">NET<br/>A<br/>PAYER</th>
+        <th rowspan="2" style="width: 90px;">SIGNATURE</th>
+      </tr>
+      <tr>
+        <th class="group-cnss" style="min-width: 60px;">Q.P.O 5%</th>
+        <th class="group-cnss" style="min-width: 60px;">Q.P.P 13%</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+      <tr class="total-row">
+        <td colspan="3" class="text-center bold">TOTAL</td>
+        <td class="text-right bold">${totaux.salaireBase.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.indemniteTransport.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.indemniteLogement.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.salaireBrut.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.cnssQpo.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.cnssQpp.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.remunerationImposable.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.ipr.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.inpp.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold">${totaux.onem.toLocaleString('fr-FR')}</td>
+        <td class="text-right bold grand-net">${totaux.netAPayer.toLocaleString('fr-FR')}</td>
+        <td class="signature-cell"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="signatures-block">
+    <div class="sig-card">
+      <div class="sig-role">Le Responsable RH / Paie</div>
+      <div class="sig-hint">Établi & calculé conformément au barème</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">Le Chef d'Agence</div>
+      <div class="sig-hint">Vérifié & approuvé pour imputation</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">Le Comptable Senior</div>
+      <div class="sig-hint">Contrôle fiscal, CNSS & visa légal</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">La Direction Générale</div>
+      <div class="sig-hint">Bon pour décaissement en caisse</div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 

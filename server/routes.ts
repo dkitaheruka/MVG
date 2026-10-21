@@ -46,6 +46,7 @@ import {
   renderFeuilleRouteTransfertHtml,
   renderBonProductionHtml,
   renderBulletinPaieHtml,
+  renderFeuillePaieCollectiveHtml,
   renderGrandLivreHtml,
   renderCompteResultatHtml,
   renderBonCommandeHtml,
@@ -1757,12 +1758,34 @@ router.post(['/ventes/nouvelle', '/ventes'], (req: Request, res: Response) => {
 
   // 1. GOUVERNANCE COMPTABLE DES COMPTES DÉBIT / CRÉDIT
   if (!estCredit) {
-    const caisse = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : (c.agenceId === agId ? c.id : 1))) || comptesCaisse[0]
+    const caisse =
+      (caisseId ? comptesCaisse.find((c) => c.id === Number(caisseId)) : undefined) ||
+      comptesCaisse.find((c) => c.agenceId === agId) ||
+      comptesCaisse[0]
+
     if (devise === 'USD') {
       caisse.soldeUsd = Math.round((caisse.soldeUsd + numMontantTotal) * 100) / 100
     } else {
       caisse.soldeCdf = Math.round(caisse.soldeCdf + Number(montantCdf || (numMontantTotal * activeRate)))
     }
+
+    // Enregistrement immédiat dans le journal de trésorerie (livre de caisse)
+    transactions.unshift({
+      id: `TX-${Date.now().toString().slice(-8)}`,
+      referenceInterne: nouvelleVente.referenceVente,
+      agenceId: agId,
+      caisseId: caisse.id,
+      montant: numMontantTotal,
+      devise: devise || 'USD',
+      tauxApplique: activeRate,
+      type: 'ENTREE',
+      libelle: `Encaissement vente au comptant ${nouvelleVente.referenceVente} (${caisse.nom})`,
+      statut: 'VALIDE',
+      createurId: currentUser?.id || 4,
+      validateurId: currentUser?.id || 4,
+      dateCreation: new Date().toISOString(),
+      dateValidation: new Date().toISOString(),
+    })
 
     const ref = nouvelleVente.referenceVente
     const montantMarchandise = Math.max(0, numMontantTotal - fraisTransport)
@@ -3076,6 +3099,74 @@ router.get('/export/print/:type', (req: Request, res: Response) => {
 })
 
 
+// ----------------- CALCULATEUR OFFICIEL DE PAIE RDC (CNSS, IPR, INPP, ONEM) -----------------
+export function calculerLignePaieRdc(params: {
+  salaireBase: number
+  indemniteTransport?: number
+  indemniteLogement?: number
+  commissionsVentes?: number
+  avancesDeduites?: number
+  devise?: 'USD' | 'CDF'
+  tauxChange?: number
+}) {
+  const salaireBase = Number(params.salaireBase || 0)
+  const transport = Number(params.indemniteTransport || 0)
+  const logement = Number(params.indemniteLogement || 0)
+  const commissions = Number(params.commissionsVentes || 0)
+  const avances = Number(params.avancesDeduites || 0)
+  const devise = params.devise || 'CDF'
+  const taux = params.tauxChange || 2850
+
+  const salaireBrut = Math.round((salaireBase + transport + logement + commissions) * 100) / 100
+
+  // Cotisations CNSS : QPO 5% employé, QPP 13% employeur
+  const cnssQpo = Math.round(salaireBrut * 0.05 * 100) / 100
+  const cnssQpp = Math.round(salaireBrut * 0.13 * 100) / 100
+
+  // Rémunération imposable = Brut - CNSS QPO
+  const remunerationImposable = Math.max(0, Math.round((salaireBrut - cnssQpo) * 100) / 100)
+
+  // IPR selon le barème officiel progressif RDC (DGI)
+  const baseCdf = devise === 'CDF' ? remunerationImposable : remunerationImposable * taux
+  let iprCdf = 0
+  if (baseCdf <= 162000) {
+    iprCdf = baseCdf * 0.03
+  } else if (baseCdf <= 1800000) {
+    iprCdf = 162000 * 0.03 + (baseCdf - 162000) * 0.15
+  } else if (baseCdf <= 3600000) {
+    iprCdf = 162000 * 0.03 + (1800000 - 162000) * 0.15 + (baseCdf - 1800000) * 0.30
+  } else {
+    iprCdf = 162000 * 0.03 + (1800000 - 162000) * 0.15 + (3600000 - 1800000) * 0.30 + (baseCdf - 3600000) * 0.40
+  }
+  // Plafond légal : maximum 30% de la rémunération imposable
+  iprCdf = Math.min(iprCdf, baseCdf * 0.30)
+  const ipr = devise === 'CDF' ? Math.round(iprCdf) : Math.round((iprCdf / taux) * 100) / 100
+
+  // Charges patronales : INPP 3,5% et ONEM 0,5%
+  const inpp = Math.round(salaireBrut * 0.035 * 100) / 100
+  const onem = Math.round(salaireBrut * 0.005 * 100) / 100
+
+  // Net à payer = Rémunération imposable - IPR - Avances déduites
+  const netAPayer = Math.max(0, Math.round((remunerationImposable - ipr - avances) * 100) / 100)
+
+  return {
+    salaireBase,
+    indemniteTransport: transport,
+    indemniteLogement: logement,
+    commissionsVentes: commissions,
+    salaireBrut,
+    cnssQpo,
+    cnssQpp,
+    remunerationImposable,
+    ipr,
+    inpp,
+    onem,
+    avancesDeduites: avances,
+    netAPayer,
+    devise,
+  }
+}
+
 // ----------------- DOCUMENTS & ÉDITIONS OFFICIELLES SUPPLÉMENTAIRES -----------------
 router.get(['/paie/bulletins/:id/document', '/rh/bulletins/:id/document'], (req: Request, res: Response) => {
   const bId = toInt(req.params.id)
@@ -3086,6 +3177,60 @@ router.get(['/paie/bulletins/:id/document', '/rh/bulletins/:id/document'], (req:
   const agence = agences.find((ag) => ag.id === b.agenceId)
 
   const html = renderBulletinPaieHtml(b, agent, agence, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+router.get(['/paie/feuille-paie/document', '/rh/feuille-paie/document', '/rh/livre-paie/document'], (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const mois = req.query.mois ? Number(req.query.mois) : (new Date().getMonth() + 1)
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+
+  let list = bulletinsPaie
+    .filter((b) => (!agenceId || b.agenceId === agenceId) && b.mois === mois && b.annee === annee)
+    .map((b) => ({
+      ...b,
+      agent: agents.find((a) => a.id === b.agentId),
+      agence: agences.find((ag) => ag.id === b.agenceId),
+    }))
+
+  // If no bulletins generated yet for this month, auto-generate temporary preview from active agents
+  if (list.length === 0) {
+    const activeAgents = agents.filter((a) => !agenceId || a.agenceId === agenceId)
+    list = activeAgents.map((ag, idx) => {
+      const calc = calculerLignePaieRdc({
+        salaireBase: ag.salaireBase,
+        indemniteTransport: ag.indemniteTransport,
+        indemniteLogement: ag.indemniteLogement,
+        commissionsVentes: 0,
+        avancesDeduites: 0,
+        devise: ag.devise || 'CDF',
+      })
+      return {
+        id: idx + 1,
+        referenceBulletin: `PREV-${ag.id}-${mois}-${annee}`,
+        agentId: ag.id,
+        agent: ag,
+        agence: agences.find((a) => a.id === ag.agenceId),
+        agenceId: ag.agenceId,
+        mois,
+        annee,
+        ...calc,
+        statut: 'BROUILLON',
+        preparateurNom: 'Aperçu Automatique',
+        dateGeneration: new Date().toISOString(),
+      }
+    })
+  }
+
+  const agence = agenceId ? agences.find((ag) => ag.id === agenceId) : { nom: 'Toutes les Agences (Consolidation Nationale)', ville: 'RDC' }
+  const html = renderFeuillePaieCollectiveHtml({
+    bulletins: list,
+    agence,
+    entreprise: parametresEntreprise,
+    mois,
+    annee,
+  })
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
@@ -6632,22 +6777,72 @@ router.get('/rh/agents', (req: Request, res: Response) => {
 
 router.post('/rh/agents', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
-  const { nom, telephone, poste, agenceId, salaireBase, tauxCommission } = req.body
+  const {
+    nom,
+    telephone,
+    poste,
+    agenceId,
+    categorie,
+    salaireBase,
+    indemniteTransport,
+    indemniteLogement,
+    tauxCommission,
+    devise,
+  } = req.body
   const numAg = toInt(agenceId) || 1
   const nouvelAgent = {
     id: agents.length + 1,
     matricule: `AGT-${numAg}-${Date.now().toString().slice(-4)}`,
-    nom,
+    nom: String(nom || '').trim(),
     telephone: telephone || '',
     poste: poste || 'Collaborateur',
     agenceId: numAg,
-    salaireBase: Number(salaireBase) || 300,
+    categorie: categorie || 'I',
+    salaireBase: Number(salaireBase) || 559000,
+    indemniteTransport: Number(indemniteTransport) || 0,
+    indemniteLogement: Number(indemniteLogement) || 0,
     tauxCommission: Number(tauxCommission) || 0,
+    devise: (devise as 'USD' | 'CDF') || 'CDF',
     actif: true,
   }
   agents.push(nouvelAgent)
-  logAudit(currentUser?.nom || 'RH', 'CREATION_AGENT', `Création agent ${nom} (${nouvelAgent.matricule})`, numAg)
+  logAudit(currentUser?.nom || 'RH', 'CREATION_AGENT', `Création collaborateur ${nom} (${nouvelAgent.matricule})`, numAg)
   res.json(nouvelAgent)
+})
+
+router.put('/rh/agents/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agent = agents.find((a) => a.id === toInt(req.params.id))
+  if (!agent) return res.status(404).json({ message: 'Collaborateur non trouvé' })
+
+  const {
+    nom,
+    telephone,
+    poste,
+    categorie,
+    salaireBase,
+    indemniteTransport,
+    indemniteLogement,
+    tauxCommission,
+    devise,
+    actif,
+  } = req.body
+
+  if (nom) agent.nom = String(nom).trim()
+  if (telephone !== undefined) agent.telephone = String(telephone).trim()
+  if (poste) agent.poste = String(poste).trim()
+  if (categorie) agent.categorie = String(categorie).trim()
+  if (salaireBase !== undefined) agent.salaireBase = Number(salaireBase)
+  if (indemniteTransport !== undefined) agent.indemniteTransport = Number(indemniteTransport)
+  if (indemniteLogement !== undefined) agent.indemniteLogement = Number(indemniteLogement)
+  if (tauxCommission !== undefined) agent.tauxCommission = Number(tauxCommission)
+  if (devise) agent.devise = devise
+  if (actif !== undefined) agent.actif = Boolean(actif)
+
+  logAudit(currentUser.nom, 'MODIFICATION_AGENT', `Mise à jour agent ${agent.nom}`, agent.agenceId)
+  res.json(agent)
 })
 
 router.get('/rh/avances', (req: Request, res: Response) => {
@@ -6671,7 +6866,7 @@ router.post('/rh/avances', (req: Request, res: Response) => {
     agentId: toInt(agentId),
     agenceId: numAg,
     montant: Number(montant),
-    devise: devise || 'USD',
+    devise: (devise as 'USD' | 'CDF') || 'CDF',
     motif: motif || 'Avance ponctuelle',
     statut: 'EN_ATTENTE' as const,
     demandeurNom: currentUser?.nom || 'Agent',
@@ -6715,7 +6910,7 @@ router.post('/rh/avances/:id/decaisser', (req: Request, res: Response) => {
   avance.statut = 'DECAISSE'
   avance.dateDecaissement = new Date().toISOString()
 
-  // Accounting OHADA: Debit 421 (Personnel - Avances et acomptes), Credit 571 (Caisse)
+  // Accounting OHADA: Debit 421 (Personnel - Avances et acomptes), Credit 571/572 (Caisse)
   const ref = `AVS-${avance.id}`
   ecrituresComptables.push(
     {
@@ -6758,8 +6953,16 @@ router.post('/rh/avances/:id/decaisser', (req: Request, res: Response) => {
 
 router.get('/rh/bulletins', (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const mois = req.query.mois ? Number(req.query.mois) : undefined
+  const annee = req.query.annee ? Number(req.query.annee) : undefined
+
   const list = bulletinsPaie
-    .filter((b) => !agenceId || b.agenceId === agenceId)
+    .filter(
+      (b) =>
+        (!agenceId || b.agenceId === agenceId) &&
+        (!mois || b.mois === mois) &&
+        (!annee || b.annee === annee)
+    )
     .map((b) => ({
       ...b,
       agent: agents.find((a) => a.id === b.agentId),
@@ -6768,23 +6971,111 @@ router.get('/rh/bulletins', (req: Request, res: Response) => {
   res.json(list)
 })
 
+// Obtenir la feuille de paie collective du mois
+router.get('/rh/feuille-paie', (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const mois = req.query.mois ? Number(req.query.mois) : (new Date().getMonth() + 1)
+  const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
+
+  let list = bulletinsPaie
+    .filter(
+      (b) =>
+        (!agenceId || b.agenceId === agenceId) &&
+        b.mois === mois &&
+        b.annee === annee
+    )
+    .map((b) => ({
+      ...b,
+      agent: agents.find((a) => a.id === b.agentId),
+      agence: agences.find((ag) => ag.id === b.agenceId),
+    }))
+
+  // Si aucun bulletin n'existe encore pour ce mois, pré-remplir à la volée depuis la liste des agents actifs
+  if (list.length === 0) {
+    const activeAgents = agents.filter((a) => (!agenceId || a.agenceId === agenceId) && a.actif)
+    list = activeAgents.map((ag, idx) => {
+      const calc = calculerLignePaieRdc({
+        salaireBase: ag.salaireBase,
+        indemniteTransport: ag.indemniteTransport,
+        indemniteLogement: ag.indemniteLogement,
+        commissionsVentes: 0,
+        avancesDeduites: 0,
+        devise: ag.devise || 'CDF',
+      })
+      return {
+        id: idx + 1,
+        referenceBulletin: `PREV-${ag.agenceId}-${annee}${String(mois).padStart(2, '0')}-${ag.id}`,
+        agentId: ag.id,
+        agent: ag,
+        agence: agences.find((a) => a.id === ag.agenceId),
+        agenceId: ag.agenceId,
+        mois,
+        annee,
+        categorie: ag.categorie || 'I',
+        ...calc,
+        statut: 'BROUILLON',
+        preparateurNom: 'Aperçu Automatique',
+        dateGeneration: new Date().toISOString(),
+      } as any
+    })
+  }
+
+  const totaux = list.reduce(
+    (acc, b) => {
+      acc.salaireBase += Number(b.salaireBase || 0)
+      acc.indemniteTransport += Number(b.indemniteTransport || 0)
+      acc.indemniteLogement += Number(b.indemniteLogement || 0)
+      acc.salaireBrut += Number(b.salaireBrut || 0)
+      acc.cnssQpo += Number(b.cnssQpo || 0)
+      acc.cnssQpp += Number(b.cnssQpp || 0)
+      acc.remunerationImposable += Number(b.remunerationImposable || 0)
+      acc.ipr += Number(b.ipr || 0)
+      acc.inpp += Number(b.inpp || 0)
+      acc.onem += Number(b.onem || 0)
+      acc.netAPayer += Number(b.netAPayer || 0)
+      return acc
+    },
+    {
+      salaireBase: 0,
+      indemniteTransport: 0,
+      indemniteLogement: 0,
+      salaireBrut: 0,
+      cnssQpo: 0,
+      cnssQpp: 0,
+      remunerationImposable: 0,
+      ipr: 0,
+      inpp: 0,
+      onem: 0,
+      netAPayer: 0,
+    }
+  )
+
+  res.json({
+    mois,
+    annee,
+    agenceId,
+    devise: list[0]?.devise || 'CDF',
+    bulletins: list,
+    totaux,
+  })
+})
+
 router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   const { agentId, mois, annee } = req.body
   const agent = agents.find((a) => a.id === toInt(agentId))
-  if (!agent) return res.status(404).json({ message: 'Agent non trouvé' })
+  if (!agent) return res.status(404).json({ message: 'Collaborateur non trouvé' })
 
-  // Calculate commissions on sales for this agent if commercial
+  // Commissions sur ventes
   let totalVentesAgent = 0
   ventes.forEach((v) => {
     if (v.vendeurId === agent.id && v.statutAnnulation !== 'ANNULEE' && v.statutCredit !== 'REJETE') {
       totalVentesAgent += v.montantTotal
     }
   })
-
   const commissionsVentes = Math.round(((totalVentesAgent * (agent.tauxCommission || 0)) / 100) * 100) / 100
 
-  // Calculate disbursed advances for this agent
+  // Avances décaissées
   let avancesDeduites = 0
   avancesSalaire.forEach((av) => {
     if (av.agentId === agent.id && av.statut === 'DECAISSE') {
@@ -6792,7 +7083,40 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
     }
   })
 
-  const netAPayer = Math.max(0, Math.round((agent.salaireBase + commissionsVentes - avancesDeduites) * 100) / 100)
+  const calc = calculerLignePaieRdc({
+    salaireBase: agent.salaireBase,
+    indemniteTransport: agent.indemniteTransport,
+    indemniteLogement: agent.indemniteLogement,
+    commissionsVentes,
+    avancesDeduites,
+    devise: agent.devise || 'CDF',
+  })
+
+  // Vérifier si un bulletin existe déjà pour ce mois
+  let bulletinExistant = bulletinsPaie.find(
+    (b) => b.agentId === agent.id && b.mois === Number(mois) && b.annee === Number(annee)
+  )
+
+  if (bulletinExistant) {
+    bulletinExistant.categorie = agent.categorie || 'I'
+    bulletinExistant.salaireBase = calc.salaireBase
+    bulletinExistant.indemniteTransport = calc.indemniteTransport
+    bulletinExistant.indemniteLogement = calc.indemniteLogement
+    bulletinExistant.commissionsVentes = commissionsVentes
+    bulletinExistant.salaireBrut = calc.salaireBrut
+    bulletinExistant.cnssQpo = calc.cnssQpo
+    bulletinExistant.cnssQpp = calc.cnssQpp
+    bulletinExistant.remunerationImposable = calc.remunerationImposable
+    bulletinExistant.ipr = calc.ipr
+    bulletinExistant.inpp = calc.inpp
+    bulletinExistant.onem = calc.onem
+    bulletinExistant.avancesDeduites = avancesDeduites
+    bulletinExistant.netAPayer = calc.netAPayer
+    bulletinExistant.devise = agent.devise || 'CDF'
+    bulletinExistant.dateGeneration = new Date().toISOString()
+    logAudit(currentUser?.nom || 'RH', 'ACTUALISATION_BULLETIN', `Bulletin actualisé pour ${agent.nom}`, agent.agenceId)
+    return res.json(bulletinExistant)
+  }
 
   const nouveauBulletin = {
     id: bulletinsPaie.length + 1,
@@ -6801,26 +7125,99 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
     agenceId: agent.agenceId,
     mois: Number(mois),
     annee: Number(annee),
-    salaireBase: agent.salaireBase,
-    commissionsVentes,
-    avancesDeduites,
-    netAPayer,
-    devise: 'USD' as const,
+    categorie: agent.categorie || 'I',
+    ...calc,
     statut: 'BROUILLON' as const,
     preparateurNom: currentUser?.nom || 'Responsable RH',
     dateGeneration: new Date().toISOString(),
   }
 
   bulletinsPaie.unshift(nouveauBulletin)
-  logAudit(currentUser?.nom || 'RH', 'GENERATION_BULLETIN_PAIE', `Bulletin ${nouveauBulletin.referenceBulletin} généré pour ${agent.nom}`, agent.agenceId)
+  logAudit(currentUser?.nom || 'RH', 'GENERATION_BULLETIN_PAIE', `Bulletin ${nouveauBulletin.referenceBulletin} calculé pour ${agent.nom}`, agent.agenceId)
   res.json(nouveauBulletin)
+})
+
+// Générer ou actualiser en lot la feuille de paie de tout le mois pour une agence
+router.post('/rh/feuille-paie/generer-mois', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  const { agenceId, mois, annee } = req.body
+  const numAg = toInt(agenceId) || 1
+  const m = Number(mois)
+  const y = Number(annee)
+
+  const activeAgents = agents.filter((a) => a.agenceId === numAg && a.actif)
+  const resultats: any[] = []
+
+  for (const agent of activeAgents) {
+    let commissionsVentes = 0
+    ventes.forEach((v) => {
+      if (v.vendeurId === agent.id && v.statutAnnulation !== 'ANNULEE' && v.statutCredit !== 'REJETE') {
+        commissionsVentes += v.montantTotal
+      }
+    })
+    commissionsVentes = Math.round(((commissionsVentes * (agent.tauxCommission || 0)) / 100) * 100) / 100
+
+    let avancesDeduites = 0
+    avancesSalaire.forEach((av) => {
+      if (av.agentId === agent.id && av.statut === 'DECAISSE') {
+        avancesDeduites += av.montant
+      }
+    })
+
+    const calc = calculerLignePaieRdc({
+      salaireBase: agent.salaireBase,
+      indemniteTransport: agent.indemniteTransport,
+      indemniteLogement: agent.indemniteLogement,
+      commissionsVentes,
+      avancesDeduites,
+      devise: agent.devise || 'CDF',
+    })
+
+    let existing = bulletinsPaie.find((b) => b.agentId === agent.id && b.mois === m && b.annee === y)
+    if (existing) {
+      existing.categorie = agent.categorie || 'I'
+      existing.salaireBase = calc.salaireBase
+      existing.indemniteTransport = calc.indemniteTransport
+      existing.indemniteLogement = calc.indemniteLogement
+      existing.commissionsVentes = commissionsVentes
+      existing.salaireBrut = calc.salaireBrut
+      existing.cnssQpo = calc.cnssQpo
+      existing.cnssQpp = calc.cnssQpp
+      existing.remunerationImposable = calc.remunerationImposable
+      existing.ipr = calc.ipr
+      existing.inpp = calc.inpp
+      existing.onem = calc.onem
+      existing.avancesDeduites = avancesDeduites
+      existing.netAPayer = calc.netAPayer
+      existing.devise = agent.devise || 'CDF'
+      resultats.push(existing)
+    } else {
+      const b = {
+        id: bulletinsPaie.length + 1,
+        referenceBulletin: `PAY-${numAg}-${y}${String(m).padStart(2, '0')}-${agent.id}`,
+        agentId: agent.id,
+        agenceId: numAg,
+        mois: m,
+        annee: y,
+        categorie: agent.categorie || 'I',
+        ...calc,
+        statut: 'BROUILLON' as const,
+        preparateurNom: currentUser?.nom || 'Responsable RH',
+        dateGeneration: new Date().toISOString(),
+      }
+      bulletinsPaie.unshift(b)
+      resultats.push(b)
+    }
+  }
+
+  logAudit(currentUser?.nom || 'RH', 'GENERATION_FEUILLE_PAIE_MOIS', `Génération du livre de paie ${m}/${y} pour agence #${numAg} (${resultats.length} salariés)`, numAg)
+  res.json({ message: 'Feuille de paie du mois calculée avec succès', bulletins: resultats })
 })
 
 router.post('/rh/bulletins/:id/valider', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  // 2-person rule: must be validated by COMPTABLE_SENIOR or SUPER_ADMIN
   if (currentUser.role !== 'COMPTABLE_SENIOR' && currentUser.role !== 'SUPER_ADMIN') {
     return res.status(403).json({ message: 'Règle de contrôle : Le bulletin de paie doit obligatoirement être validé par un Comptable Senior distinct.' })
   }
@@ -6833,6 +7230,30 @@ router.post('/rh/bulletins/:id/valider', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'VALIDATION_BULLETIN_PAIE', `Bulletin ${bulletin.referenceBulletin} validé par Comptable Senior`, bulletin.agenceId)
   res.json(bulletin)
+})
+
+// Valider tous les bulletins du mois pour une agence (Livre de paie complet)
+router.post('/rh/feuille-paie/valider-tout', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  if (currentUser.role !== 'COMPTABLE_SENIOR' && currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Règle de contrôle : La validation de la paie est réservée au Comptable Senior.' })
+  }
+
+  const { agenceId, mois, annee } = req.body
+  const numAg = toInt(agenceId) || 1
+  const m = Number(mois)
+  const y = Number(annee)
+
+  const targets = bulletinsPaie.filter((b) => b.agenceId === numAg && b.mois === m && b.annee === y && b.statut === 'BROUILLON')
+  targets.forEach((b) => {
+    b.statut = 'VALIDE'
+    b.comptableSeniorNom = currentUser.nom
+  })
+
+  logAudit(currentUser.nom, 'VALIDATION_FEUILLE_PAIE_COMPLETE', `Validation officielle du livre de paie ${m}/${y} pour l'agence #${numAg} (${targets.length} bulletins visés)`, numAg)
+  res.json({ message: `${targets.length} bulletins de paie validés avec succès`, count: targets.length })
 })
 
 router.post('/rh/bulletins/:id/payer', (req: Request, res: Response) => {
@@ -6849,16 +7270,33 @@ router.post('/rh/bulletins/:id/payer', (req: Request, res: Response) => {
   const caisse = comptesCaisse.find((c) => c.agenceId === bulletin.agenceId) || comptesCaisse[0]
   if (bulletin.devise === 'USD') {
     if (caisse.soldeUsd < bulletin.netAPayer) return res.status(400).json({ message: 'Solde insuffisant en caisse USD pour payer ce salaire.' })
-    caisse.soldeUsd -= bulletin.netAPayer
+    caisse.soldeUsd = Math.round((caisse.soldeUsd - bulletin.netAPayer) * 100) / 100
   } else {
     if (caisse.soldeCdf < bulletin.netAPayer) return res.status(400).json({ message: 'Solde insuffisant en caisse CDF pour payer ce salaire.' })
-    caisse.soldeCdf -= bulletin.netAPayer
+    caisse.soldeCdf = Math.round(caisse.soldeCdf - bulletin.netAPayer)
   }
 
   bulletin.statut = 'PAYE'
   bulletin.datePaiement = new Date().toISOString()
 
-  // Accounting OHADA: Debit 661 (Rémunérations du personnel), Credit 571 (Caisse)
+  // Trésorerie journal
+  transactions.unshift({
+    id: `TX-${Date.now().toString().slice(-8)}`,
+    referenceInterne: bulletin.referenceBulletin,
+    agenceId: bulletin.agenceId,
+    caisseId: caisse.id,
+    montant: bulletin.netAPayer,
+    devise: bulletin.devise,
+    type: 'SORTIE',
+    libelle: `Paiement salaire net ${bulletin.referenceBulletin}`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: new Date().toISOString(),
+    dateValidation: new Date().toISOString(),
+  })
+
+  // Accounting OHADA
   const ref = `SAL-${bulletin.referenceBulletin}`
   ecrituresComptables.push(
     {
@@ -6869,7 +7307,7 @@ router.post('/rh/bulletins/:id/payer', (req: Request, res: Response) => {
       sens: 'DEBIT',
       montant: bulletin.netAPayer,
       devise: bulletin.devise,
-      libelle: `Paiement salaire net ${bulletin.referenceBulletin}`,
+      libelle: `Rémunérations personnel ${bulletin.referenceBulletin}`,
       sourceModule: 'RH',
       sourceType: 'PAIEMENT_SALAIRE',
       sourceId: String(bulletin.id),
@@ -6897,6 +7335,119 @@ router.post('/rh/bulletins/:id/payer', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'PAIEMENT_BULLETIN_PAIE', `Paiement salaire net de ${bulletin.netAPayer} ${bulletin.devise} (${bulletin.referenceBulletin})`, bulletin.agenceId)
   res.json({ message: 'Bulletin payé avec succès et caisse décaissée', bulletin })
+})
+
+// Payer toute la feuille de paie du mois pour une agence
+router.post('/rh/feuille-paie/payer-tout', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const { agenceId, mois, annee } = req.body
+  const numAg = toInt(agenceId) || 1
+  const m = Number(mois)
+  const y = Number(annee)
+
+  const targets = bulletinsPaie.filter((b) => b.agenceId === numAg && b.mois === m && b.annee === y && b.statut === 'VALIDE')
+  if (targets.length === 0) {
+    return res.status(400).json({ message: 'Aucun bulletin validé en attente de paiement pour cette période.' })
+  }
+
+  const devise = targets[0].devise || 'CDF'
+  const totalNet = targets.reduce((sum, b) => sum + Number(b.netAPayer || 0), 0)
+  const caisse = comptesCaisse.find((c) => c.agenceId === numAg) || comptesCaisse[0]
+
+  if (devise === 'USD') {
+    if (caisse.soldeUsd < totalNet) return res.status(400).json({ message: `Solde insuffisant en caisse USD ($${caisse.soldeUsd}) pour payer $${totalNet}.` })
+    caisse.soldeUsd = Math.round((caisse.soldeUsd - totalNet) * 100) / 100
+  } else {
+    if (caisse.soldeCdf < totalNet) return res.status(400).json({ message: `Solde insuffisant en caisse CDF (${caisse.soldeCdf.toLocaleString()} CDF) pour payer ${totalNet.toLocaleString()} CDF.` })
+    caisse.soldeCdf = Math.round(caisse.soldeCdf - totalNet)
+  }
+
+  const now = new Date().toISOString()
+  targets.forEach((b) => {
+    b.statut = 'PAYE'
+    b.datePaiement = now
+  })
+
+  // Trésorerie journal
+  const refGroupe = `PAY-GLOB-${numAg}-${y}${String(m).padStart(2, '0')}`
+  transactions.unshift({
+    id: `TX-${Date.now().toString().slice(-8)}`,
+    referenceInterne: refGroupe,
+    agenceId: numAg,
+    caisseId: caisse.id,
+    montant: totalNet,
+    devise,
+    type: 'SORTIE',
+    libelle: `Paiement global livre de paie ${m}/${y} (${targets.length} salariés)`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: now,
+    dateValidation: now,
+  })
+
+  // Total brut et cotisations pour écritures SYSCOHADA complètes
+  const totalBrut = targets.reduce((sum, b) => sum + Number(b.salaireBrut || 0), 0)
+  const totalCnssQpp = targets.reduce((sum, b) => sum + Number(b.cnssQpp || 0), 0)
+  const totalInpp = targets.reduce((sum, b) => sum + Number(b.inpp || 0), 0)
+  const totalOnem = targets.reduce((sum, b) => sum + Number(b.onem || 0), 0)
+  const totalChargesPatronales = totalCnssQpp + totalInpp + totalOnem
+
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refGroupe,
+      agenceId: numAg,
+      compteNumero: '661',
+      sens: 'DEBIT',
+      montant: totalBrut,
+      devise,
+      libelle: `Rémunérations brutes du personnel ${m}/${y}`,
+      sourceModule: 'RH',
+      sourceType: 'PAIEMENT_SALAIRE',
+      sourceId: refGroupe,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: now,
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refGroupe,
+      agenceId: numAg,
+      compteNumero: '664',
+      sens: 'DEBIT',
+      montant: totalChargesPatronales,
+      devise,
+      libelle: `Charges sociales patronales (CNSS 13%, INPP 3.5%, ONEM 0.5%) ${m}/${y}`,
+      sourceModule: 'RH',
+      sourceType: 'PAIEMENT_SALAIRE',
+      sourceId: refGroupe,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: now,
+    },
+    {
+      id: ecrituresComptables.length + 3,
+      referenceOperation: refGroupe,
+      agenceId: numAg,
+      compteNumero: devise === 'USD' ? '571' : '572',
+      sens: 'CREDIT',
+      montant: totalNet,
+      devise,
+      libelle: `Décaissement salaires nets caisse ${refGroupe}`,
+      sourceModule: 'RH',
+      sourceType: 'PAIEMENT_SALAIRE',
+      sourceId: refGroupe,
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: now,
+    }
+  )
+
+  logAudit(currentUser.nom, 'PAIEMENT_FEUILLE_PAIE_COMPLETE', `Décaissement et paiement global de la paie ${m}/${y} pour ${totalNet.toLocaleString()} ${devise} (${targets.length} salariés)`, numAg)
+  res.json({ message: 'Paie globale décaissée avec succès', totalPaye: totalNet, count: targets.length })
 })
 
 // ----------------- ADMIN & ROLES -----------------

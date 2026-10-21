@@ -1572,6 +1572,9 @@ function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ['sync-operations'] })
       queryClient.invalidateQueries({ queryKey: ['livraisons'] })
       queryClient.invalidateQueries({ queryKey: ['clients'] })
+      queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['tresorerie'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['ecritures'] })
       queryClient.invalidateQueries({ queryKey: ['balance'] })
       queryClient.invalidateQueries({ queryKey: ['classes-comptables'] })
@@ -3006,25 +3009,42 @@ function SalesPage() {
               maxHeight: '90vh',
               overflowY: 'auto',
               scrollbarWidth: 'thin',
-              scrollbarColor: '#0284c7 #f1f5f9',
-              width: 'min(100%, 480px)',
-              background: '#ffffff',
+              scrollbarColor: 'var(--accent-strong) var(--surface-2)',
+              width: 'min(100%, 500px)',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
               borderRadius: 12,
               padding: 20,
-              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+              boxShadow: 'var(--shadow)',
               display: 'flex',
               flexDirection: 'column',
               gap: 14,
             }}
           >
             {/* EN-TETE DE VISUALISATION */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#0369a1', fontWeight: 700, fontSize: '0.95rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-strong)', fontWeight: 700, fontSize: '0.95rem' }}>
                 <Receipt size={20} />
-                <span>Reçu d'Encaissement & Expédition</span>
+                <span>Reçu d'Encaissement & Vente</span>
               </div>
               <button className="icon-button" onClick={() => setActiveReceipt(null)} title="Fermer (Échap)">
                 <X size={18} />
+              </button>
+            </div>
+
+            {/* ACTION DIRECTE D'IMPRESSION IMMEDIATE DU TICKET (PAS BESOIN DE REMPLIR LE TRANSPORT) */}
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <strong style={{ fontSize: '0.92rem', color: 'var(--text)', display: 'block' }}>Ticket de caisse prêt</strong>
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>Impression directe sans délai (le transport est renseigné ultérieurement)</span>
+              </div>
+              <button
+                type="button"
+                className="primary-action"
+                style={{ fontSize: '0.9rem', padding: '8px 16px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => window.print()}
+              >
+                <Printer size={18} /> Imprimer Ticket Immédiatement
               </button>
             </div>
 
@@ -3095,7 +3115,7 @@ function SalesPage() {
               </div>
 
               <div className="ticket-line" />
-              <div style={{ fontSize: 11, textAlign: 'left', background: '#f8fafc', padding: '6px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 11, textAlign: 'left', background: 'var(--surface-2)', padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border)', color: 'var(--text)' }}>
                 <strong>Transport & Enlèvement :</strong><br/>
                 {modeTransport === 'ENLEVEMENT_MAGASIN' && 'Retrait direct au comptoir / dépôt par le client'}
                 {modeTransport === 'VEHICULE_CLIENT' && `Véhicule client : ${clientVehicule || 'Véhicule client'} ${clientChauffeur ? `(Chauffeur: ${clientChauffeur})` : ''}`}
@@ -3137,88 +3157,90 @@ function SalesPage() {
               </div>
             </div>
 
-            {/* CHOIX MODE DE LIVRAISON / TRANSPORT */}
-            <div style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontWeight: 700, fontSize: '0.85rem' }}>
-                <Truck size={17} style={{ color: 'var(--primary)' }} />
-                <span>Mode de transport pour le Bon de Livraison (BL) :</span>
-              </div>
+            {/* EXPÉDITION & BON DE LIVRAISON (OPTIONNEL / NON BLOQUANT POUR L'IMPRESSION DU TICKET) */}
+            <details style={{ background: 'var(--surface-2)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)' }}>
+                <Truck size={17} style={{ color: 'var(--accent-strong)' }} />
+                <span>Expédition & Bon de Livraison (BL) — Optionnel / Renseigné au quai</span>
+              </summary>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
-                <button
-                  type="button"
-                  className={clsx('tab-btn', modeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
-                  onClick={() => setModeTransport('ENLEVEMENT_MAGASIN')}
-                >
-                  <Storefront size={15} /> Retrait Comptoir
-                </button>
-                <button
-                  type="button"
-                  className={clsx('tab-btn', modeTransport === 'VEHICULE_CLIENT' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
-                  onClick={() => setModeTransport('VEHICULE_CLIENT')}
-                >
-                  <Car size={15} /> Véhicule Client
-                </button>
-                <button
-                  type="button"
-                  className={clsx('tab-btn', modeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
-                  style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
-                  onClick={() => setModeTransport('FLOTTE_ENTREPRISE')}
-                >
-                  <Truck size={15} /> Camion Société
-                </button>
-              </div>
-
-              {modeTransport === 'ENLEVEMENT_MAGASIN' && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: '#fff', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle size={14} color="var(--primary)" />
-                  <span>Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.</span>
-                </div>
-              )}
-
-              {modeTransport === 'VEHICULE_CLIENT' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <label style={{ fontSize: '0.8rem' }}>
-                    Véhicule du client
-                    <input
-                      placeholder="ex: Dyna 8492AB/19 ou Moto"
-                      value={clientVehicule}
-                      onChange={(e) => setClientVehicule(e.target.value)}
-                      style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '0.8rem' }}>
-                    Chauffeur du client
-                    <input
-                      placeholder="ex: M. Justin"
-                      value={clientChauffeur}
-                      onChange={(e) => setClientChauffeur(e.target.value)}
-                      style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                    />
-                  </label>
-                </div>
-              )}
-
-              {modeTransport === 'FLOTTE_ENTREPRISE' && (
-                <label style={{ fontSize: '0.8rem' }}>
-                  Camion de l'entreprise
-                  <select
-                    value={selectedVehiculeId}
-                    onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
-                    style={{ padding: '4px 8px', fontSize: '0.8rem', width: '100%' }}
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', modeTransport === 'ENLEVEMENT_MAGASIN' && 'active')}
+                    style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => setModeTransport('ENLEVEMENT_MAGASIN')}
                   >
-                    <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
-                    {(flotteQuery.data ?? []).map((v: any) => (
-                      <option key={v.id} value={v.id}>
-                        {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
+                    <Storefront size={15} /> Retrait Comptoir
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', modeTransport === 'VEHICULE_CLIENT' && 'active')}
+                    style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => setModeTransport('VEHICULE_CLIENT')}
+                  >
+                    <Car size={15} /> Véhicule Client
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('tab-btn', modeTransport === 'FLOTTE_ENTREPRISE' && 'active')}
+                    style={{ fontSize: '0.78rem', padding: '5px 4px', textAlign: 'center', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => setModeTransport('FLOTTE_ENTREPRISE')}
+                  >
+                    <Truck size={15} /> Camion Société
+                  </button>
+                </div>
+
+                {modeTransport === 'ENLEVEMENT_MAGASIN' && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: 'var(--surface)', padding: 8, borderRadius: 6, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle size={14} color="var(--primary)" />
+                    <span>Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.</span>
+                  </div>
+                )}
+
+                {modeTransport === 'VEHICULE_CLIENT' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <label style={{ fontSize: '0.8rem' }}>
+                      Véhicule du client
+                      <input
+                        placeholder="ex: Dyna 8492AB/19 ou Moto"
+                        value={clientVehicule}
+                        onChange={(e) => setClientVehicule(e.target.value)}
+                        style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                      />
+                    </label>
+                    <label style={{ fontSize: '0.8rem' }}>
+                      Chauffeur du client
+                      <input
+                        placeholder="ex: M. Justin"
+                        value={clientChauffeur}
+                        onChange={(e) => setClientChauffeur(e.target.value)}
+                        style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {modeTransport === 'FLOTTE_ENTREPRISE' && (
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Camion de l'entreprise
+                    <select
+                      value={selectedVehiculeId}
+                      onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
+                      style={{ padding: '4px 8px', fontSize: '0.8rem', width: '100%' }}
+                    >
+                      <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                      {(flotteQuery.data ?? []).map((v: any) => (
+                        <option key={v.id} value={v.id}>
+                          {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            </details>
 
             {/* BOUTONS D'ACTION */}
             <div className="receipt-modal-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
@@ -7026,10 +7048,10 @@ function AccountingPage() {
       {/* TAB 4 : PLAN COMPTABLE OHADA */}
       {activeTab === 'plan' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px 16px', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <div>
-              <strong style={{ fontSize: '0.94rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Books size={20} color="#0284c7" />
+              <strong style={{ fontSize: '0.94rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Books size={20} color="var(--accent-strong)" />
                 Plan Comptable Général SYSCOHADA Révisé Intégral (Classes 1 à 9)
               </strong>
               <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>

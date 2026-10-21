@@ -454,4 +454,49 @@ export type EquipementParc = {
   observations?: string
 }
 
+export type Agent = {
+  id: number
+  matricule: string
+  nom: string
+  telephone: string
+  poste: string
+  agenceId: number
+  categorie?: string
+  salaireBase: number
+  indemniteTransport?: number
+  indemniteLogement?: number
+  tauxCommission?: number
+  devise?: 'USD' | 'CDF'
+  actif: boolean
+}
 
+export type BulletinPaie = {
+  id: number
+  referenceBulletin: string
+  agentId: number
+  agenceId: number
+  mois: number
+  annee: number
+  agent?: Agent
+  agence?: any
+  categorie?: string
+  salaireBase: number
+  indemniteTransport?: number
+  indemniteLogement?: number
+  commissionsVentes: number
+  salaireBrut: number
+  cnssQpo: number
+  cnssQpp: number
+  remunerationImposable: number
+  ipr: number
+  inpp: number
+  onem: number
+  avancesDeduites: number
+  netAPayer: number
+  devise: 'USD' | 'CDF'
+  statut: 'BROUILLON' | 'VALIDE' | 'PAYE'
+  preparateurNom: string
+  comptableSeniorNom?: string
+  dateGeneration: string
+  datePaiement?: string
+}

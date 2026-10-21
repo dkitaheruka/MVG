@@ -306,8 +306,12 @@ export interface DbAgent {
   telephone: string
   poste: string
   agenceId: number
+  categorie?: string
   salaireBase: number
+  indemniteTransport?: number
+  indemniteLogement?: number
   tauxCommission: number
+  devise?: 'USD' | 'CDF'
   actif: boolean
 }
 
@@ -332,8 +336,18 @@ export interface DbBulletinPaie {
   agenceId: number
   mois: number
   annee: number
+  categorie?: string
   salaireBase: number
+  indemniteTransport?: number
+  indemniteLogement?: number
   commissionsVentes: number
+  salaireBrut: number
+  cnssQpo: number
+  cnssQpp: number
+  remunerationImposable: number
+  ipr: number
+  inpp: number
+  onem: number
   avancesDeduites: number
   netAPayer: number
   devise: 'USD' | 'CDF'
