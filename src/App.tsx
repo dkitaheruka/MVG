@@ -1190,6 +1190,14 @@ function SalesPage() {
   const [repaymentDevise, setRepaymentDevise] = useState<'USD' | 'CDF'>('USD')
   const [repaymentCaisseId, setRepaymentCaisseId] = useState<number | ''>(1)
   const [repaymentError, setRepaymentError] = useState<string | null>(null)
+  const [repaymentVenteId, setRepaymentVenteId] = useState<number | ''>('')
+  const [settlementVente, setSettlementVente] = useState<any | null>(null)
+  const [settlementMontant, setSettlementMontant] = useState('')
+  const [settlementDevise, setSettlementDevise] = useState<'USD' | 'CDF'>('USD')
+  const [settlementCaisseId, setSettlementCaisseId] = useState<number | ''>('')
+  const [settlementModePaiement, setSettlementModePaiement] = useState('CASH')
+  const [settlementReferencePiece, setSettlementReferencePiece] = useState('')
+  const [settlementError, setSettlementError] = useState<string | null>(null)
   const [selectedVehiculeId, setSelectedVehiculeId] = useState<number | ''>('')
   const [modeTransport, setModeTransport] = useState<'ENLEVEMENT_MAGASIN' | 'VEHICULE_CLIENT' | 'FLOTTE_ENTREPRISE'>('ENLEVEMENT_MAGASIN')
   const [clientVehicule, setClientVehicule] = useState('')
@@ -1645,7 +1653,7 @@ function SalesPage() {
   const reimburseMutation = useMutation({
     mutationFn: () => {
       if (!repaymentClient) throw new Error('Aucun client sélectionné')
-      return apiRequest(`/api/clients/${repaymentClient.id}/rembourser`, {
+      return apiRequest<any>(`/api/clients/${repaymentClient.id}/rembourser`, {
         method: 'POST',
         token,
         body: JSON.stringify({
@@ -1653,18 +1661,81 @@ function SalesPage() {
           devise: repaymentDevise,
           caisseId: repaymentCaisseId,
           agenceId,
+          venteId: repaymentVenteId || undefined,
         }),
       })
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['tresorerie'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['ventes-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['classes-comptables'] })
+      queryClient.invalidateQueries({ queryKey: ['comptes-auxiliaires-clients'] })
+      const clientNom = repaymentClient?.nom
       setRepaymentClient(null)
       setRepaymentMontant('')
+      setRepaymentVenteId('')
       setRepaymentError(null)
+      if (res && res.referencePaiement) {
+        setPrintProposal({
+          title: 'Encaissement Dette Client Enregistré !',
+          ref: res.referencePaiement,
+          subtitle: `Règlement de créance de ${money(Number(repaymentMontant), repaymentDevise)} enregistré avec succès pour ${clientNom || 'le client'}.`,
+          primaryDocName: 'Relevé Compte Client 411',
+          primaryDocUrl: `/api/comptabilite/clients/${res.client?.id || repaymentClient?.id}/releve-pdf`,
+        })
+      }
     },
     onError: (err: any) => setRepaymentError(err.message || 'Erreur lors du remboursement'),
+  })
+
+  const reglerCreditMutation = useMutation({
+    mutationFn: () => {
+      if (!settlementVente) throw new Error('Aucune vente sélectionnée')
+      return apiRequest<any>(`/api/ventes/${settlementVente.id}/regler`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          montant: Number(settlementMontant),
+          devise: settlementDevise,
+          caisseId: settlementCaisseId || undefined,
+          modePaiement: settlementModePaiement,
+          referencePiece: settlementReferencePiece,
+        }),
+      })
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['ventes-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      queryClient.invalidateQueries({ queryKey: ['caisses'] })
+      queryClient.invalidateQueries({ queryKey: ['tresorerie'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['ecritures'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['classes-comptables'] })
+      queryClient.invalidateQueries({ queryKey: ['comptes-auxiliaires-clients'] })
+      const v = settlementVente
+      setSettlementVente(null)
+      setSettlementMontant('')
+      setSettlementReferencePiece('')
+      setSettlementError(null)
+      if (data && data.vente) {
+        setPrintProposal({
+          title: 'Règlement Vente Encaissé !',
+          ref: data.referencePaiement || `REG-${data.vente.referenceVente || v.referenceVente}`,
+          subtitle: `Règlement de ${settlementMontant} ${settlementDevise} validé sur la vente ${data.vente.referenceVente || v.referenceVente}. Écritures de trésorerie et tiers 411 passées.`,
+          primaryDocName: 'Reçu / Ticket Caisse (80mm)',
+          primaryDocUrl: `/api/ventes/${data.vente.id || v.id}/ticket-80mm`,
+          secondaryDocName: 'Facture Complète (A4)',
+          secondaryDocUrl: `/api/ventes/${data.vente.id || v.id}/facture?format=a4`,
+        })
+      }
+    },
+    onError: (err: any) => setSettlementError(err.message || 'Erreur lors du règlement de la vente'),
   })
 
   const demandeAnnulationMutation = useMutation({
@@ -2308,49 +2379,101 @@ function SalesPage() {
           <DataTable
             columns={['Réf Vente', 'Date', 'Client', 'Total', 'Devise', 'Règlement', 'Statut Crédit', 'Annulation / Contrôle', 'Actions']}
             loading={salesQuery.isLoading}
-            rows={(salesQuery.data ?? []).map((v: any) => [
-              v.referenceVente ?? `VTE-${v.id}`,
-              v.dateVente ? new Date(v.dateVente).toLocaleString('fr-FR') : '-',
-              v.client?.nom ?? 'Client Comptant',
-              `$${v.montantTotal?.toFixed(2)}`,
-              v.devise ?? 'USD',
-              v.estCredit ? 'CRÉDIT' : 'CASH',
-              v.statutCredit ?? 'AUCUN',
-              v.statutAnnulation === 'ANNULEE' ? (
-                <span className="badge badge-danger">Vente Annulée</span>
-              ) : v.statutAnnulation === 'EN_ATTENTE' ? (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span className="badge badge-warning">Annulation demandée</span>
+            rows={(salesQuery.data ?? []).map((v: any) => {
+              const dejaPaye = Number(v.montantPaye || 0)
+              const reste = v.montantRestant !== undefined ? Number(v.montantRestant) : Math.max(0, Number(v.montantTotal || 0) - dejaPaye)
+              const estSolde = v.statutCredit === 'REGLE' || reste <= 0.01
+
+              return [
+                v.referenceVente ?? `VTE-${v.id}`,
+                v.dateVente ? new Date(v.dateVente).toLocaleString('fr-FR') : '-',
+                v.client?.nom ?? 'Client Comptant',
+                `$${Number(v.montantTotal || 0).toFixed(2)}`,
+                v.devise ?? 'USD',
+                v.estCredit ? (
+                  <span key={'mod-' + v.id} style={{ color: '#b45309', fontWeight: 700 }}>
+                    CRÉDIT
+                  </span>
+                ) : (
+                  <span key={'mod-' + v.id} style={{ color: 'var(--success)', fontWeight: 600 }}>
+                    CASH
+                  </span>
+                ),
+                v.estCredit ? (
+                  estSolde ? (
+                    <span key={'st-' + v.id} className="badge badge-success">
+                      ✓ Soldé
+                    </span>
+                  ) : (
+                    <div key={'st-' + v.id}>
+                      <span className={clsx('badge', v.statutCredit === 'PARTIEL' ? 'badge-warning' : 'badge-neutral')}>
+                        {v.statutCredit === 'PARTIEL' ? 'Acompte' : 'À Recouvrer'}
+                      </span>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--danger)', marginTop: 2, fontWeight: 700 }}>
+                        Reste : ${reste.toFixed(2)}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <span key={'st-' + v.id} className="badge badge-success">
+                    Payé Comptant
+                  </span>
+                ),
+                v.statutAnnulation === 'ANNULEE' ? (
+                  <span className="badge badge-danger">Vente Annulée</span>
+                ) : v.statutAnnulation === 'EN_ATTENTE' ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span className="badge badge-warning">Annulation demandée</span>
+                    <button
+                      className="primary-action"
+                      style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                      onClick={() => validerAnnulationMutation.mutate(v.id)}
+                    >
+                      Valider
+                    </button>
+                  </div>
+                ) : (
                   <button
-                    className="primary-action"
-                    style={{ padding: '3px 8px', fontSize: '0.78rem' }}
-                    onClick={() => validerAnnulationMutation.mutate(v.id)}
+                    className="secondary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.78rem', color: 'var(--danger)' }}
+                    onClick={() => demandeAnnulationMutation.mutate(v.id)}
                   >
-                    Valider
+                    Demander annulation
                   </button>
-                </div>
-              ) : (
-                <button
-                  className="secondary-action"
-                  style={{ padding: '3px 8px', fontSize: '0.78rem', color: 'var(--danger)' }}
-                  onClick={() => demandeAnnulationMutation.mutate(v.id)}
-                >
-                  Demander annulation
-                </button>
-              ),
-              v.id ? (
-                <button
-                  key={v.id}
-                  className="secondary-action"
-                  style={{ padding: '6px 10px', fontSize: '0.8rem' }}
-                  onClick={() => setActiveReceipt(v)}
-                >
-                  <Printer size={15} /> Voir Ticket
-                </button>
-              ) : (
-                '-'
-              ),
-            ])}
+                ),
+                <div key={'acts-' + v.id} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {v.id ? (
+                    <button
+                      className="secondary-action"
+                      style={{ padding: '6px 10px', fontSize: '0.8rem' }}
+                      onClick={() => setActiveReceipt(v)}
+                    >
+                      <Printer size={15} /> Voir Ticket
+                    </button>
+                  ) : (
+                    '-'
+                  )}
+                  {v.estCredit && v.id && !estSolde && (
+                    <button
+                      className="primary-action"
+                      style={{ padding: '6px 10px', fontSize: '0.8rem', background: '#0284c7' }}
+                      onClick={() => {
+                        setSettlementVente(v)
+                        setSettlementMontant(String(reste.toFixed(2)))
+                        setSettlementDevise(v.devise || 'USD')
+                        setSettlementCaisseId(caissesQuery.data?.[0]?.id || 1)
+                        setSettlementModePaiement('CASH')
+                        setSettlementReferencePiece('')
+                        setSettlementError(null)
+                      }}
+                      title="Encaisser le règlement de cette vente à crédit"
+                    >
+                      <Wallet size={15} /> Régler
+                    </button>
+                  )}
+                </div>,
+              ]
+            })}
             emptyText="Aucune vente enregistrée pour le moment."
           />
         </div>
@@ -2933,6 +3056,141 @@ function SalesPage() {
                 </button>
                 <button type="submit" className="primary-action" disabled={reimburseMutation.isPending}>
                   {reimburseMutation.isPending ? 'Enregistrement...' : 'Valider encaissement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : RÈGLEMENT D'UNE VENTE À CRÉDIT SPÉCIFIQUE (AVEC RÉFÉRENCE DE L'OPÉRATION) */}
+      {settlementVente && (
+        <div className="modal-overlay" onClick={() => setSettlementVente(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Wallet size={20} color="#0284c7" />
+                Règlement Vente à Crédit
+              </h3>
+              <button className="icon-button" onClick={() => setSettlementVente(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ margin: '12px 0 16px', background: 'var(--panel)', padding: 14, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--muted)' }}>Réf Vente Origine :</span>
+                <strong>{settlementVente.referenceVente || `VNT-${settlementVente.id}`}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--muted)' }}>Client :</span>
+                <strong>{settlementVente.client?.nom || 'Client'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--muted)' }}>Montant Facturé :</span>
+                <strong>${Number(settlementVente.montantTotal || 0).toFixed(2)} {settlementVente.devise || 'USD'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.88rem' }}>
+                <span style={{ color: 'var(--muted)' }}>Déjà Payé :</span>
+                <span style={{ color: 'var(--success)', fontWeight: 600 }}>${Number(settlementVente.montantPaye || 0).toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 6, fontSize: '0.95rem' }}>
+                <span style={{ fontWeight: 700 }}>Reste Dû sur cette Vente :</span>
+                <strong style={{ color: 'var(--danger)', fontSize: '1.05rem' }}>
+                  ${Number(settlementVente.montantRestant ?? (Number(settlementVente.montantTotal || 0) - Number(settlementVente.montantPaye || 0))).toFixed(2)} {settlementVente.devise || 'USD'}
+                </strong>
+              </div>
+            </div>
+
+            {settlementError && (
+              <div className="notice warning" style={{ marginBottom: 12 }}>
+                {settlementError}
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                reglerCreditMutation.mutate()
+              }}
+              style={{ display: 'grid', gap: 12 }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                <label>
+                  Montant à Régler
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={settlementMontant}
+                    onChange={(e) => setSettlementMontant(e.target.value)}
+                    placeholder="Ex: 50.00"
+                  />
+                </label>
+                <label>
+                  Devise
+                  <select
+                    value={settlementDevise}
+                    onChange={(e) => setSettlementDevise(e.target.value as 'USD' | 'CDF')}
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CDF">CDF (FC)</option>
+                  </select>
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label>
+                  Caisse / Banque d'Encaissement
+                  <select
+                    value={settlementCaisseId}
+                    onChange={(e) => setSettlementCaisseId(e.target.value ? Number(e.target.value) : '')}
+                    required
+                  >
+                    {(caissesQuery.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom} ({c.type || 'CAISSE'}) - Solde: ${Number(c.soldeUsd).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Mode de Paiement
+                  <select
+                    value={settlementModePaiement}
+                    onChange={(e) => setSettlementModePaiement(e.target.value)}
+                  >
+                    <option value="CASH">Espèces / Cash</option>
+                    <option value="VIREMENT">Virement Bancaire</option>
+                    <option value="CHEQUE">Chèque</option>
+                    <option value="MOBILE_MONEY">Mobile Money</option>
+                  </select>
+                </label>
+              </div>
+
+              <label>
+                Pièce Justificative / N° Bordereau / Reçu
+                <input
+                  type="text"
+                  value={settlementReferencePiece}
+                  onChange={(e) => setSettlementReferencePiece(e.target.value)}
+                  placeholder="ex: BORD-BANQUE-4819 ou RECU-CS-02"
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                <button type="button" className="secondary-action" onClick={() => setSettlementVente(null)}>
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={reglerCreditMutation.isPending || !settlementMontant || Number(settlementMontant) <= 0}
+                  style={{ background: '#0284c7' }}
+                >
+                  <CheckCircle size={16} />
+                  {reglerCreditMutation.isPending ? 'Enregistrement...' : 'Valider Règlement & Passer Écritures'}
                 </button>
               </div>
             </form>

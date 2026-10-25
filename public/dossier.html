@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dossier de Présentation Exécutif - ERP de Gestion Industrielle & Commerciale</title>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --secondary: #0f172a;
+      --accent: #16a34a;
+      --text: #334155;
+      --text-light: #64748b;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+      margin: 0;
+      padding: 0;
+    }
+    .wrapper {
+      max-width: 1040px;
+      margin: 32px auto;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .header-hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0284c7 100%);
+      color: white;
+      padding: 48px;
+      position: relative;
+    }
+    .header-hero h1 {
+      margin: 0 0 12px;
+      font-size: 2.2rem;
+      letter-spacing: -0.5px;
+      font-weight: 800;
+    }
+    .header-hero p {
+      margin: 0;
+      font-size: 1.1rem;
+      color: #94a3b8;
+      max-width: 800px;
+      line-height: 1.5;
+    }
+    .badge-top {
+      display: inline-block;
+      background: rgba(2, 132, 199, 0.3);
+      color: #38bdf8;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .print-actions {
+      position: absolute;
+      top: 40px;
+      right: 48px;
+    }
+    .btn-print {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1rem;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-print:hover {
+      background: #0369a1;
+      transform: translateY(-2px);
+    }
+    .content-body {
+      padding: 48px;
+    }
+    .section-title {
+      color: var(--secondary);
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin: 36px 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .section-title::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 24px;
+      background: var(--primary);
+      border-radius: 4px;
+    }
+    .screenshot-card {
+      background: #f1f5f9;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #cbd5e1;
+      margin: 24px 0 32px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }
+    .screenshot-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .screenshot-caption {
+      padding: 14px 20px;
+      font-size: 0.9rem;
+      color: #475569;
+      background: white;
+      border-top: 1px solid #e2e8f0;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .grid-kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .kpi-box {
+      background: white;
+      border: 1px solid var(--border);
+      padding: 20px;
+      border-radius: 12px;
+      border-left: 4px solid var(--primary);
+    }
+    .kpi-box.green { border-left-color: var(--accent); }
+    .kpi-box.amber { border-left-color: #d97706; }
+    .kpi-box.purple { border-left-color: #7c3aed; }
+    .kpi-box strong { display: block; font-size: 1.25rem; color: var(--secondary); margin-top: 4px; }
+    .kpi-box span { font-size: 0.85rem; color: var(--text-light); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+    
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .feature-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .feature-card h4 {
+      margin: 0 0 8px;
+      color: var(--secondary);
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-card p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .table-custom {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 0.9rem;
+    }
+    .table-custom th, .table-custom td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .table-custom th {
+      background: #f1f5f9;
+      color: var(--secondary);
+      font-weight: 700;
+    }
+    .table-custom tr:nth-child(even) {
+      background: #fafafa;
+    }
+
+    .callout-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 24px 0;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .callout-box strong { color: #1e40af; font-size: 1.05rem; }
+    .callout-box p { margin: 4px 0 0; color: #1e3a8a; font-size: 0.92rem; }
+
+    @media print {
+      body { background: white; }
+      .wrapper { margin: 0; box-shadow: none; border: none; max-width: 100%; border-radius: 0; }
+      .btn-print { display: none; }
+      .header-hero { padding: 32px; }
+      .content-body { padding: 32px; }
+      .screenshot-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <!-- EN-TÊTE HÉRO -->
+    <header class="header-hero">
+      <div class="badge-top">Dossier Exécutif de Direction • Confidentiel</div>
+      <h1>SYSTÈME INTÉGRÉ DE GESTION D'ENTREPRISE (ERP)</h1>
+      <p>Présentation officielle pour la Direction Générale : Pilotage commercial, transformation industrielle, trésorerie bidevise (USD/CDF), gestion sociale & conformité SYSCOHADA.</p>
+      <div class="print-actions">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimer ce Dossier (PDF)</button>
+      </div>
+    </header>
+
+    <div class="content-body">
+      <!-- 1. SYNTHÈSE EXÉCUTIVE -->
+      <div class="callout-box">
+        <div style="font-size: 2rem;">💼</div>
+        <div>
+          <strong>Synthèse pour la Direction Générale (Le Patron)</strong>
+          <p>Ce système a été développé sur-mesure pour donner à la Direction Générale un <strong>contrôle absolu, en temps réel et sans faille</strong> sur l'intégralité des flux financiers et physiques de l'entreprise. Chaque franc congolais et chaque dollar encaissé, chaque tonne de <em>Matières Premières</em> entrée et chaque unité de <em>Produits Finis</em> vendue ou stockée est tracée de façon inaltérable, éliminant les fraudes, les erreurs de caisse et les déséquilibres comptables.</p>
+        </div>
+      </div>
+
+      <!-- 2. CAPTURE D'ÉCRAN : TABLEAU DE BORD EXÉCUTIF -->
+      <h3 class="section-title">1. Supervision Stratégique & Tableau de Bord Exécutif</h3>
+      <p>Le Tableau de Bord offre au dirigeant une vue d'ensemble consolidée en un coup d'œil, tout en permettant de basculer instantanément entre la vue consolidée de tout le groupe ou le détail agence par agence.</p>
+
+      <div class="screenshot-card">
+        <img src="/assets/capture_tableau_de_bord.jpg" alt="Capture du Tableau de Bord Exécutif Direction Générale" onerror="this.src='assets/capture_tableau_de_bord.jpg'"/>
+        <div class="screenshot-caption">
+          <span>Figure 1 : Tableau de bord exécutif en temps réel (Chiffre d'Affaires, Trésorerie multi-devises, Stocks Produits Finis, Réceptions Matières Premières)</span>
+          <span style="color: #0284c7;">✓ Multi-Agences • Double Taux USD/CDF</span>
+        </div>
+      </div>
+
+      <div class="grid-kpis">
+        <div class="kpi-box green">
+          <span>Trésorerie USD Disponible</span>
+          <strong>310,450.00 $ USD</strong>
+          <small style="color: var(--text-light);">Caisses et banques synchronisées</small>
+        </div>
+        <div class="kpi-box amber">
+          <span>Trésorerie CDF Disponible</span>
+          <strong>854,200,000 CDF</strong>
+          <small style="color: var(--text-light);">Liquidités locales sécurisées</small>
+        </div>
+        <div class="kpi-box">
+          <span>Stocks Produits Finis</span>
+          <strong>18,740 Unités</strong>
+          <small style="color: var(--text-light);">Disponibilité immédiate vente</small>
+        </div>
+        <div class="kpi-box purple">
+          <span>Matières Premières Enregistrées</span>
+          <strong>450.50 Tonnes</strong>
+          <small style="color: var(--text-light);">Pesées certifiées Pont-Bascule</small>
+        </div>
+      </div>
+
+      <!-- 3. CAPTURE D'ÉCRAN : POINT DE VENTE & CAISSE POS -->
+      <h3 class="section-title">2. Espace Ventes Comptoir, Caisse POS & Reçus 80mm ESC/POS</h3>
+      <p>L'interface de caisse est conçue pour des encaissements rapides, sécurisés et infaillibles, que ce soit au comptant (Cash USD, Cash CDF) ou à crédit pour les clients sous contrat.</p>
+
+      <div class="screenshot-card">
+        <img src="/assets/capture_caisse_pos.jpg" alt="Capture de l'Interface Point de Vente et Ticket 80mm" onerror="this.src='assets/capture_caisse_pos.jpg'"/>
+        <div class="screenshot-caption">
+          <span>Figure 2 : Interface Point de Vente (POS) tactile, contrôle de crédit client et ticket thermique 80 mm avec QR Code fiscal certifié</span>
+          <span style="color: #16a34a;">✓ Ticket 80mm ESC/POS • QR Code Fiscal</span>
+        </div>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h4>💵 Ventes au Comptant (Cash USD / CDF)</h4>
+          <p>Conversion automatique au taux officiel certifié de l'agence. Déstockage immédiat selon la règle <strong>FEFO</strong> (lots les plus proches de la péremption sortis en premier) et impression du ticket de caisse en moins de 2 secondes.</p>
+        </div>
+        <div class="feature-card">
+          <h4>📑 Ventes à Crédit & Écritures Immédiates</h4>
+          <p>Contrôle automatique du plafond de dette autorisé pour chaque client. Dès la validation, le système génère immédiatement les écritures comptables (<strong>Débit 411 Client / Crédit 701 Produits Finis</strong>) sans toucher à la caisse.</p>
+        </div>
+        <div class="feature-card">
+          <h4>💳 Règlement des Créances sous Référence Unique</h4>
+          <p>Chaque versement ultérieur d'un client est enregistré sous la référence certifiée <code>REG-${referenceVente}</code>. La caisse est créditée, la dette du client est apurée et le compte 411 est mis à jour.</p>
+        </div>
+        <div class="feature-card">
+          <h4>📶 Continuité Hors-Ligne (PWA & IndexedDB)</h4>
+          <p>En cas de coupure de courant ou de connexion Internet dans les agences distantes, la caisse continue de fonctionner localement. Les ventes sont transmises automatiquement dès le retour du réseau.</p>
+        </div>
+      </div>
+
+      <!-- 4. TRANSFORMATION INDUSTRIELLE & GESTION DES STOCKS -->
+      <h3 class="section-title">3. Chaîne Industrielle : Pont-Bascule, Transformation & Stocks</h3>
+      <table class="table-custom">
+        <thead>
+          <tr>
+            <th>Étape Opérationnelle</th>
+            <th>Acteurs & Matériel</th>
+            <th>Contrôles & Automatismes Système</th>
+            <th>Impact Comptable SYSCOHADA</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. Réception Matières Premières</strong></td>
+            <td>Pont-Bascule & Magasinier</td>
+            <td>Pesée brute camion plein, pesée tare camion vide, calcul automatique du <strong>Poids Net</strong>. Double visa chauffeur et opérateur sur bordereau officiel avec QR Code.</td>
+            <td>Augmentation stock <strong>Matières Premières (Compte 311)</strong> et dette Fournisseur (Compte 401).</td>
+          </tr>
+          <tr>
+            <td><strong>2. Lancement Transformation</strong></td>
+            <td>Chef de Production</td>
+            <td>Émission de l'Ordre de Production (OP). Déduction automatique des Matières Premières requises selon le ratio technique de transformation homologué.</td>
+            <td>Sortie Matières Premières (Compte 601 / 311).</td>
+          </tr>
+          <tr>
+            <td><strong>3. Conditionnement & Lots</strong></td>
+            <td>Équipe Usine & Magasin</td>
+            <td>Déclaration de la production réelle obtenue : <strong>Produits Finis</strong> et <strong>Sous-Produits</strong>. Attribution automatique du <strong>Numéro de Lot</strong> et de la date d'expiration.</td>
+            <td>Entrée en stock <strong>Produits Finis (Compte 361)</strong> et valorisation de production (Compte 713).</td>
+          </tr>
+          <tr>
+            <td><strong>4. Déstockage & Ventes</strong></td>
+            <td>Vendeurs & Magasiniers</td>
+            <td>Application stricte de la règle <strong>FEFO</strong> (First Expiring, First Out). Détection automatique des seuils de réapprovisionnement pour éviter toute rupture.</td>
+            <td>Diminution stock Produits Finis et comptabilisation du Chiffre d'Affaires (Compte 701).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 5. GOUVERNANCE FINANCIÈRE & SÉCURITÉ -->
+      <h3 class="section-title">4. Gouvernance Financière, Règle des Deux Personnes & Trésorerie</h3>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h4>🛡️ Règle des Deux Personnes</h4>
+          <p>Aucun employé ne peut valider ses propres opérations : un vendeur ne peut pas approuver son propre crédit client, et l'émetteur d'un État de Besoin ne peut pas être son propre signataire.</p>
+        </div>
+        <div class="feature-card">
+          <h4>🛑 Contrôle Anti-Solde Négatif</h4>
+          <p>Le système bloque techniquement toute dépense ou décaissement de trésorerie si la caisse ne dispose pas des fonds physiques disponibles. Aucun découvert non autorisé n'est possible.</p>
+        </div>
+        <div class="feature-card">
+          <h4>📝 Circuit des États de Besoin (EB)</h4>
+          <p>Toute dépense opérationnelle (carburant, fournitures, entretien) suit un circuit formel : Demande motivée ➔ Visa hiérarchique du Chef d'Agence ➔ Paiement par le caissier ➔ Imputation comptable automatique (Classe 6).</p>
+        </div>
+        <div class="feature-card">
+          <h4>🔍 Traçabilité & Journal d'Audit Inaltérable</h4>
+          <p>Chaque action sensible (création de compte, encaissement, changement de prix, annulation de facture) est enregistrée avec horodatage, utilisateur, agence et montant dans un journal infalsifiable.</p>
+        </div>
+      </div>
+
+      <!-- 6. RESSOURCES HUMAINES & PAIE RDC -->
+      <h3 class="section-title">5. Ressources Humaines & Feuille de Paie Collective RDC</h3>
+      <p>Le moteur RH intègre la totalité des exigences fiscales et sociales de la République Démocratique du Congo :</p>
+      <ul>
+        <li><strong>Barème IPR progressif officiel DGI :</strong> Calcul par tranches (3%, 15%, 30% et 40%) avec déduction automatique pour charges de famille (2% par enfant, max 9).</li>
+        <li><strong>Cotisations Sociales CNSS :</strong> Retenue de 5% à charge du travailleur (QPO) et cotisation patronale de 13% (QPP).</li>
+        <li><strong>Organismes Professionnels :</strong> Calcul automatisé de l'INPP (3,5%) et de l'ONEM (0,5%).</li>
+        <li><strong>Édition Officielle :</strong> Impression en un clic de la <strong>Feuille de Paie Collective 14 Colonnes</strong> (format paysage A4) avec blocs de signatures pour la DRH, la DAF et la Direction Générale, ainsi que les bulletins de paie individuels.</li>
+      </ul>
+
+      <!-- 7. RETOUR SUR INVESTISSEMENT -->
+      <h3 class="section-title">6. Retour sur Investissement pour l'Entreprise</h3>
+      <table class="table-custom">
+        <thead>
+          <tr>
+            <th>Risque Historique en Entreprise</th>
+            <th>Solution Garantie par l'ERP</th>
+            <th>Bénéfice Net pour la Direction</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Écarts de caisse et coulages d'espèces</td>
+            <td>Double contrôle, bidevise intégrée, anti-solde négatif, clôture journalière obligatoire.</td>
+            <td><strong>Élimination des disparitions de liquidités.</strong></td>
+          </tr>
+          <tr>
+            <td>Créances clients oubliées ou non réclamées</td>
+            <td>Compte auxiliaire client 411 dédié, plafonds bloquants, alertes automatiques.</td>
+            <td><strong>Recouvrement accéléré et sécurisation du cash-flow.</strong></td>
+          </tr>
+          <tr>
+            <td>Pertes par péremption de Produits Finis</td>
+            <td>Traçabilité par numéro de lot et déstockage FEFO automatisé.</td>
+            <td><strong>Zéro sac ou unité périmée en stock.</strong></td>
+          </tr>
+          <tr>
+            <td>Pertes lors des pesées de Matières Premières</td>
+            <td>Pont-bascule informatisé, double pesée brute/tare infalsifiable.</td>
+            <td><strong>Règlement exact du tonnage réellement réceptionné.</strong></td>
+          </tr>
+          <tr>
+            <td>Redressements fiscaux ou sociaux (DGI / CNSS)</td>
+            <td>Calculs certifiés conformes au barème IPR et aux taux officiels RDC.</td>
+            <td><strong>Sérénité totale lors des contrôles fiscaux et sociaux.</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top: 40px; padding: 24px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border); text-align: center;">
+        <h4 style="margin: 0 0 6px; color: var(--secondary);">Document certifié conforme aux spécifications de gestion de l'entreprise</h4>
+        <p style="margin: 0; font-size: 0.88rem; color: var(--text-light);">ERP Multi-Agences • Version Exploitation Industrielle & Commerciale RDC</p>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

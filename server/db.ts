@@ -120,7 +120,7 @@ export interface DbVente {
   montantCdf?: number
   devise: 'USD' | 'CDF'
   estCredit: boolean
-  statutCredit: 'AUCUN' | 'EN_ATTENTE' | 'DEPASSEMENT_PLAFOND' | 'VALIDE' | 'REJETE'
+  statutCredit: 'AUCUN' | 'EN_ATTENTE' | 'DEPASSEMENT_PLAFOND' | 'VALIDE' | 'REJETE' | 'PARTIEL' | 'REGLE' | 'SOLDE'
   demandeurAnnulation?: string
   statutAnnulation?: 'AUCUNE' | 'EN_ATTENTE' | 'ANNULEE'
   dateVente: string
@@ -132,6 +132,10 @@ export interface DbVente {
   clientVehicule?: string
   clientChauffeur?: string
   caisseId?: number
+  montantPaye?: number
+  montantRestant?: number
+  referencePaiement?: string
+  dateDernierPaiement?: string
 }
 
 export interface DbCompteCaisse {

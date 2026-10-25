@@ -26,6 +26,11 @@ async function startServer() {
     next(err)
   })
 
+  // Route d'accès direct au Dossier de Présentation Exécutif (Marque Blanche / Sans nom d'entreprise)
+  app.get(['/dossier', '/dossier.html', '/presentation'], (_req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'public/dossier.html'))
+  })
+
   if (!isProduction) {
     // Vite middleware for dev mode
     const vite = await createViteServer({
@@ -35,7 +40,7 @@ async function startServer() {
     app.use(vite.middlewares)
   } else {
     // Serve production build
-    const distPath = path.resolve(__dirname, 'dist')
+    const distPath = path.resolve(process.cwd(), 'dist')
     app.use(express.static(distPath))
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'))

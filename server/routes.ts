@@ -1537,7 +1537,7 @@ router.post('/clients/:id/rembourser', (req: Request, res: Response) => {
   const client = clients.find((c) => c.id === clientId)
   if (!client) return res.status(404).json({ message: 'Client non trouvé' })
 
-  const { montant, devise, caisseId, agenceId } = req.body
+  const { montant, devise, caisseId, agenceId, venteId, referenceVente } = req.body
   const numMontant = Number(montant)
   const numAg = agenceId ? toInt(agenceId) : 1
 
@@ -1553,25 +1553,65 @@ router.post('/clients/:id/rembourser', (req: Request, res: Response) => {
     client.bloque = false
   }
 
-  const caisse = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : 1))
+  const caisse = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : 1)) ||
+    comptesCaisse.find((c) => c.agenceId === numAg) ||
+    comptesCaisse[0]
+
   if (caisse) {
-    if (devise === 'USD') caisse.soldeUsd += numMontant
-    else caisse.soldeCdf += numMontant
+    if (devise === 'USD') caisse.soldeUsd = Math.round((caisse.soldeUsd + numMontant) * 100) / 100
+    else caisse.soldeCdf = Math.round(caisse.soldeCdf + numMontant)
   }
 
+  // Association éventuelle à une vente spécifique
+  const vente = venteId
+    ? ventes.find((v) => v.id === Number(venteId))
+    : referenceVente
+      ? ventes.find((v) => v.referenceVente === String(referenceVente).trim())
+      : undefined
+
+  if (vente) {
+    const dejaPaye = Number(vente.montantPaye || 0)
+    vente.montantPaye = Math.round((dejaPaye + numMontant) * 100) / 100
+    vente.montantRestant = Math.max(0, Math.round((vente.montantTotal - vente.montantPaye) * 100) / 100)
+    vente.statutCredit = vente.montantRestant <= 0.01 ? 'REGLE' : 'PARTIEL'
+    vente.dateDernierPaiement = new Date().toISOString()
+    vente.referencePaiement = `REG-${vente.referenceVente}`
+  }
+
+  const ref = vente ? `REG-${vente.referenceVente}` : (referenceVente ? `REG-${referenceVente}` : `RMB-${Date.now()}`)
+
+  // Enregistrement dans le livre de trésorerie
+  transactions.unshift({
+    id: `TX-${Date.now().toString().slice(-8)}`,
+    referenceInterne: ref,
+    agenceId: numAg,
+    caisseId: caisse?.id,
+    montant: numMontant,
+    devise: devise || 'USD',
+    tauxApplique: activeRate,
+    type: 'ENTREE',
+    libelle: `Règlement créance ${vente ? `vente ${vente.referenceVente} ` : ''}(Client: ${client.nom})`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: new Date().toISOString(),
+    dateValidation: new Date().toISOString(),
+  })
+
   const compteClient = client.compteComptable || `411${String(client.id).padStart(3, '0')}`
-  const ref = `RMB-${Date.now()}`
+  const compteTresorerie = caisse?.numeroCompteComptable || (devise === 'USD' ? '571' : '572')
+
   ecrituresComptables.push(
     {
       id: ecrituresComptables.length + 1,
       referenceOperation: ref,
       agenceId: numAg,
-      compteNumero: devise === 'USD' ? '571' : '572',
+      compteNumero: compteTresorerie,
       sens: 'DEBIT',
       montant: numMontant,
-      devise,
+      devise: devise || 'USD',
       tauxApplique: activeRate,
-      libelle: `Règlement créance client ${client.nom} (${compteClient})`,
+      libelle: `Règlement créance client ${vente ? `vente ${vente.referenceVente}` : client.nom} (${compteTresorerie})`,
       sourceModule: 'VENTES',
       sourceType: 'RECOUVREMENT',
       sourceId: String(clientId),
@@ -1586,9 +1626,9 @@ router.post('/clients/:id/rembourser', (req: Request, res: Response) => {
       compteNumero: compteClient,
       sens: 'CREDIT',
       montant: numMontant,
-      devise,
+      devise: devise || 'USD',
       tauxApplique: activeRate,
-      libelle: `Apurement compte client ${client.nom} (${compteClient})`,
+      libelle: `Apurement créance ${vente ? `vente ${vente.referenceVente} ` : ''}client ${client.nom} (${compteClient})`,
       sourceModule: 'VENTES',
       sourceType: 'RECOUVREMENT',
       sourceId: String(clientId),
@@ -1598,8 +1638,8 @@ router.post('/clients/:id/rembourser', (req: Request, res: Response) => {
     }
   )
 
-  logAudit(currentUser.nom, 'REMBOURSEMENT_DETTE', `Encaissement dette de ${numMontant} ${devise} pour ${client.nom} sur compte ${compteClient}`, numAg)
-  res.json({ message: 'Remboursement enregistré avec succès', client })
+  logAudit(currentUser.nom, 'REMBOURSEMENT_DETTE', `Encaissement dette de ${numMontant} ${devise} pour ${client.nom} sur compte ${compteClient} (Réf: ${ref})`, numAg)
+  res.json({ message: 'Règlement enregistré avec succès', client, vente, referencePaiement: ref })
 })
 
 // ----------------- VENTES & POS -----------------
@@ -1747,8 +1787,10 @@ router.post(['/ventes/nouvelle', '/ventes'], (req: Request, res: Response) => {
     clientChauffeur: clientChauffeur || '',
     devise: devise || 'USD',
     estCredit: Boolean(estCredit),
-    statutCredit: statutCreditInit,
-    comptabilisee: !estCredit,
+    statutCredit: estCredit ? (statutCreditInit === 'DEPASSEMENT_PLAFOND' ? 'DEPASSEMENT_PLAFOND' : 'VALIDE') : 'AUCUN',
+    comptabilisee: true,
+    montantPaye: 0,
+    montantRestant: numMontantTotal,
     statutAnnulation: 'AUCUNE',
     dateVente: new Date().toISOString(),
     details: detailsLignes,
@@ -1847,12 +1889,80 @@ router.post(['/ventes/nouvelle', '/ventes'], (req: Request, res: Response) => {
       })
     }
   } else {
-    // Vente à crédit : La comptabilisation officielle dans le journal est différée
-    // jusqu'à l'approbation formelle par le Chef d'Agence pour éviter tout déséquilibre au journal.
+    // Vente à crédit : Enregistrement immédiat des écritures comptables SYSCOHADA (Débit Compte Client 411 / Crédit 701 & 706)
+    const ref = nouvelleVente.referenceVente
+    const montantMarchandise = Math.max(0, numMontantTotal - fraisTransport)
+    const compteClient = clientObj?.compteComptable || (clientObj?.id ? `411${String(clientObj.id).padStart(3, '0')}` : '411')
+    const detteUsd = devise === 'USD' ? numMontantTotal : numMontantTotal / activeRate
+
+    if (clientObj) {
+      clientObj.soldeDette = Math.round((clientObj.soldeDette + detteUsd) * 100) / 100
+      if (clientObj.soldeDette > clientObj.limiteCredit) {
+        clientObj.bloque = true
+      }
+    }
+
+    ecrituresComptables.push(
+      {
+        id: ecrituresComptables.length + 1,
+        referenceOperation: ref,
+        agenceId: agId,
+        compteNumero: compteClient,
+        sens: 'DEBIT',
+        montant: numMontantTotal,
+        devise: devise || 'USD',
+        tauxApplique: activeRate,
+        libelle: `Créance client facturation vente à crédit ${ref} (${clientObj?.nom || 'Client'})`,
+        sourceModule: 'VENTES',
+        sourceType: 'VENTE_CREDIT',
+        sourceId: String(nouvelleVente.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      },
+      {
+        id: ecrituresComptables.length + 2,
+        referenceOperation: ref,
+        agenceId: agId,
+        compteNumero: parametresComptables.compteVenteMarchandises || '701',
+        sens: 'CREDIT',
+        montant: montantMarchandise,
+        devise: devise || 'USD',
+        tauxApplique: activeRate,
+        libelle: `Produit vente à crédit marchandises ${ref}`,
+        sourceModule: 'VENTES',
+        sourceType: 'VENTE_CREDIT',
+        sourceId: String(nouvelleVente.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      }
+    )
+
+    if (fraisTransport > 0) {
+      ecrituresComptables.push({
+        id: ecrituresComptables.length + 1,
+        referenceOperation: ref,
+        agenceId: agId,
+        compteNumero: '706',
+        sens: 'CREDIT',
+        montant: fraisTransport,
+        devise: devise || 'USD',
+        tauxApplique: activeRate,
+        libelle: `Facturation transport vente à crédit ${ref}`,
+        sourceModule: 'VENTES',
+        sourceType: 'VENTE_CREDIT',
+        sourceId: String(nouvelleVente.id),
+        annulee: false,
+        statutValidation: 'VALIDE',
+        dateEcriture: new Date().toISOString(),
+      })
+    }
+
     logAudit(
       currentUser?.nom || 'Vendeur',
-      'VENTE_CREDIT_SOUMISE',
-      `Vente à crédit ${nouvelleVente.referenceVente} soumise pour $${numMontantTotal} ${devise} (Client: ${clientObj?.nom || 'Client'}). En attente d'approbation Chef pour inscription au journal.`,
+      'VENTE_CREDIT_COMPTABILISEE',
+      `Vente à crédit ${nouvelleVente.referenceVente} enregistrée et comptabilisée pour $${numMontantTotal} ${devise} (Client: ${clientObj?.nom || 'Client'}). Écritures passées au compte ${compteClient} et 701.`,
       agId
     )
   }
@@ -2030,6 +2140,154 @@ router.post('/ventes/credits/:id/rejeter', (req: Request, res: Response) => {
   vente.statutCredit = 'REJETE'
   logAudit(currentUser.nom, 'REJET_CREDIT', `Rejet vente à crédit ${vente.referenceVente} et restauration de stock`, vente.agenceId)
   res.json(vente)
+})
+
+// ----------------- RÈGLEMENT DES VENTES À CRÉDIT (SYSCOHADA : DÉBIT TRÉSORERIE 571/572, CRÉDIT CLIENT 411) -----------------
+router.post(['/ventes/:id/regler', '/ventes/credits/:id/regler'], (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const venteId = toInt(req.params.id)
+  const vente = ventes.find((v) => v.id === venteId)
+  if (!vente) return res.status(404).json({ message: 'Vente introuvable' })
+
+  if (!vente.estCredit) {
+    return res.status(400).json({ message: 'Cette vente n\'est pas enregistrée comme une vente à crédit.' })
+  }
+
+  const { montant, devise, caisseId, datePaiement, modePaiement, referencePiece, observation } = req.body
+  const numMontant = Number(montant)
+  if (!numMontant || numMontant <= 0) {
+    return res.status(400).json({ message: 'Montant de règlement invalide. Doit être supérieur à 0.' })
+  }
+
+  const client = clients.find((c) => c.id === vente.clientId)
+  const activeRate = tauxChanges.find((t) => t.agenceId === vente.agenceId && t.statut === 'VALIDE' && t.actif)?.taux || 2850
+  const deviseReglement = (devise || vente.devise || 'USD') as 'USD' | 'CDF'
+
+  // Vérifier le montant restant sur cette vente
+  const dejaPaye = Number(vente.montantPaye || 0)
+  const totalVente = Number(vente.montantTotal || 0)
+  const montantRestantActuel = Math.max(0, Math.round((totalVente - dejaPaye) * 100) / 100)
+
+  if (numMontant > montantRestantActuel + 0.05) {
+    return res.status(400).json({
+      message: `Le montant payé ($${numMontant.toFixed(2)}) dépasse le solde restant de la vente ($${montantRestantActuel.toFixed(2)}).`,
+    })
+  }
+
+  // 1. Mise à jour des montants sur la vente
+  const nouveauPaye = Math.round((dejaPaye + numMontant) * 100) / 100
+  const nouveauRestant = Math.max(0, Math.round((totalVente - nouveauPaye) * 100) / 100)
+  const estSolde = nouveauRestant <= 0.01
+
+  vente.montantPaye = nouveauPaye
+  vente.montantRestant = nouveauRestant
+  vente.statutCredit = estSolde ? 'REGLE' : 'PARTIEL'
+  vente.dateDernierPaiement = datePaiement || new Date().toISOString()
+  vente.referencePaiement = `REG-${vente.referenceVente}`
+
+  // 2. Déduction de la dette client
+  const deductionUsd = deviseReglement === 'USD' ? numMontant : numMontant / activeRate
+  if (client) {
+    client.soldeDette = Math.max(0, Math.round((client.soldeDette - deductionUsd) * 100) / 100)
+    if (client.soldeDette <= client.limiteCredit) {
+      client.bloque = false
+    }
+  }
+
+  // 3. Encaissement dans la caisse ou le compte bancaire
+  const caisse = (caisseId ? comptesCaisse.find((c) => c.id === Number(caisseId)) : undefined) ||
+    comptesCaisse.find((c) => c.agenceId === vente.agenceId) ||
+    comptesCaisse[0]
+
+  if (caisse) {
+    if (deviseReglement === 'USD') {
+      caisse.soldeUsd = Math.round((caisse.soldeUsd + numMontant) * 100) / 100
+    } else {
+      caisse.soldeCdf = Math.round(caisse.soldeCdf + numMontant)
+    }
+  }
+
+  // 4. Inscription dans le journal de trésorerie (Livre de Caisse)
+  const refPaiement = `REG-${vente.referenceVente}`
+  transactions.unshift({
+    id: `TX-${Date.now().toString().slice(-8)}`,
+    referenceInterne: refPaiement,
+    agenceId: vente.agenceId,
+    caisseId: caisse?.id,
+    montant: numMontant,
+    devise: deviseReglement,
+    tauxApplique: activeRate,
+    type: 'ENTREE',
+    libelle: `Règlement vente ${vente.referenceVente} (${client?.nom || 'Client'}) - ${estSolde ? 'Soldé intégralement' : 'Acompte partiel'}${modePaiement ? ` (${modePaiement})` : ''}${referencePiece ? ` [Pièce: ${referencePiece}]` : ''}${observation ? ` - Note: ${observation}` : ''}`,
+    statut: 'VALIDE',
+    createurId: currentUser.id,
+    validateurId: currentUser.id,
+    dateCreation: datePaiement || new Date().toISOString(),
+    dateValidation: new Date().toISOString(),
+  })
+
+  // 5. Écritures comptables SYSCOHADA de règlement avec référence explicite à l'opération de vente
+  const compteClient = client?.compteComptable || (client?.id ? `411${String(client.id).padStart(3, '0')}` : '411')
+  const compteTresorerie = caisse?.numeroCompteComptable || (
+    deviseReglement === 'USD' ? (parametresComptables.compteCaisseUsd || '571') : (parametresComptables.compteCaisseCdf || '572')
+  )
+
+  ecrituresComptables.push(
+    {
+      id: ecrituresComptables.length + 1,
+      referenceOperation: refPaiement,
+      agenceId: vente.agenceId,
+      compteNumero: compteTresorerie,
+      sens: 'DEBIT',
+      montant: numMontant,
+      devise: deviseReglement,
+      tauxApplique: activeRate,
+      libelle: `Encaissement règlement vente ${vente.referenceVente} - Client: ${client?.nom || 'Client'} (${caisse?.nom || 'Caisse'})`,
+      sourceModule: 'VENTES',
+      sourceType: 'REGLEMENT_VENTE_CREDIT',
+      sourceId: String(vente.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: datePaiement || new Date().toISOString(),
+    },
+    {
+      id: ecrituresComptables.length + 2,
+      referenceOperation: refPaiement,
+      agenceId: vente.agenceId,
+      compteNumero: compteClient,
+      sens: 'CREDIT',
+      montant: numMontant,
+      devise: deviseReglement,
+      tauxApplique: activeRate,
+      libelle: `Apurement créance vente ${vente.referenceVente} - Client: ${client?.nom || 'Client'} (${compteClient})`,
+      sourceModule: 'VENTES',
+      sourceType: 'REGLEMENT_VENTE_CREDIT',
+      sourceId: String(vente.id),
+      annulee: false,
+      statutValidation: 'VALIDE',
+      dateEcriture: datePaiement || new Date().toISOString(),
+    }
+  )
+
+  logAudit(
+    currentUser.nom,
+    'REGLEMENT_VENTE_CREDIT',
+    `Règlement de ${numMontant} ${deviseReglement} enregistré pour la vente à crédit ${vente.referenceVente} (${client?.nom || 'Client'}). Restant dû: $${nouveauRestant}. Écritures passées au Débit ${compteTresorerie} et Crédit ${compteClient} (Réf: ${refPaiement}).`,
+    vente.agenceId
+  )
+
+  res.json({
+    message: `Règlement de ${numMontant} ${deviseReglement} validé avec succès pour la vente ${vente.referenceVente}.`,
+    referencePaiement: refPaiement,
+    vente,
+    client,
+    caisse,
+    nouveauPaye,
+    nouveauRestant,
+    estSolde,
+  })
 })
 
 router.post('/ventes/:id/demande-annulation', (req: Request, res: Response) => {
