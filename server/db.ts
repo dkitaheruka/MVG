@@ -540,6 +540,22 @@ export interface DbParametresFiscauxSociaux {
   modifiePar?: string
 }
 
-
-
-
+// 6. Pointage Biométrique & Présence des Agents
+export interface DbPointageAgent {
+  id: number
+  agentId: number
+  matricule: string
+  agentNom: string
+  poste: string
+  agenceId: number
+  agenceNom: string
+  date: string // YYYY-MM-DD
+  heureArrivee: string // HH:mm:ss
+  heureDepart?: string
+  statut: 'PRESENT' | 'RETARD' | 'ABSENT' | 'MISSION'
+  modePointage: 'EMPREINTE_DIGITALE' | 'BADGE_RFID' | 'RECONNAISSANCE_FACIALE' | 'MANUEL'
+  empreinteMatchScore?: number // Pourcentage de correspondance biométrique (ex: 98.7%)
+  terminalId?: string // Identifiant du lecteur biométrique (ex: 'BIO-SCAN-GOMA-01')
+  temperature?: number // Température corporelle (ex: 36.6)
+  observations?: string
+}

@@ -554,14 +554,14 @@ export function renderBonLivraisonHtml(
       Ville : ${agence?.ville || 'Nord-Kivu'}<br/>
       <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">
         ${mode === 'ENLEVEMENT_MAGASIN' ? `
-          Transport : <strong>🏪 Enlèvement direct au comptoir / dépôt</strong><br/>
+          Transport : <strong>[Comptoir] Enlèvement direct au dépôt</strong><br/>
           <span style="color:#64748b;">Retrait sur place par le client (Aucun véhicule société mobilisé).</span>
         ` : mode === 'VEHICULE_CLIENT' ? `
-          Transport : <strong>🚗 Véhicule propre du Client</strong><br/>
+          Transport : <strong>[Véhicule Client] Véhicule propre du Client</strong><br/>
           Véhicule client : <strong>${clientVehicule || 'Véhicule apporté par le client'}</strong><br/>
           Chauffeur / Convoyeur : <strong>${clientChauffeur || 'Chauffeur / Porteur désigné par le client'}</strong>
         ` : `
-          Transport : <strong>🚚 Flotte de l'Entreprise (${entreprise?.sigle || entreprise?.nomSociete || 'Flotte Interne'})</strong><br/>
+          Transport : <strong>[Flotte Interne] Flotte de l'Entreprise (${entreprise?.sigle || entreprise?.nomSociete || 'Flotte Interne'})</strong><br/>
           Camion affecté : <strong>${vehicule ? `${vehicule.marqueModele} (Plaque: ${vehicule.plaqueImmatriculation})` : 'Camion de livraison agence'}</strong><br/>
           Chauffeur société : <strong>${vehicule?.chauffeurNom || 'Chauffeur attitré'}</strong> ${vehicule?.chauffeurTelephone ? `(${vehicule.chauffeurTelephone})` : ''}
         `}

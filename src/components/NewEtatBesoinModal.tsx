@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Coins, X, CheckCircle, Warning, FileText } from '@phosphor-icons/react'
+import { Coins, X, CheckCircle, Warning, FileText, Info } from '@phosphor-icons/react'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
 
@@ -200,8 +200,11 @@ export function NewEtatBesoinModal({
             />
           </label>
 
-          <div style={{ background: 'var(--surface-2)', padding: 10, borderRadius: 8, fontSize: '0.78rem', color: 'var(--muted)', marginTop: 4 }}>
-            💡 <em>Workflow :</em> Demande soumise → Visa Chef d'Agence → Visa Direction Siège si &gt; $200 USD → Décaissement en caisse & Édition Bon BDEC.
+          <div style={{ background: 'var(--surface-2)', padding: 10, borderRadius: 8, fontSize: '0.78rem', color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Info size={16} weight="bold" style={{ color: 'var(--accent-strong)', flexShrink: 0 }} />
+            <div>
+              <em>Workflow :</em> Demande soumise → Visa Chef d'Agence → Visa Direction Siège si &gt; $200 USD → Décaissement en caisse & Édition Bon BDEC.
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>

@@ -14,6 +14,8 @@ import {
   ClockCounterClockwise,
   Package,
   Trash,
+  MapPin,
+  Buildings,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
@@ -70,19 +72,21 @@ export function MaintenancePage() {
     enabled: Boolean(token),
   })
 
-  // Agence filter string
-  const agenceParam = selectedAgenceId === 'CONSOLIDE' ? '' : `?agenceId=${selectedAgenceId}`
+  // Agence filter string - accessible dans toutes les agences indépendamment du siège
+  const isSiegeAdmin = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const activeAgenceId = !isSiegeAdmin ? (session?.agenceId || 1) : (selectedAgenceId === 'CONSOLIDE' ? undefined : selectedAgenceId)
+  const agenceParam = activeAgenceId ? `?agenceId=${activeAgenceId}` : ''
 
   // Query Interventions
   const maintenanceQuery = useQuery({
-    queryKey: ['maintenance-entretiens', selectedAgenceId],
+    queryKey: ['maintenance-entretiens', activeAgenceId],
     queryFn: () => apiRequest<EntretienTechnique[]>(`/api/maintenance/entretiens${agenceParam}`, { token }),
     enabled: Boolean(token),
   })
 
   // Query Parc Equipements
   const equipementsQuery = useQuery({
-    queryKey: ['maintenance-equipements', selectedAgenceId],
+    queryKey: ['maintenance-equipements', activeAgenceId],
     queryFn: () => apiRequest<EquipementParc[]>(`/api/maintenance/equipements${agenceParam}`, { token }),
     enabled: Boolean(token),
   })
@@ -249,19 +253,50 @@ export function MaintenancePage() {
     }
   }
 
+  const userAgence = agencesQuery.data?.find((a: any) => a.id === (activeAgenceId || session?.agenceId))
+
   return (
     <section className="page-grid">
       {/* EN-TÊTE DU MODULE */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 8, background: '#0284c7', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Wrench size={22} weight="bold" />
             </div>
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Maintenance & Gestion du Parc Matériel</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Maintenance & Gestion du Parc Matériel</h1>
+                {userAgence && (
+                  <span
+                    style={{
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      padding: '3px 10px',
+                      borderRadius: 6,
+                      background: isSiegeAdmin && selectedAgenceId === 'CONSOLIDE' ? 'var(--accent-soft)' : 'var(--surface-2)',
+                      color: isSiegeAdmin && selectedAgenceId === 'CONSOLIDE' ? 'var(--accent-strong)' : 'var(--text)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {isSiegeAdmin && selectedAgenceId === 'CONSOLIDE' ? (
+                        <>
+                          <Buildings size={14} />
+                          Réseau Consolidé
+                        </>
+                      ) : (
+                        <>
+                          <MapPin size={14} />
+                          Agence Autonome : {userAgence.nom} ({userAgence.ville})
+                        </>
+                      )}
+                    </span>
+                  </span>
+                )}
+              </div>
               <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                Flotte de véhicules, machines de meunerie, groupes électrogènes, silos et ponts-bascules de toutes les agences.
+                Flotte de véhicules, engins de livraison, moulins, groupes électrogènes et outillage de l agence.
               </span>
             </div>
           </div>

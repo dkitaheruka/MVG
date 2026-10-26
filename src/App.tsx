@@ -75,6 +75,7 @@ import {
   type QrCodePayload,
 } from './components/QrCodeComponents'
 import { NewEtatBesoinModal } from './components/NewEtatBesoinModal'
+import { ExecutiveDashboard } from './components/ExecutiveDashboard'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
@@ -805,6 +806,7 @@ function DashboardPage() {
   const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
 
   const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const [executiveViewMode, setExecutiveViewMode] = useState<'EXECUTIVE' | 'OPERATIONAL'>('EXECUTIVE')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard-service-summary', selectedAgenceId],
@@ -841,6 +843,70 @@ function DashboardPage() {
 
   return (
     <section className="page-grid">
+      {/* SÉLECTEUR DE MODE DE VUE POUR ADMIN SIÈGE & SUPER ADMIN */}
+      {isSuperOrAdminSiege && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2, flexWrap: 'wrap', gap: 10 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>
+            Mode de Supervision Siège :
+          </span>
+          <div
+            style={{
+              display: 'inline-flex',
+              background: 'var(--surface-2)',
+              padding: 3,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              gap: 4,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setExecutiveViewMode('EXECUTIVE')}
+              style={{
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                borderRadius: 6,
+                border: 'none',
+                background: executiveViewMode === 'EXECUTIVE' ? 'var(--surface)' : 'transparent',
+                color: executiveViewMode === 'EXECUTIVE' ? 'var(--accent-strong)' : 'var(--muted)',
+                cursor: 'pointer',
+                boxShadow: executiveViewMode === 'EXECUTIVE' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <ChartBar size={16} />
+                Vue Supervision Exécutive (Consolidée & Agences)
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setExecutiveViewMode('OPERATIONAL')}
+              style={{
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                borderRadius: 6,
+                border: 'none',
+                background: executiveViewMode === 'OPERATIONAL' ? 'var(--surface)' : 'transparent',
+                color: executiveViewMode === 'OPERATIONAL' ? 'var(--accent-strong)' : 'var(--muted)',
+                cursor: 'pointer',
+                boxShadow: executiveViewMode === 'OPERATIONAL' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <ClipboardText size={16} />
+                Vue Opérationnelle des Services
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isSuperOrAdminSiege && executiveViewMode === 'EXECUTIVE' ? (
+        <ExecutiveDashboard token={token} />
+      ) : (
+        <>
       {/* EN-TÊTE DU TABLEAU DE BORD - DESIGN ÉPURÉ AVEC DÉGRADÉ VERT DOUX */}
       <div
         className="panel"
@@ -1156,6 +1222,8 @@ function DashboardPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </section>
   )
 }

@@ -132,6 +132,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (['CHEF_AGENCE', 'COMPTABLE', 'COMPTABLE_SENIOR', 'AUDITEUR'].includes(session.role)) return true
       return perms.some((p) => p.startsWith('comptabilite.'))
     }
+    // Le menu Maintenance & Technique doit être dans toutes les agences indépendamment du siège
+    if (permission === 'flotte.gerer') {
+      if (
+        [
+          'CHEF_AGENCE',
+          'RESPONSABLE_PRODUCTION',
+          'TECHNICIEN_MAINTENANCE',
+          'MAGASINIER',
+          'COMPTABLE',
+          'COMPTABLE_SENIOR',
+          'VENDEUR',
+          'CAISSIER',
+          'SUPER_ADMIN',
+          'ADMIN_SIEGE',
+        ].includes(session.role)
+      ) {
+        return true
+      }
+      return perms.includes('flotte.gerer')
+    }
     return perms.includes(permission)
   },
 }))

@@ -10,7 +10,7 @@ const dictionary = {
     treasury: 'Trésorerie',
     purchases: 'Achats Fournisseurs',
     transfers: 'Transferts Agences',
-    payroll: 'RH & Paie',
+    payroll: 'RH, Présences & Paie',
     accounting: 'Comptabilité',
     reporting: 'Reporting',
     admin: 'Administration',

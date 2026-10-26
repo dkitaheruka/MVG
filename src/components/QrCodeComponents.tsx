@@ -978,8 +978,9 @@ export function QrAccountingModal({
             • <strong>Crédit :</strong> 701 (Produits finis) {numFraisTransport > 0 ? `& 706 (Transport: +$${numFraisTransport.toFixed(2)})` : ''}
           </div>
           {modePaiement === 'CREDIT' && (
-            <div style={{ color: '#b45309', fontWeight: 700, marginTop: 3 }}>
-              ⚠️ Vente à crédit : l'écriture au journal sera inscrite après approbation du Chef d'Agence pour éviter les déséquilibres.
+            <div style={{ color: '#b45309', fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Warning size={15} weight="bold" />
+              <span>Vente à crédit : l'écriture au journal sera inscrite après approbation du Chef d'Agence pour éviter les déséquilibres.</span>
             </div>
           )}
         </div>

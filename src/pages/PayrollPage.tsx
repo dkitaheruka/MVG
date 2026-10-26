@@ -11,6 +11,7 @@ import {
   CheckCircle,
   FilePdf,
   FileText,
+  FileXls,
   Coins,
   ArrowClockwise,
   ShieldCheck,
@@ -21,6 +22,12 @@ import {
   Trash,
   ArrowCounterClockwise,
   Info,
+  Fingerprint,
+  Clock,
+  PencilSimple,
+  Buildings,
+  Lightning,
+  MagnifyingGlass,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
@@ -37,9 +44,25 @@ export function PayrollPage() {
   )
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
-  const [activeTab, setActiveTab] = useState<'feuille-paie' | 'bulletins' | 'avances' | 'agents' | 'parametres-fiscaux'>('feuille-paie')
+  const [activeTab, setActiveTab] = useState<'feuille-paie' | 'bulletins' | 'avances' | 'agents' | 'presences' | 'parametres-fiscaux'>('feuille-paie')
   const [selectedMois, setSelectedMois] = useState<number>(9)
   const [selectedAnnee, setSelectedAnnee] = useState<number>(2026)
+
+  // États Présences & Pointage Biométrique
+  const [selectedDatePointage, setSelectedDatePointage] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [pointageStatusFilter, setPointageStatusFilter] = useState<string>('TOUS')
+  const [pointageSearchTerm, setPointageSearchTerm] = useState<string>('')
+  const [showPointageModal, setShowPointageModal] = useState<boolean>(false)
+  const [showScanBiometriqueModal, setShowScanBiometriqueModal] = useState<boolean>(false)
+  const [editingPointage, setEditingPointage] = useState<any | null>(null)
+
+  // Formulaire régularisation manuelle
+  const [pointageFormAgentId, setPointageFormAgentId] = useState<number | ''>('')
+  const [pointageFormStatut, setPointageFormStatut] = useState<'PRESENT' | 'RETARD' | 'ABSENT' | 'MISSION'>('PRESENT')
+  const [pointageFormArrivee, setPointageFormArrivee] = useState('08:00:00')
+  const [pointageFormDepart, setPointageFormDepart] = useState('16:30:00')
+  const [pointageFormObservations, setPointageFormObservations] = useState('')
+  const [biometriqueScanAgentId, setBiometriqueScanAgentId] = useState<number | ''>('')
 
   const [showNewAgentModal, setShowNewAgentModal] = useState(false)
   const [showEBModal, setShowEBModal] = useState(false)
@@ -129,6 +152,73 @@ export function PayrollPage() {
     queryKey: ['rh-parametres-fiscaux'],
     queryFn: () => apiRequest<{ parametres: any; defauts: any }>('/api/rh/parametres-fiscaux', { token }),
     enabled: Boolean(token),
+  })
+
+  const pointagesQuery = useQuery({
+    queryKey: ['rh-pointages', agenceId],
+    queryFn: () => apiRequest<any[]>(`/api/rh/pointages?agenceId=${agenceId}`, { token }),
+    enabled: Boolean(token),
+  })
+
+  const regulariserPointageMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/rh/pointages/manuel', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agentId: pointageFormAgentId,
+          date: selectedDatePointage,
+          statut: pointageFormStatut,
+          heureArrivee: pointageFormArrivee,
+          heureDepart: pointageFormDepart,
+          observations: pointageFormObservations,
+        }),
+      }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['rh-pointages'] })
+      queryClient.invalidateQueries({ queryKey: ['executive-data'] })
+      setShowPointageModal(false)
+      setEditingPointage(null)
+      setActionSuccess(res.message || 'Présence régularisée avec succès !')
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur lors de la régularisation'),
+  })
+
+  const updatePointageMutation = useMutation({
+    mutationFn: (payload: { id: number; statut: string; observations: string; heureArrivee?: string; heureDepart?: string }) =>
+      apiRequest(`/api/rh/pointages/${payload.id}`, {
+        method: 'PUT',
+        token,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['rh-pointages'] })
+      queryClient.invalidateQueries({ queryKey: ['executive-data'] })
+      setShowPointageModal(false)
+      setEditingPointage(null)
+      setActionSuccess(res.message || 'Pointage mis à jour avec succès !')
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur modification pointage'),
+  })
+
+  const scanBiometriqueMutation = useMutation({
+    mutationFn: (agentId: number) =>
+      apiRequest('/api/rh/pointages/scan-empreinte', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agentId,
+          modePointage: 'EMPREINTE_DIGITALE',
+          terminalId: 'BIO-SCAN-RH-CENTRAL',
+        }),
+      }),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['rh-pointages'] })
+      queryClient.invalidateQueries({ queryKey: ['executive-data'] })
+      setShowScanBiometriqueModal(false)
+      setActionSuccess(res.message || 'Scan biométrique validé avec succès !')
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur scan biométrique'),
   })
 
   // Synchronisation initiale du formulaire des barèmes
@@ -556,7 +646,10 @@ export function PayrollPage() {
 
       {actionSuccess && (
         <div className="notice success" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-2)', border: '1px solid var(--success)', color: 'var(--success)' }}>
-          <span>✓ {actionSuccess}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <CheckCircle size={16} weight="bold" />
+            {actionSuccess}
+          </span>
           <button className="icon-button" onClick={() => setActionSuccess(null)} aria-label="Fermer"><X size={16} /></button>
         </div>
       )}
@@ -567,6 +660,9 @@ export function PayrollPage() {
         </button>
         <button className={clsx('tab-button', activeTab === 'bulletins' && 'active')} onClick={() => setActiveTab('bulletins')}>
           <Receipt size={17} /> Bulletins Individuels ({bulletinsQuery.data?.length ?? 0})
+        </button>
+        <button className={clsx('tab-button', activeTab === 'presences' && 'active')} onClick={() => setActiveTab('presences')}>
+          <Fingerprint size={17} /> Pointage & Présences Biométriques ({pointagesQuery.data?.length ?? 0})
         </button>
         <button className={clsx('tab-button', activeTab === 'avances' && 'active')} onClick={() => setActiveTab('avances')}>
           <Wallet size={17} /> Avances sur Salaire ({avancesQuery.data?.length ?? 0})
@@ -1037,6 +1133,453 @@ export function PayrollPage() {
         </div>
       )}
 
+      {/* ---------------- TAB : POINTAGE & PRÉSENCES BIOMÉTRIQUES ---------------- */}
+      {activeTab === 'presences' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* BANNIÈRE GESTION DES PRÉSENCES ET ACTIONS D'IMPRESSION */}
+          <div
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '16px 20px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 14,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 8,
+                  background: 'var(--surface)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <Fingerprint size={24} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>
+                  Gestion des Présences & Pointage Biométrique
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--muted)' }}>
+                  Contrôle d assiduité temps réel, horodatage certifié, registre journalier et rapports mensuels officiels.
+                </p>
+              </div>
+            </div>
+
+            {/* BOUTONS D'IMPRESSION OFFICIELLE ET EXPORTS */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={`/api/export/print/presences?date=${selectedDatePointage}${agenceId ? `&agenceId=${agenceId}` : ''}`}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-action"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontWeight: 600, fontSize: '0.85rem' }}
+                title="Imprimer le registre officiel journalier au format A4 avec en-tête et signatures"
+              >
+                <Printer size={16} />
+                Imprimer Registre Journalier (PDF)
+              </a>
+              <a
+                href={`/api/export/print/presences-mensuel?mois=${selectedMois}&annee=${selectedAnnee}${agenceId ? `&agenceId=${agenceId}` : ''}`}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontWeight: 600, fontSize: '0.85rem' }}
+                title="Imprimer le récapitulatif mensuel d assiduité et ponctualité"
+              >
+                <FilePdf size={16} />
+                Rapport Mensuel d Assiduité (PDF)
+              </a>
+              <a
+                href={`/api/export/excel/presences?date=${selectedDatePointage}${agenceId ? `&agenceId=${agenceId}` : ''}`}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontSize: '0.85rem' }}
+                title="Exporter la liste sous format Excel / CSV"
+              >
+                <FileXls size={16} />
+                Exporter (.xlsx)
+              </a>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowScanBiometriqueModal(true)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)' }}
+              >
+                <Fingerprint size={16} />
+                Scanner Empreinte
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  setEditingPointage(null)
+                  setPointageFormAgentId('')
+                  setPointageFormStatut('PRESENT')
+                  setPointageFormArrivee('08:00:00')
+                  setPointageFormDepart('16:30:00')
+                  setPointageFormObservations('')
+                  setShowPointageModal(true)
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
+              >
+                <Plus size={16} />
+                Régulariser Présence
+              </button>
+            </div>
+          </div>
+
+          {/* INDICATEURS CLÉS (KPIS) POUR LA DATE SÉLECTIONNÉE */}
+          {(() => {
+            const allAgents = agentsQuery.data || []
+            const currentPointages = (pointagesQuery.data || []).filter(
+              (p: any) => (!selectedDatePointage || p.date === selectedDatePointage) && (!agenceId || p.agenceId === agenceId)
+            )
+            const presentsCount = currentPointages.filter((p: any) => p.statut === 'PRESENT').length
+            const retardsCount = currentPointages.filter((p: any) => p.statut === 'RETARD').length
+            const missionsCount = currentPointages.filter((p: any) => p.statut === 'MISSION').length
+            const absentsCount = Math.max(0, allAgents.length - (presentsCount + retardsCount + missionsCount))
+            const tauxPonctualite = allAgents.length > 0
+              ? Math.round(((presentsCount + retardsCount + missionsCount) / allAgents.length) * 100)
+              : 0
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>EFFECTIF SUIVI</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: 'var(--text)' }}>
+                    {allAgents.length} collaborateurs
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Agence sélectionnée</div>
+                </div>
+
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>PRÉSENTS À L HEURE</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: '#10b981' }}>
+                    {presentsCount}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés avant 08:00</div>
+                </div>
+
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>RETARDS CONSTATÉS</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: '#f59e0b' }}>
+                    {retardsCount}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés après 08:00</div>
+                </div>
+
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600 }}>ABSENTS / ATTENTE</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: '#ef4444' }}>
+                    {absentsCount}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Non émargés ce jour</div>
+                </div>
+
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--accent-strong)', fontWeight: 600 }}>TAUX D ASSIDUITÉ</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: 'var(--accent-strong)' }}>
+                    {tauxPonctualite}%
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Conformité journalière</div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* BARRE DE FILTRES ET RECHERCHE */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '10px 14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={16} /> Date du registre :
+                <input
+                  type="date"
+                  value={selectedDatePointage}
+                  onChange={(e) => setSelectedDatePointage(e.target.value)}
+                  style={{
+                    padding: '5px 8px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
+                    color: 'var(--text)',
+                    fontSize: '0.82rem',
+                  }}
+                />
+              </label>
+
+              <div style={{ display: 'inline-flex', gap: 4, background: 'var(--surface-2)', padding: 3, borderRadius: 6 }}>
+                {(['TOUS', 'PRESENT', 'RETARD', 'ABSENT', 'MISSION'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setPointageStatusFilter(st)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      borderRadius: 4,
+                      border: 'none',
+                      background: pointageStatusFilter === st ? 'var(--surface)' : 'transparent',
+                      color: pointageStatusFilter === st ? 'var(--accent-strong)' : 'var(--muted)',
+                      cursor: 'pointer',
+                      boxShadow: pointageStatusFilter === st ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    }}
+                  >
+                    {st === 'TOUS' ? 'Tous' : st === 'PRESENT' ? 'Présents' : st === 'RETARD' ? 'Retards' : st === 'ABSENT' ? 'Absents' : 'Missions'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <MagnifyingGlass size={15} style={{ position: 'absolute', left: 8, color: 'var(--muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Rechercher par nom, matricule ou poste..."
+                  value={pointageSearchTerm}
+                  onChange={(e) => setPointageSearchTerm(e.target.value)}
+                  style={{
+                    padding: '6px 10px 6px 28px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
+                    color: 'var(--text)',
+                    fontSize: '0.8rem',
+                    width: 240,
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => {
+                  pointagesQuery.refetch()
+                  agentsQuery.refetch()
+                }}
+                title="Actualiser le registre"
+              >
+                <ArrowClockwise size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* TABLEAU DES POINTAGES DU REGISTRE */}
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Matricule & Collaborateur</th>
+                  <th>Poste & Agence</th>
+                  <th>Heure Arrivée</th>
+                  <th>Heure Sortie</th>
+                  <th>Méthode & Précision</th>
+                  <th>Température</th>
+                  <th>Statut Journalier</th>
+                  <th>Observations / Justification</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const allAgents = agentsQuery.data || []
+                  const currentPointages = (pointagesQuery.data || []).filter(
+                    (p: any) => (!selectedDatePointage || p.date === selectedDatePointage) && (!agenceId || p.agenceId === agenceId)
+                  )
+
+                  // Combine all agents with their clock-in
+                  const combinedRows = allAgents.map((ag: any) => {
+                    const pt = currentPointages.find((p: any) => p.agentId === ag.id)
+                    return {
+                      agent: ag,
+                      pointage: pt,
+                      effectiveStatut: pt?.statut || 'ABSENT',
+                    }
+                  })
+
+                  // Filter by status & search
+                  const filtered = combinedRows.filter(({ agent, pointage, effectiveStatut }) => {
+                    if (pointageStatusFilter !== 'TOUS' && effectiveStatut !== pointageStatusFilter) {
+                      return false
+                    }
+                    if (pointageSearchTerm) {
+                      const term = pointageSearchTerm.toLowerCase()
+                      const matchNom = agent.nom.toLowerCase().includes(term)
+                      const matchMat = (agent.matricule || '').toLowerCase().includes(term)
+                      const matchPoste = (agent.poste || '').toLowerCase().includes(term)
+                      if (!matchNom && !matchMat && !matchPoste) return false
+                    }
+                    return true
+                  })
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--muted)' }}>
+                          Aucun enregistrement de pointage correspondant aux critères pour cette date.
+                        </td>
+                      </tr>
+                    )
+                  }
+
+                  return filtered.map(({ agent, pointage, effectiveStatut }) => {
+                    const isPresent = effectiveStatut === 'PRESENT'
+                    const isRetard = effectiveStatut === 'RETARD'
+                    const isMission = effectiveStatut === 'MISSION'
+
+                    return (
+                      <tr key={agent.id}>
+                        <td>
+                          <strong>{agent.matricule}</strong>
+                          <div style={{ color: 'var(--text)', fontWeight: 600 }}>{agent.nom}</div>
+                        </td>
+                        <td>
+                          <div>{agent.poste}</div>
+                          <small style={{ color: 'var(--muted)' }}>
+                            {pointage?.agenceNom || `Agence #${agent.agenceId}`}
+                          </small>
+                        </td>
+                        <td>
+                          {pointage?.heureArrivee ? (
+                            <span style={{ fontWeight: 700, color: isRetard ? '#f59e0b' : '#10b981' }}>
+                              {pointage.heureArrivee}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>--:--</span>
+                          )}
+                        </td>
+                        <td>
+                          {pointage?.heureDepart ? (
+                            <span style={{ fontWeight: 600 }}>{pointage.heureDepart}</span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>--:--</span>
+                          )}
+                        </td>
+                        <td>
+                          {pointage ? (
+                            <div>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>
+                                {pointage.modePointage === 'EMPREINTE_DIGITALE'
+                                  ? 'Empreinte Digitale'
+                                  : pointage.modePointage === 'BADGE_RFID'
+                                  ? 'Badge RFID'
+                                  : pointage.modePointage || 'Manuel'}
+                              </span>
+                              {pointage.empreinteMatchScore && (
+                                <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700 }}>
+                                  Score : {pointage.empreinteMatchScore}%
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>Non pointé</span>
+                          )}
+                        </td>
+                        <td>
+                          {pointage?.temperature ? (
+                            <span>{pointage.temperature} °C</span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)' }}>--</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              background: isPresent
+                                ? '#10b98118'
+                                : isRetard
+                                ? '#f59e0b18'
+                                : isMission
+                                ? '#3b82f618'
+                                : '#ef444418',
+                              color: isPresent
+                                ? '#10b981'
+                                : isRetard
+                                ? '#f59e0b'
+                                : isMission
+                                ? '#3b82f6'
+                                : '#ef4444',
+                              border: `1px solid ${
+                                isPresent
+                                  ? '#10b98140'
+                                  : isRetard
+                                  ? '#f59e0b40'
+                                  : isMission
+                                  ? '#3b82f640'
+                                  : '#ef444440'
+                              }`,
+                            }}
+                          >
+                            {isPresent
+                              ? 'Présent'
+                              : isRetard
+                              ? 'Retard'
+                              : isMission
+                              ? 'En Mission'
+                              : 'Absent'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text)' }}>
+                            {pointage?.observations || (pointage ? 'Pointage conforme' : 'En attente d émargement')}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            onClick={() => {
+                              setEditingPointage(pointage || { agentId: agent.id, isNew: true })
+                              setPointageFormAgentId(agent.id)
+                              setPointageFormStatut(pointage?.statut || 'PRESENT')
+                              setPointageFormArrivee(pointage?.heureArrivee || '08:00:00')
+                              setPointageFormDepart(pointage?.heureDepart || '16:30:00')
+                              setPointageFormObservations(pointage?.observations || '')
+                              setShowPointageModal(true)
+                            }}
+                          >
+                            <PencilSimple size={13} />
+                            Justifier / Modifier
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ---------------- TAB 5 : PARAMÉTRAGE FISCAL & SOCIAL (CNSS, IPR, INPP, ONEM) ---------------- */}
       {activeTab === 'parametres-fiscaux' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1429,8 +1972,9 @@ export function PayrollPage() {
                 onChange={(e) => setRecalculerBrouillonsAuto(e.target.checked)}
                 style={{ cursor: 'pointer', width: 16, height: 16 }}
               />
-              <span style={{ color: 'var(--text)', fontWeight: 600 }}>
-                ⚡ Recalculer automatiquement tous les bulletins en brouillon pour {moisNoms[selectedMois - 1]} {selectedAnnee} avec ces nouveaux barèmes
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text)', fontWeight: 600 }}>
+                <Lightning size={16} weight="bold" style={{ color: 'var(--accent-strong)' }} />
+                Recalculer automatiquement tous les bulletins en brouillon pour {moisNoms[selectedMois - 1]} {selectedAnnee} avec ces nouveaux barèmes
               </span>
             </label>
 
@@ -1698,6 +2242,256 @@ export function PayrollPage() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <button className="primary-action" onClick={() => setVoucherAvance(null)}>Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RÉGULARISATION OU MODIFICATION DE POINTAGE RH */}
+      {showPointageModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 520 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Fingerprint size={22} weight="bold" style={{ color: 'var(--accent-strong)' }} />
+                <h3 style={{ margin: 0, color: 'var(--text)' }}>
+                  {editingPointage?.id ? 'Modifier / Justifier le Pointage' : 'Régulariser une Présence RH'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => {
+                  setShowPointageModal(false)
+                  setEditingPointage(null)
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (editingPointage?.id) {
+                  updatePointageMutation.mutate({
+                    id: editingPointage.id,
+                    data: {
+                      statut: pointageFormStatut,
+                      heureArrivee: pointageFormArrivee,
+                      heureDepart: pointageFormDepart,
+                      observations: pointageFormObservations,
+                    },
+                  })
+                } else {
+                  if (!pointageFormAgentId) {
+                    setActionError('Veuillez sélectionner un collaborateur')
+                    return
+                  }
+                  regulariserPointageMutation.mutate()
+                }
+              }}
+              style={{ display: 'grid', gap: 14 }}
+            >
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Collaborateur concerné :
+                </label>
+                <select
+                  value={pointageFormAgentId}
+                  onChange={(e) => setPointageFormAgentId(Number(e.target.value))}
+                  disabled={Boolean(editingPointage?.id || editingPointage?.agentId)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  required
+                >
+                  <option value="">-- Choisir un collaborateur --</option>
+                  {(agentsQuery.data || []).map((ag: any) => (
+                    <option key={ag.id} value={ag.id}>
+                      {ag.matricule} - {ag.nom} ({ag.poste})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Statut de présence :
+                  </label>
+                  <select
+                    value={pointageFormStatut}
+                    onChange={(e: any) => setPointageFormStatut(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  >
+                    <option value="PRESENT">Présent (à l heure)</option>
+                    <option value="RETARD">Retard constaté / justifié</option>
+                    <option value="ABSENT">Absent</option>
+                    <option value="MISSION">En Mission officielle</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Date :
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedDatePointage}
+                    disabled={Boolean(editingPointage?.id)}
+                    onChange={(e) => setSelectedDatePointage(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Heure d arrivée :
+                  </label>
+                  <input
+                    type="text"
+                    value={pointageFormArrivee}
+                    onChange={(e) => setPointageFormArrivee(e.target.value)}
+                    placeholder="08:00:00"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Heure de départ :
+                  </label>
+                  <input
+                    type="text"
+                    value={pointageFormDepart}
+                    onChange={(e) => setPointageFormDepart(e.target.value)}
+                    placeholder="16:30:00"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Motif / Justification administrative :
+                </label>
+                <textarea
+                  rows={3}
+                  value={pointageFormObservations}
+                  onChange={(e) => setPointageFormObservations(e.target.value)}
+                  placeholder="Ex : Ordre de mission n° 045/DG, Certificat médical remis, Retard autorisé par le Chef d'Agence..."
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    setShowPointageModal(false)
+                    setEditingPointage(null)
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={regulariserPointageMutation.isPending || updatePointageMutation.isPending}
+                >
+                  {regulariserPointageMutation.isPending || updatePointageMutation.isPending
+                    ? 'Enregistrement...'
+                    : 'Valider le Registre'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SCANNER BIOMÉTRIQUE D'EMPREINTE DIGITALE */}
+      {showScanBiometriqueModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Fingerprint size={24} weight="bold" style={{ color: '#06b6d4' }} />
+                <h3 style={{ margin: 0, color: 'var(--text)' }}>Terminal Biométrique de Pointage</h3>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowScanBiometriqueModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, marginBottom: 16, textAlign: 'center' }}>
+              <div
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: '50%',
+                  background: 'var(--surface)',
+                  border: '2px solid #06b6d4',
+                  margin: '0 auto 12px',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <Fingerprint size={38} style={{ color: '#06b6d4' }} />
+              </div>
+              <strong style={{ fontSize: '0.92rem', display: 'block', color: 'var(--text)' }}>
+                Capteur Biométrique Prêt
+              </strong>
+              <small style={{ color: 'var(--muted)' }}>
+                Horodatage automatique • Détection arrivée / départ automatique
+              </small>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                Sélectionner le collaborateur :
+              </label>
+              <select
+                value={biometriqueScanAgentId}
+                onChange={(e) => setBiometriqueScanAgentId(e.target.value ? Number(e.target.value) : '')}
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '0.88rem' }}
+              >
+                <option value="">-- Choisir un collaborateur --</option>
+                {(agentsQuery.data || []).map((ag: any) => (
+                  <option key={ag.id} value={ag.id}>
+                    {ag.matricule} - {ag.nom} ({ag.poste})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowScanBiometriqueModal(false)}
+              >
+                Fermer
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                disabled={!biometriqueScanAgentId || scanBiometriqueMutation.isPending}
+                onClick={() => {
+                  if (biometriqueScanAgentId) {
+                    scanBiometriqueMutation.mutate(Number(biometriqueScanAgentId))
+                  }
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+              >
+                <Fingerprint size={16} />
+                {scanBiometriqueMutation.isPending ? 'Capture d empreinte...' : 'Valider le Scan Biométrique'}
+              </button>
             </div>
           </div>
         </div>
