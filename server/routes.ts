@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
-import type { DbEcritureComptable, DbArticle } from './db'
+import type { DbEcritureComptable, DbArticle, DbParametresFiscauxSociaux } from './db'
 import {
   agences,
   users,
@@ -27,6 +27,8 @@ import {
   operationsSync,
   categories,
   parametresEntreprise,
+  parametresFiscauxSociaux,
+  baremesFiscauxSociauxParDefaut,
   vehicules,
   rapprochementsBancaires,
   bonsLivraison,
@@ -3357,52 +3359,91 @@ router.get('/export/print/:type', (req: Request, res: Response) => {
 })
 
 
-// ----------------- CALCULATEUR OFFICIEL DE PAIE RDC (CNSS, IPR, INPP, ONEM) -----------------
+// ----------------- CALCULATEUR OFFICIEL DE PAIE RDC CONFIGURABLE (CNSS, IPR, INPP, ONEM) -----------------
 export function calculerLignePaieRdc(params: {
   salaireBase: number
   indemniteTransport?: number
   indemniteLogement?: number
   commissionsVentes?: number
   avancesDeduites?: number
+  nombreEnfantsACharge?: number
   devise?: 'USD' | 'CDF'
   tauxChange?: number
+  parametres?: DbParametresFiscauxSociaux
 }) {
+  const p = params.parametres || parametresFiscauxSociaux
   const salaireBase = Number(params.salaireBase || 0)
   const transport = Number(params.indemniteTransport || 0)
   const logement = Number(params.indemniteLogement || 0)
   const commissions = Number(params.commissionsVentes || 0)
   const avances = Number(params.avancesDeduites || 0)
+  const enfants = Math.max(0, Number(params.nombreEnfantsACharge || 0))
   const devise = params.devise || 'CDF'
   const taux = params.tauxChange || 2850
 
   const salaireBrut = Math.round((salaireBase + transport + logement + commissions) * 100) / 100
 
-  // Cotisations CNSS : QPO 5% employé, QPP 13% employeur
-  const cnssQpo = Math.round(salaireBrut * 0.05 * 100) / 100
-  const cnssQpp = Math.round(salaireBrut * 0.13 * 100) / 100
+  // Cotisations CNSS dynamiques : QPO (salarié) et QPP (patronal)
+  const qpoRate = Number(p.cnssQpoPourcent ?? 5) / 100
+  const qppRate = Number(p.cnssQppPourcent ?? 13) / 100
+  const cnssQpo = Math.round(salaireBrut * qpoRate * 100) / 100
+  const cnssQpp = Math.round(salaireBrut * qppRate * 100) / 100
 
   // Rémunération imposable = Brut - CNSS QPO
   const remunerationImposable = Math.max(0, Math.round((salaireBrut - cnssQpo) * 100) / 100)
 
-  // IPR selon le barème officiel progressif RDC (DGI)
+  // Conversion en CDF pour application des tranches si le salaire est libellé en USD
   const baseCdf = devise === 'CDF' ? remunerationImposable : remunerationImposable * taux
-  let iprCdf = 0
-  if (baseCdf <= 162000) {
-    iprCdf = baseCdf * 0.03
-  } else if (baseCdf <= 1800000) {
-    iprCdf = 162000 * 0.03 + (baseCdf - 162000) * 0.15
-  } else if (baseCdf <= 3600000) {
-    iprCdf = 162000 * 0.03 + (1800000 - 162000) * 0.15 + (baseCdf - 1800000) * 0.30
-  } else {
-    iprCdf = 162000 * 0.03 + (1800000 - 162000) * 0.15 + (3600000 - 1800000) * 0.30 + (baseCdf - 3600000) * 0.40
-  }
-  // Plafond légal : maximum 30% de la rémunération imposable
-  iprCdf = Math.min(iprCdf, baseCdf * 0.30)
-  const ipr = devise === 'CDF' ? Math.round(iprCdf) : Math.round((iprCdf / taux) * 100) / 100
 
-  // Charges patronales : INPP 3,5% et ONEM 0,5%
-  const inpp = Math.round(salaireBrut * 0.035 * 100) / 100
-  const onem = Math.round(salaireBrut * 0.005 * 100) / 100
+  // Calcul dynamique IPR selon les tranches configurées
+  const tranches = [...(p.tranchesIpr || [])].sort(
+    (a, b) => (a.ordre ?? 0) - (b.ordre ?? 0) || a.limiteInferieureCdf - b.limiteInferieureCdf
+  )
+
+  let iprBrutCdf = 0
+  if (tranches.length === 0) {
+    iprBrutCdf = baseCdf * 0.15
+  } else {
+    for (const tr of tranches) {
+      const inf = Number(tr.limiteInferieureCdf || 0)
+      const sup =
+        tr.limiteSuperieureCdf !== null &&
+        tr.limiteSuperieureCdf !== undefined &&
+        Number(tr.limiteSuperieureCdf) > 0
+          ? Number(tr.limiteSuperieureCdf)
+          : Infinity
+      const rate = Number(tr.tauxPourcent || 0) / 100
+
+      if (baseCdf > inf) {
+        const montantDansTranche = Math.min(baseCdf, sup) - inf
+        if (montantDansTranche > 0) {
+          iprBrutCdf += montantDansTranche * rate
+        }
+      }
+    }
+  }
+
+  // Réduction pour charges de famille (ex: 2% par enfant à charge, max 9 enfants)
+  const maxEnfants = Number(p.maxEnfantsDeductibles ?? 9)
+  const tauxDeductionParEnfant = Number(p.deductionEnfantPourcent ?? 2) / 100
+  const enfantsDeductibles = Math.min(enfants, maxEnfants)
+  const totalReductionFamillePourcent = enfantsDeductibles * tauxDeductionParEnfant
+  let iprApresReductionCdf = Math.max(0, iprBrutCdf * (1 - totalReductionFamillePourcent))
+
+  // Plafond légal de retenue IPR (ex: 30% du brut imposable) si actif
+  if (p.appliquerPlafondIpr !== false) {
+    const plafondRate = Number(p.plafondIprPourcent ?? 30) / 100
+    const plafondMaxCdf = baseCdf * plafondRate
+    iprApresReductionCdf = Math.min(iprApresReductionCdf, plafondMaxCdf)
+  }
+
+  const ipr = devise === 'CDF' ? Math.round(iprApresReductionCdf) : Math.round((iprApresReductionCdf / taux) * 100) / 100
+
+  // Charges patronales dynamiques : INPP et ONEM
+  const inppRate = Number(p.inppPourcent ?? 3.5) / 100
+  const onemRate = Number(p.onemPourcent ?? 0.5) / 100
+  const inpp = Math.round(salaireBrut * inppRate * 100) / 100
+  const onem = Math.round(salaireBrut * onemRate * 100) / 100
 
   // Net à payer = Rémunération imposable - IPR - Avances déduites
   const netAPayer = Math.max(0, Math.round((remunerationImposable - ipr - avances) * 100) / 100)
@@ -3422,6 +3463,17 @@ export function calculerLignePaieRdc(params: {
     avancesDeduites: avances,
     netAPayer,
     devise,
+    nombreEnfantsACharge: enfants,
+    detailsCalcul: {
+      tauxCnssQpo: p.cnssQpoPourcent,
+      tauxCnssQpp: p.cnssQppPourcent,
+      tauxInpp: p.inppPourcent,
+      tauxOnem: p.onemPourcent,
+      deductionFamillePourcent: Math.round(totalReductionFamillePourcent * 100 * 10) / 10,
+      iprBrutCdf: Math.round(iprBrutCdf),
+      iprFinalCdf: Math.round(iprApresReductionCdf),
+      nombreTranches: tranches.length,
+    },
   }
 }
 
@@ -3462,6 +3514,7 @@ router.get(['/paie/feuille-paie/document', '/rh/feuille-paie/document', '/rh/liv
         indemniteLogement: ag.indemniteLogement,
         commissionsVentes: 0,
         avancesDeduites: 0,
+        nombreEnfantsACharge: ag.nombreEnfantsACharge,
         devise: ag.devise || 'CDF',
       })
       return {
@@ -7046,6 +7099,7 @@ router.post('/rh/agents', (req: Request, res: Response) => {
     indemniteLogement,
     tauxCommission,
     devise,
+    nombreEnfantsACharge,
   } = req.body
   const numAg = toInt(agenceId) || 1
   const nouvelAgent = {
@@ -7061,6 +7115,7 @@ router.post('/rh/agents', (req: Request, res: Response) => {
     indemniteLogement: Number(indemniteLogement) || 0,
     tauxCommission: Number(tauxCommission) || 0,
     devise: (devise as 'USD' | 'CDF') || 'CDF',
+    nombreEnfantsACharge: nombreEnfantsACharge !== undefined ? Math.max(0, Number(nombreEnfantsACharge)) : 0,
     actif: true,
   }
   agents.push(nouvelAgent)
@@ -7085,6 +7140,7 @@ router.put('/rh/agents/:id', (req: Request, res: Response) => {
     indemniteLogement,
     tauxCommission,
     devise,
+    nombreEnfantsACharge,
     actif,
   } = req.body
 
@@ -7097,6 +7153,7 @@ router.put('/rh/agents/:id', (req: Request, res: Response) => {
   if (indemniteLogement !== undefined) agent.indemniteLogement = Number(indemniteLogement)
   if (tauxCommission !== undefined) agent.tauxCommission = Number(tauxCommission)
   if (devise) agent.devise = devise
+  if (nombreEnfantsACharge !== undefined) agent.nombreEnfantsACharge = Math.max(0, Number(nombreEnfantsACharge))
   if (actif !== undefined) agent.actif = Boolean(actif)
 
   logAudit(currentUser.nom, 'MODIFICATION_AGENT', `Mise à jour agent ${agent.nom}`, agent.agenceId)
@@ -7258,6 +7315,7 @@ router.get('/rh/feuille-paie', (req: Request, res: Response) => {
         indemniteLogement: ag.indemniteLogement,
         commissionsVentes: 0,
         avancesDeduites: 0,
+        nombreEnfantsACharge: ag.nombreEnfantsACharge,
         devise: ag.devise || 'CDF',
       })
       return {
@@ -7347,6 +7405,7 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
     indemniteLogement: agent.indemniteLogement,
     commissionsVentes,
     avancesDeduites,
+    nombreEnfantsACharge: agent.nombreEnfantsACharge,
     devise: agent.devise || 'CDF',
   })
 
@@ -7357,6 +7416,7 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
 
   if (bulletinExistant) {
     bulletinExistant.categorie = agent.categorie || 'I'
+    bulletinExistant.nombreEnfantsACharge = agent.nombreEnfantsACharge || 0
     bulletinExistant.salaireBase = calc.salaireBase
     bulletinExistant.indemniteTransport = calc.indemniteTransport
     bulletinExistant.indemniteLogement = calc.indemniteLogement
@@ -7428,12 +7488,14 @@ router.post('/rh/feuille-paie/generer-mois', (req: Request, res: Response) => {
       indemniteLogement: agent.indemniteLogement,
       commissionsVentes,
       avancesDeduites,
+      nombreEnfantsACharge: agent.nombreEnfantsACharge,
       devise: agent.devise || 'CDF',
     })
 
     let existing = bulletinsPaie.find((b) => b.agentId === agent.id && b.mois === m && b.annee === y)
     if (existing) {
       existing.categorie = agent.categorie || 'I'
+      existing.nombreEnfantsACharge = agent.nombreEnfantsACharge || 0
       existing.salaireBase = calc.salaireBase
       existing.indemniteTransport = calc.indemniteTransport
       existing.indemniteLogement = calc.indemniteLogement
@@ -7706,6 +7768,211 @@ router.post('/rh/feuille-paie/payer-tout', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'PAIEMENT_FEUILLE_PAIE_COMPLETE', `Décaissement et paiement global de la paie ${m}/${y} pour ${totalNet.toLocaleString()} ${devise} (${targets.length} salariés)`, numAg)
   res.json({ message: 'Paie globale décaissée avec succès', totalPaye: totalNet, count: targets.length })
+})
+
+// ----------------- PARAMÉTRAGE DYNAMIQUE FISCAL & SOCIAL DE LA PAIE (CNSS, IPR, INPP, ONEM) -----------------
+router.get('/rh/parametres-fiscaux', (_req: Request, res: Response) => {
+  res.json({
+    parametres: parametresFiscauxSociaux,
+    defauts: baremesFiscauxSociauxParDefaut,
+  })
+})
+
+router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const isAllowed =
+    currentUser.role === 'SUPER_ADMIN' ||
+    currentUser.role === 'ADMIN_SIEGE' ||
+    currentUser.role === 'COMPTABLE_SENIOR' ||
+    currentUser.role === 'COMPTABLE'
+  if (!isAllowed) {
+    return res.status(403).json({
+      message: 'Seul un Administrateur ou le service Comptable peut modifier les barèmes fiscaux et sociaux.',
+    })
+  }
+
+  const {
+    cnssQpoPourcent,
+    cnssQppPourcent,
+    inppPourcent,
+    onemPourcent,
+    deductionEnfantPourcent,
+    maxEnfantsDeductibles,
+    appliquerPlafondIpr,
+    plafondIprPourcent,
+    smigJournalierCdf,
+    deviseReferenceBareme,
+    tranchesIpr,
+    recalculerBrouillons,
+  } = req.body
+
+  if (cnssQpoPourcent !== undefined) {
+    const val = Number(cnssQpoPourcent)
+    if (isNaN(val) || val < 0 || val > 50) return res.status(400).json({ message: 'Taux CNSS QPO invalide (doit être entre 0% et 50%)' })
+    parametresFiscauxSociaux.cnssQpoPourcent = val
+  }
+
+  if (cnssQppPourcent !== undefined) {
+    const val = Number(cnssQppPourcent)
+    if (isNaN(val) || val < 0 || val > 50) return res.status(400).json({ message: 'Taux CNSS QPP invalide (doit être entre 0% et 50%)' })
+    parametresFiscauxSociaux.cnssQppPourcent = val
+  }
+
+  if (inppPourcent !== undefined) {
+    const val = Number(inppPourcent)
+    if (isNaN(val) || val < 0 || val > 50) return res.status(400).json({ message: 'Taux INPP invalide (doit être entre 0% et 50%)' })
+    parametresFiscauxSociaux.inppPourcent = val
+  }
+
+  if (onemPourcent !== undefined) {
+    const val = Number(onemPourcent)
+    if (isNaN(val) || val < 0 || val > 50) return res.status(400).json({ message: 'Taux ONEM invalide (doit être entre 0% et 50%)' })
+    parametresFiscauxSociaux.onemPourcent = val
+  }
+
+  if (deductionEnfantPourcent !== undefined) {
+    const val = Number(deductionEnfantPourcent)
+    if (isNaN(val) || val < 0 || val > 20) return res.status(400).json({ message: 'Taux déduction enfant invalide (doit être entre 0% et 20%)' })
+    parametresFiscauxSociaux.deductionEnfantPourcent = val
+  }
+
+  if (maxEnfantsDeductibles !== undefined) {
+    const val = Number(maxEnfantsDeductibles)
+    if (isNaN(val) || val < 0 || val > 30) return res.status(400).json({ message: 'Nombre maximal d enfants invalide' })
+    parametresFiscauxSociaux.maxEnfantsDeductibles = val
+  }
+
+  if (appliquerPlafondIpr !== undefined) {
+    parametresFiscauxSociaux.appliquerPlafondIpr = Boolean(appliquerPlafondIpr)
+  }
+
+  if (plafondIprPourcent !== undefined) {
+    const val = Number(plafondIprPourcent)
+    if (isNaN(val) || val < 1 || val > 100) return res.status(400).json({ message: 'Plafond légal IPR invalide (doit être entre 1% et 100%)' })
+    parametresFiscauxSociaux.plafondIprPourcent = val
+  }
+
+  if (smigJournalierCdf !== undefined) {
+    parametresFiscauxSociaux.smigJournalierCdf = Math.max(0, Number(smigJournalierCdf))
+  }
+
+  if (deviseReferenceBareme && (deviseReferenceBareme === 'CDF' || deviseReferenceBareme === 'USD')) {
+    parametresFiscauxSociaux.deviseReferenceBareme = deviseReferenceBareme
+  }
+
+  if (Array.isArray(tranchesIpr) && tranchesIpr.length > 0) {
+    parametresFiscauxSociaux.tranchesIpr = tranchesIpr.map((tr: any, idx: number) => ({
+      id: String(tr.id || `TR-${idx + 1}`),
+      ordre: Number(tr.ordre || idx + 1),
+      limiteInferieureCdf: Math.max(0, Number(tr.limiteInferieureCdf || 0)),
+      limiteSuperieureCdf:
+        tr.limiteSuperieureCdf !== null &&
+        tr.limiteSuperieureCdf !== undefined &&
+        Number(tr.limiteSuperieureCdf) > 0
+          ? Number(tr.limiteSuperieureCdf)
+          : null,
+      tauxPourcent: Number(tr.tauxPourcent || 0),
+      description: tr.description ? String(tr.description).trim() : `Tranche ${idx + 1}`,
+    }))
+  }
+
+  parametresFiscauxSociaux.derniereModification = new Date().toISOString()
+  parametresFiscauxSociaux.modifiePar = currentUser.nom
+
+  let countRecalcules = 0
+  if (recalculerBrouillons) {
+    const agId = recalculerBrouillons.agenceId ? toInt(recalculerBrouillons.agenceId) : undefined
+    const m = Number(recalculerBrouillons.mois)
+    const y = Number(recalculerBrouillons.annee)
+
+    const brouillons = bulletinsPaie.filter(
+      (b) => (!agId || b.agenceId === agId) && (!m || b.mois === m) && (!y || b.annee === y) && b.statut === 'BROUILLON'
+    )
+
+    brouillons.forEach((b) => {
+      const ag = agents.find((a) => a.id === b.agentId)
+      const calc = calculerLignePaieRdc({
+        salaireBase: b.salaireBase,
+        indemniteTransport: b.indemniteTransport,
+        indemniteLogement: b.indemniteLogement,
+        commissionsVentes: b.commissionsVentes,
+        avancesDeduites: b.avancesDeduites,
+        nombreEnfantsACharge: b.nombreEnfantsACharge || ag?.nombreEnfantsACharge,
+        devise: b.devise,
+        parametres: parametresFiscauxSociaux,
+      })
+      b.salaireBrut = calc.salaireBrut
+      b.cnssQpo = calc.cnssQpo
+      b.cnssQpp = calc.cnssQpp
+      b.remunerationImposable = calc.remunerationImposable
+      b.ipr = calc.ipr
+      b.inpp = calc.inpp
+      b.onem = calc.onem
+      b.netAPayer = calc.netAPayer
+      countRecalcules++
+    })
+  }
+
+  logAudit(
+    currentUser.nom,
+    'MAJ_PARAMETRES_FISC_SOCIAUX_PAIE',
+    `Mise à jour des barèmes fiscaux et sociaux (CNSS QPO: ${parametresFiscauxSociaux.cnssQpoPourcent}%, QPP: ${parametresFiscauxSociaux.cnssQppPourcent}%, INPP: ${parametresFiscauxSociaux.inppPourcent}%, ONEM: ${parametresFiscauxSociaux.onemPourcent}%, ${parametresFiscauxSociaux.tranchesIpr.length} tranches IPR). ${countRecalcules > 0 ? `${countRecalcules} bulletins brouillons recalculés.` : ''}`
+  )
+
+  res.json({
+    message: `Barèmes fiscaux et sociaux enregistrés avec succès.${countRecalcules > 0 ? ` ${countRecalcules} bulletin(s) en brouillon recalculé(s) automatiquement.` : ''}`,
+    parametres: parametresFiscauxSociaux,
+    countRecalcules,
+  })
+})
+
+router.post('/rh/parametres-fiscaux/reinitialiser', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  if (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE' && currentUser.role !== 'COMPTABLE_SENIOR') {
+    return res.status(403).json({ message: 'Seul un Administrateur ou Comptable Senior peut réinitialiser les barèmes officiels.' })
+  }
+
+  Object.assign(parametresFiscauxSociaux, JSON.parse(JSON.stringify(baremesFiscauxSociauxParDefaut)))
+  parametresFiscauxSociaux.derniereModification = new Date().toISOString()
+  parametresFiscauxSociaux.modifiePar = `Réinitialisé par ${currentUser.nom}`
+
+  logAudit(currentUser.nom, 'RESET_PARAMETRES_FISC_SOCIAUX_PAIE', 'Réinitialisation des barèmes fiscaux et sociaux aux normes officielles DGI & CNSS RDC')
+  res.json({
+    message: 'Barèmes réinitialisés aux valeurs légales officielles DGI & CNSS RDC.',
+    parametres: parametresFiscauxSociaux,
+  })
+})
+
+router.post('/rh/parametres-fiscaux/simuler', (req: Request, res: Response) => {
+  const {
+    salaireBase,
+    indemniteTransport,
+    indemniteLogement,
+    commissionsVentes,
+    avancesDeduites,
+    nombreEnfantsACharge,
+    devise,
+    tauxChange,
+    parametres,
+  } = req.body
+
+  const simulation = calculerLignePaieRdc({
+    salaireBase: Number(salaireBase || 0),
+    indemniteTransport: Number(indemniteTransport || 0),
+    indemniteLogement: Number(indemniteLogement || 0),
+    commissionsVentes: Number(commissionsVentes || 0),
+    avancesDeduites: Number(avancesDeduites || 0),
+    nombreEnfantsACharge: Number(nombreEnfantsACharge || 0),
+    devise: devise || 'CDF',
+    tauxChange: Number(tauxChange || 2850),
+    parametres: parametres || parametresFiscauxSociaux,
+  })
+
+  res.json(simulation)
 })
 
 // ----------------- ADMIN & ROLES -----------------

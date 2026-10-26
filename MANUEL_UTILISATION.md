@@ -33,6 +33,7 @@
     - 10.1 Barème Progressif Officiel IPR (DGI 3% à 40%)
     - 10.2 Charges Sociales & Patronales (CNSS, INPP, ONEM)
     - 10.3 Feuille de Paie Collective 14 Colonnes & Bulletins Individuels
+    - 10.4 Moteur Paramétrique & Barèmes Dynamiques (Zero-Code)
 11. [Module 9 : Flotte, Logistique & Bons de Livraison](#11-module-9--flotte-logistique--bons-de-livraison)
 12. [Module 10 : Maintenance des Équipements de Production](#12-module-10--maintenance-des-équipements-de-production)
 13. [Module 11 : Procédures de Contrôle Interne, Clôtures & Sauvegardes](#13-module-11--procédures-de-contrôle-interne-clôtures--sauvegardes)
@@ -285,6 +286,13 @@ L'Impôt Professionnel sur les Rémunérations est calculé par tranches progres
   `N° | Matricule | Noms & Post-noms | Fonction | Salaire Base | Transport | Logement | Salaire Brut | CNSS 5% | Base Imposable | IPR DGI | Total Retenues | Net à Payer | Emargement`
 * **Blocs de validation officiels :** Espaces réservés aux signatures de la Direction des Ressources Humaines, de la Direction Administrative et Financière, et de la Direction Générale.
 * **Bulletins de Paie Individuels :** Fiches individuelles détachables imprimables pour chaque employé.
+
+### 10.4 Moteur Paramétrique & Barèmes Dynamiques (Sans Modification de Code)
+Pour anticiper toute évolution législative ou fiscale en République Démocratique du Congo ou à l'international, l'application intègre un **module de paramétrage dynamique des barèmes** accessible depuis l'interface :
+* **Cotisations sociales et patronales configurables :** Les pourcentages CNSS Salarié (QPO), CNSS Patronale (QPP), INPP et ONEM sont éditables à tout moment.
+* **Barème progressif IPR par tranches marginales :** Possibilité d'ajuster les bornes inférieures et supérieures de chaque tranche en CDF, de modifier les taux (3%, 15%, 30%, 40%) et d'ajouter ou supprimer des tranches fiscales.
+* **Charges de famille & Plafond légal :** Déduction par enfant à charge (2% par défaut) et plafond légal de retenue IPR (30% du salaire imposable) entièrement paramétrables.
+* **Simulateur en direct & Recalcul en un clic :** Un banc d'essai interactif permet de simuler instantanément l'impact financier de nouveaux barèmes sur un salaire test, et de recalculer automatiquement l'ensemble des bulletins en brouillon du mois sans redémarrage serveur ni intervention dans le code source.
 
 ---
 

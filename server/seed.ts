@@ -31,6 +31,7 @@ import type {
   DbReceptionPontBascule,
   DbImmobilisation,
   DbAppareil,
+  DbParametresFiscauxSociaux,
 } from './db'
 
 export const agences: DbAgence[] = [
@@ -1462,6 +1463,59 @@ export let parametresEntreprise: DbParametresEntreprise = {
   plafondDepenseDirecteAgenceUsd: 100,
   doubleValidationTransfertObligatoire: true,
 }
+
+export const baremesFiscauxSociauxParDefaut: DbParametresFiscauxSociaux = {
+  cnssQpoPourcent: 5.0,
+  cnssQppPourcent: 13.0,
+  inppPourcent: 3.5,
+  onemPourcent: 0.5,
+  deductionEnfantPourcent: 2.0,
+  maxEnfantsDeductibles: 9,
+  appliquerPlafondIpr: true,
+  plafondIprPourcent: 30.0,
+  smigJournalierCdf: 7079,
+  deviseReferenceBareme: 'CDF',
+  tranchesIpr: [
+    {
+      id: 'TR-1',
+      ordre: 1,
+      limiteInferieureCdf: 0,
+      limiteSuperieureCdf: 162000,
+      tauxPourcent: 3,
+      description: 'Tranche 1 (0 à 162 000 CDF / mois - Barème DGI)',
+    },
+    {
+      id: 'TR-2',
+      ordre: 2,
+      limiteInferieureCdf: 162000,
+      limiteSuperieureCdf: 1800000,
+      tauxPourcent: 15,
+      description: 'Tranche 2 (162 000 à 1 800 000 CDF / mois - Barème DGI)',
+    },
+    {
+      id: 'TR-3',
+      ordre: 3,
+      limiteInferieureCdf: 1800000,
+      limiteSuperieureCdf: 3600000,
+      tauxPourcent: 30,
+      description: 'Tranche 3 (1 800 000 à 3 600 000 CDF / mois - Barème DGI)',
+    },
+    {
+      id: 'TR-4',
+      ordre: 4,
+      limiteInferieureCdf: 3600000,
+      limiteSuperieureCdf: null,
+      tauxPourcent: 40,
+      description: 'Tranche 4 (Au-delà de 3 600 000 CDF / mois - Barème DGI)',
+    },
+  ],
+  derniereModification: '2026-09-01T00:00:00Z',
+  modifiePar: 'Barème Officiel DGI & CNSS RDC',
+}
+
+export let parametresFiscauxSociaux: DbParametresFiscauxSociaux = JSON.parse(
+  JSON.stringify(baremesFiscauxSociauxParDefaut)
+)
 
 export const vehicules: DbVehicule[] = [
   {

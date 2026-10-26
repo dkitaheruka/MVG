@@ -316,6 +316,7 @@ export interface DbAgent {
   indemniteLogement?: number
   tauxCommission: number
   devise?: 'USD' | 'CDF'
+  nombreEnfantsACharge?: number
   actif: boolean
 }
 
@@ -341,6 +342,7 @@ export interface DbBulletinPaie {
   mois: number
   annee: number
   categorie?: string
+  nombreEnfantsACharge?: number
   salaireBase: number
   indemniteTransport?: number
   indemniteLogement?: number
@@ -510,6 +512,32 @@ export interface DbImmobilisation {
   agenceId: number
   statut: 'ACTIF' | 'REBUTE' | 'CEDE'
   emplacement: string
+}
+
+// 5. Paramétrage Dynamique Fiscal & Social de la Paie (CNSS, IPR, INPP, ONEM, Tranches)
+export interface DbTrancheIpr {
+  id: string
+  ordre: number
+  limiteInferieureCdf: number
+  limiteSuperieureCdf: number | null // null = illimité (au-delà)
+  tauxPourcent: number
+  description?: string
+}
+
+export interface DbParametresFiscauxSociaux {
+  cnssQpoPourcent: number // Taux salarié (QPO, ex: 5%)
+  cnssQppPourcent: number // Taux patronal (QPP, ex: 13%)
+  inppPourcent: number // Taux INPP employeur (ex: 3.5%)
+  onemPourcent: number // Taux ONEM employeur (ex: 0.5%)
+  deductionEnfantPourcent: number // Réduction IPR par enfant à charge (ex: 2%)
+  maxEnfantsDeductibles: number // Plafond d'enfants pour déduction (ex: 9)
+  appliquerPlafondIpr: boolean // Activer ou non le plafond légal de l'IPR
+  plafondIprPourcent: number // Plafond légal de retenue IPR sur le brut imposable (ex: 30%)
+  smigJournalierCdf?: number // SMIG journalier de référence (optionnel)
+  deviseReferenceBareme: 'CDF' | 'USD'
+  tranchesIpr: DbTrancheIpr[]
+  derniereModification?: string
+  modifiePar?: string
 }
 
 

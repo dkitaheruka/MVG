@@ -15,6 +15,12 @@ import {
   ArrowClockwise,
   ShieldCheck,
   Money,
+  Gear,
+  SlidersHorizontal,
+  Calculator,
+  Trash,
+  ArrowCounterClockwise,
+  Info,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
@@ -31,7 +37,7 @@ export function PayrollPage() {
   )
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
-  const [activeTab, setActiveTab] = useState<'feuille-paie' | 'bulletins' | 'avances' | 'agents'>('feuille-paie')
+  const [activeTab, setActiveTab] = useState<'feuille-paie' | 'bulletins' | 'avances' | 'agents' | 'parametres-fiscaux'>('feuille-paie')
   const [selectedMois, setSelectedMois] = useState<number>(9)
   const [selectedAnnee, setSelectedAnnee] = useState<number>(2026)
 
@@ -54,6 +60,7 @@ export function PayrollPage() {
   const [agentLogement, setAgentLogement] = useState('0')
   const [agentCommission, setAgentCommission] = useState('0')
   const [agentDevise, setAgentDevise] = useState<'USD' | 'CDF'>('CDF')
+  const [agentEnfants, setAgentEnfants] = useState('0')
 
   // Form states for advance
   const [avanceAgentId, setAvanceAgentId] = useState<number | ''>(5)
@@ -65,6 +72,25 @@ export function PayrollPage() {
   const [bulletinAgentId, setBulletinAgentId] = useState<number | ''>(5)
   const [bulletinMois, setBulletinMois] = useState(9)
   const [bulletinAnnee, setBulletinAnnee] = useState(2026)
+
+  // Paramétrage fiscal & social dynamique
+  const [fiscalFormLoaded, setFiscalFormLoaded] = useState(false)
+  const [cnssQpo, setCnssQpo] = useState<number>(5.0)
+  const [cnssQpp, setCnssQpp] = useState<number>(13.0)
+  const [inpp, setInpp] = useState<number>(3.5)
+  const [onem, setOnem] = useState<number>(0.5)
+  const [deductionEnfant, setDeductionEnfant] = useState<number>(2.0)
+  const [maxEnfants, setMaxEnfants] = useState<number>(9)
+  const [appliquerPlafondIpr, setAppliquerPlafondIpr] = useState<boolean>(true)
+  const [plafondIpr, setPlafondIpr] = useState<number>(30.0)
+  const [smigJournalier, setSmigJournalier] = useState<number>(7079)
+  const [tranchesIpr, setTranchesIpr] = useState<any[]>([])
+  const [recalculerBrouillonsAuto, setRecalculerBrouillonsAuto] = useState<boolean>(true)
+
+  // Simulateur fiscal en direct
+  const [simulBrut, setSimulBrut] = useState<string>('559000')
+  const [simulEnfants, setSimulEnfants] = useState<number>(0)
+  const [simulDevise, setSimulDevise] = useState<'CDF' | 'USD'>('CDF')
 
   const moisNoms = [
     'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -99,6 +125,28 @@ export function PayrollPage() {
     enabled: Boolean(token),
   })
 
+  const parametresFiscauxQuery = useQuery({
+    queryKey: ['rh-parametres-fiscaux'],
+    queryFn: () => apiRequest<{ parametres: any; defauts: any }>('/api/rh/parametres-fiscaux', { token }),
+    enabled: Boolean(token),
+  })
+
+  // Synchronisation initiale du formulaire des barèmes
+  if (parametresFiscauxQuery.data?.parametres && !fiscalFormLoaded) {
+    const p = parametresFiscauxQuery.data.parametres
+    setCnssQpo(p.cnssQpoPourcent ?? 5.0)
+    setCnssQpp(p.cnssQppPourcent ?? 13.0)
+    setInpp(p.inppPourcent ?? 3.5)
+    setOnem(p.onemPourcent ?? 0.5)
+    setDeductionEnfant(p.deductionEnfantPourcent ?? 2.0)
+    setMaxEnfants(p.maxEnfantsDeductibles ?? 9)
+    setAppliquerPlafondIpr(p.appliquerPlafondIpr ?? true)
+    setPlafondIpr(p.plafondIprPourcent ?? 30.0)
+    setSmigJournalier(p.smigJournalierCdf ?? 7079)
+    setTranchesIpr(p.tranchesIpr ? JSON.parse(JSON.stringify(p.tranchesIpr)) : [])
+    setFiscalFormLoaded(true)
+  }
+
   const createAgentMutation = useMutation({
     mutationFn: () =>
       apiRequest('/api/rh/agents', {
@@ -115,6 +163,7 @@ export function PayrollPage() {
           indemniteLogement: Number(agentLogement),
           tauxCommission: Number(agentCommission),
           devise: agentDevise,
+          nombreEnfantsACharge: Number(agentEnfants || 0),
         }),
       }),
     onSuccess: () => {
@@ -123,11 +172,140 @@ export function PayrollPage() {
       setShowNewAgentModal(false)
       setAgentNom('')
       setAgentTel('')
+      setAgentEnfants('0')
       setActionError(null)
       setActionSuccess('Collaborateur enregistré avec succès !')
     },
     onError: (err: any) => setActionError(err.message || 'Erreur création collaborateur'),
   })
+
+  const sauvegarderParametresMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/rh/parametres-fiscaux', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify({
+          cnssQpoPourcent: Number(cnssQpo),
+          cnssQppPourcent: Number(cnssQpp),
+          inppPourcent: Number(inpp),
+          onemPourcent: Number(onem),
+          deductionEnfantPourcent: Number(deductionEnfant),
+          maxEnfantsDeductibles: Number(maxEnfants),
+          appliquerPlafondIpr: Boolean(appliquerPlafondIpr),
+          plafondIprPourcent: Number(plafondIpr),
+          smigJournalierCdf: Number(smigJournalier),
+          deviseReferenceBareme: 'CDF',
+          tranchesIpr: tranchesIpr,
+          recalculerBrouillons: recalculerBrouillonsAuto
+            ? { agenceId, mois: selectedMois, annee: selectedAnnee }
+            : undefined,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['rh-parametres-fiscaux'] })
+      queryClient.invalidateQueries({ queryKey: ['rh-feuille-paie'] })
+      queryClient.invalidateQueries({ queryKey: ['rh-bulletins'] })
+      setActionError(null)
+      setActionSuccess(data.message || 'Barèmes fiscaux et sociaux enregistrés avec succès !')
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur enregistrement barèmes'),
+  })
+
+  const resetParametresMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/rh/parametres-fiscaux/reinitialiser', {
+        method: 'POST',
+        token,
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['rh-parametres-fiscaux'] })
+      queryClient.invalidateQueries({ queryKey: ['rh-feuille-paie'] })
+      queryClient.invalidateQueries({ queryKey: ['rh-bulletins'] })
+      setFiscalFormLoaded(false)
+      setActionError(null)
+      setActionSuccess('Barèmes réinitialisés aux normes officielles DGI & CNSS RDC.')
+    },
+    onError: (err: any) => setActionError(err.message || 'Erreur réinitialisation barèmes'),
+  })
+
+  const ajouterTranche = () => {
+    const lastTranche = tranchesIpr[tranchesIpr.length - 1]
+    const inf = lastTranche?.limiteSuperieureCdf ? Number(lastTranche.limiteSuperieureCdf) : 3600000
+    const newTranche = {
+      id: `TR-${tranchesIpr.length + 1}`,
+      ordre: tranchesIpr.length + 1,
+      limiteInferieureCdf: inf,
+      limiteSuperieureCdf: null,
+      tauxPourcent: 40,
+      description: `Tranche ${tranchesIpr.length + 1}`,
+    }
+    setTranchesIpr([...tranchesIpr, newTranche])
+  }
+
+  const modifierTranche = (index: number, field: string, value: any) => {
+    const copy = [...tranchesIpr]
+    copy[index] = { ...copy[index], [field]: value }
+    setTranchesIpr(copy)
+  }
+
+  const supprimerTranche = (index: number) => {
+    if (tranchesIpr.length <= 1) {
+      alert('Vous devez conserver au moins une tranche d imposition.')
+      return
+    }
+    const copy = tranchesIpr.filter((_, i) => i !== index)
+    setTranchesIpr(copy)
+  }
+
+  // Calculateur de simulation local en direct
+  const simBrutNum = Number(simulBrut || 0)
+  const simQpoRate = Number(cnssQpo || 0) / 100
+  const simQppRate = Number(cnssQpp || 0) / 100
+  const simInppRate = Number(inpp || 0) / 100
+  const simOnemRate = Number(onem || 0) / 100
+
+  const simQpo = Math.round(simBrutNum * simQpoRate * 100) / 100
+  const simQpp = Math.round(simBrutNum * simQppRate * 100) / 100
+  const simImposable = Math.max(0, Math.round((simBrutNum - simQpo) * 100) / 100)
+  const simBaseCdf = simulDevise === 'CDF' ? simImposable : simImposable * 2850
+
+  const sortedTranches = [...tranchesIpr].sort(
+    (a, b) => (a.ordre || 0) - (b.ordre || 0) || Number(a.limiteInferieureCdf || 0) - Number(b.limiteInferieureCdf || 0)
+  )
+
+  let simIprBrutCdf = 0
+  const simTranchesDetail = sortedTranches.map((tr) => {
+    const inf = Number(tr.limiteInferieureCdf || 0)
+    const sup =
+      tr.limiteSuperieureCdf !== null && tr.limiteSuperieureCdf !== undefined && Number(tr.limiteSuperieureCdf) > 0
+        ? Number(tr.limiteSuperieureCdf)
+        : Infinity
+    const rate = Number(tr.tauxPourcent || 0) / 100
+    let assiette = 0
+    let impot = 0
+    if (simBaseCdf > inf) {
+      assiette = Math.min(simBaseCdf, sup) - inf
+      impot = assiette * rate
+      simIprBrutCdf += impot
+    }
+    return { ...tr, assiette, impot }
+  })
+
+  const simEnfantsDeduct = Math.min(Math.max(0, Number(simulEnfants || 0)), Number(maxEnfants || 9))
+  const simDeductionTaux = Number(deductionEnfant || 0) / 100
+  const simReductionFamillePct = simEnfantsDeduct * simDeductionTaux
+  let simIprApresReductionCdf = Math.max(0, simIprBrutCdf * (1 - simReductionFamillePct))
+
+  if (appliquerPlafondIpr) {
+    const plaf = simBaseCdf * (Number(plafondIpr || 30) / 100)
+    simIprApresReductionCdf = Math.min(simIprApresReductionCdf, plaf)
+  }
+
+  const simIpr = simulDevise === 'CDF' ? Math.round(simIprApresReductionCdf) : Math.round((simIprApresReductionCdf / 2850) * 100) / 100
+  const simInpp = Math.round(simBrutNum * simInppRate * 100) / 100
+  const simOnem = Math.round(simBrutNum * simOnemRate * 100) / 100
+  const simNetAPayer = Math.max(0, Math.round((simImposable - simIpr) * 100) / 100)
+  const simCoutTotalEmployeur = Math.round((simBrutNum + simQpp + simInpp + simOnem) * 100) / 100
 
   const createAvanceMutation = useMutation({
     mutationFn: () =>
@@ -395,6 +573,9 @@ export function PayrollPage() {
         </button>
         <button className={clsx('tab-button', activeTab === 'agents' && 'active')} onClick={() => setActiveTab('agents')}>
           <UsersThree size={17} /> Personnel & Rémunérations ({agentsQuery.data?.length ?? 0})
+        </button>
+        <button className={clsx('tab-button', activeTab === 'parametres-fiscaux' && 'active')} onClick={() => setActiveTab('parametres-fiscaux')}>
+          <SlidersHorizontal size={17} /> Barèmes & Taux (CNSS, IPR, INPP, ONEM)
         </button>
       </div>
 
@@ -856,6 +1037,417 @@ export function PayrollPage() {
         </div>
       )}
 
+      {/* ---------------- TAB 5 : PARAMÉTRAGE FISCAL & SOCIAL (CNSS, IPR, INPP, ONEM) ---------------- */}
+      {activeTab === 'parametres-fiscaux' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* BANNIÈRE D'INFORMATION GOUVERNANCE */}
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--surface)', display: 'grid', placeItems: 'center', border: '1px solid var(--border)' }}>
+                <SlidersHorizontal size={24} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>
+                  Paramétrage Dynamique des Barèmes Fiscaux & Sociaux
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  Ajustez les taux légaux (CNSS, IPR, INPP, ONEM) et les tranches d'imposition progressives. Tous les calculs de paie et livres de paie s'adapteront instantanément sans toucher au code source.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8rem', background: 'var(--surface)', padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                Dernière modification : <strong style={{ color: 'var(--text)' }}>{parametresFiscauxQuery.data?.parametres?.derniereModification ? new Date(parametresFiscauxQuery.data.parametres.derniereModification).toLocaleString('fr-FR') : 'Par défaut'}</strong>
+              </span>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => {
+                  if (confirm('Voulez-vous vraiment réinitialiser tous les barèmes aux taux légaux officiels DGI & CNSS RDC ?')) {
+                    resetParametresMutation.mutate()
+                  }
+                }}
+                disabled={resetParametresMutation.isPending}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
+                title="Rétablir les taux légaux standards de la RDC"
+              >
+                <ArrowCounterClockwise size={16} /> Réinitialiser Barèmes RDC
+              </button>
+            </div>
+          </div>
+
+          {/* GRILLE 2 COLONNES : TAUX & CHARGES + SIMULATEUR */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+            {/* CARTE 1 : COTISATIONS SOCIALES & TAXES PATRONALES */}
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <ShieldCheck size={20} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text)' }}>1. Cotisations Sociales & Patronales</h4>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>CNSS QPO (Salarié) % :</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="50"
+                    value={cnssQpo}
+                    onChange={(e) => setCnssQpo(Number(e.target.value))}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 600 }}
+                  />
+                  <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Quote-part ouvrière déduite du brut (Défaut : 5%)</small>
+                </label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>CNSS QPP (Employeur) % :</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="50"
+                    value={cnssQpp}
+                    onChange={(e) => setCnssQpp(Number(e.target.value))}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 600 }}
+                  />
+                  <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Quote-part patronale employeur (Défaut : 13%)</small>
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>INPP Employeur % :</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="50"
+                    value={inpp}
+                    onChange={(e) => setInpp(Number(e.target.value))}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 600 }}
+                  />
+                  <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Formation Pro employeur (Défaut : 3.5%)</small>
+                </label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>ONEM Employeur % :</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="50"
+                    value={onem}
+                    onChange={(e) => setOnem(Number(e.target.value))}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 600 }}
+                  />
+                  <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Office National de l'Emploi (Défaut : 0.5%)</small>
+                </label>
+              </div>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                <span>SMIG Journalier de Référence (CDF) :</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={smigJournalier}
+                  onChange={(e) => setSmigJournalier(Number(e.target.value))}
+                  style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                />
+                <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Salaire minimum interprofessionnel garanti (ex: 7 079 CDF/jour)</small>
+              </label>
+
+              {/* SOUS-SECTION : CHARGES DE FAMILLE & PLAFOND IPR */}
+              <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UsersThree size={18} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+                  <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text)' }}>2. Déductions Enfants & Plafond Légal IPR</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                    <span>Réduction par enfant % :</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="20"
+                      value={deductionEnfant}
+                      onChange={(e) => setDeductionEnfant(Number(e.target.value))}
+                      style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                    />
+                    <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Déduction sur l'IPR (Code DGI : 2% / enfant)</small>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                    <span>Max enfants déductibles :</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={maxEnfants}
+                      onChange={(e) => setMaxEnfants(Number(e.target.value))}
+                      style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                    />
+                    <small style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>Plafond légal DGI (Défaut : 9 enfants = 18%)</small>
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: 'var(--surface)', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.82rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={appliquerPlafondIpr}
+                      onChange={(e) => setAppliquerPlafondIpr(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>Appliquer le plafond légal de retenue IPR</span>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="100"
+                      disabled={!appliquerPlafondIpr}
+                      value={plafondIpr}
+                      onChange={(e) => setPlafondIpr(Number(e.target.value))}
+                      style={{ width: 60, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', textAlign: 'right', fontWeight: 700 }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>% du brut imposable</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CARTE 2 : SIMULATEUR FISCAL EN TEMPS RÉEL */}
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Calculator size={20} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text)' }}>Simulateur de Paie en Direct</h4>
+                </div>
+                <span style={{ fontSize: '0.75rem', background: 'var(--surface)', padding: '3px 8px', borderRadius: 4, color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  Calcul dynamique en direct
+                </span>
+              </div>
+
+              {/* INPUTS DE SIMULATION */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>Salaire Brut de test :</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={simulBrut}
+                    onChange={(e) => setSimulBrut(e.target.value)}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 700 }}
+                  />
+                </label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>Devise :</span>
+                  <select
+                    value={simulDevise}
+                    onChange={(e) => setSimulDevise(e.target.value as 'USD' | 'CDF')}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  >
+                    <option value="CDF">CDF</option>
+                    <option value="USD">USD ($)</option>
+                  </select>
+                </label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span>Enfants :</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="15"
+                    value={simulEnfants}
+                    onChange={(e) => setSimulEnfants(Number(e.target.value))}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', textAlign: 'center' }}
+                  />
+                </label>
+              </div>
+
+              {/* RÉSULTATS DÉTAILLÉS DE LA SIMULATION */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text)' }}>
+                  <span>Salaire Brut Total :</span>
+                  <strong>{simBrutNum.toLocaleString()} {simulDevise}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c' }}>
+                  <span>- Retenue CNSS QPO ({cnssQpo}%) :</span>
+                  <strong>-{simQpo.toLocaleString()} {simulDevise}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text)', borderTop: '1px dashed var(--border)', paddingTop: 6 }}>
+                  <span>= Rémunération Imposable :</span>
+                  <strong>{simImposable.toLocaleString()} {simulDevise}</strong>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c' }}>
+                  <span>- Retenue IPR Net ({simReductionFamillePct > 0 ? `réduction ${(simReductionFamillePct * 100).toFixed(0)}% charges famille comprise` : 'barème progressif'}) :</span>
+                  <strong>-{simIpr.toLocaleString()} {simulDevise}</strong>
+                </div>
+
+                <div style={{ borderTop: '2px solid var(--border)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: '1.05rem', fontWeight: 800 }}>
+                  <span style={{ color: 'var(--text)' }}>NET À PAYER SALARIÉ :</span>
+                  <span style={{ color: 'var(--success)' }}>{simNetAPayer.toLocaleString()} {simulDevise}</span>
+                </div>
+
+                {/* CHARGES PATRONALES EMPLOYEUR */}
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)', fontSize: '0.78rem', color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontWeight: 700, color: 'var(--text)' }}>Charges Patronales Employeur (hors brut) :</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>CNSS QPP ({cnssQpp}%) :</span>
+                    <span>+{simQpp.toLocaleString()} {simulDevise}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>INPP ({inpp}%) + ONEM ({onem}%) :</span>
+                    <span>+{(simInpp + simOnem).toLocaleString()} {simulDevise}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--text)', borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+                    <span>Coût Global Employeur :</span>
+                    <span>{simCoutTotalEmployeur.toLocaleString()} {simulDevise}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* CARTE 3 : TABLEAU DYNAMIQUE DES TRANCHES IPR (DGI RDC) */}
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.98rem', color: 'var(--text)' }}>
+                  3. Tranches d'Imposition Progressives de l'IPR (Barème DGI / CDF)
+                </h4>
+                <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                  Le barème fiscal progressif s'applique par tranche marginale sur la rémunération imposable mensuelle.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={ajouterTranche}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
+              >
+                <Plus size={16} /> + Ajouter une Tranche
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', width: 60 }}>Ordre</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'left' }}>Libellé / Désignation</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right', width: 180 }}>Borne Inférieure (CDF)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right', width: 180 }}>Borne Supérieure (CDF)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', width: 120 }}>Taux Appliqué</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', width: 80 }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tranchesIpr.map((tranche, idx) => (
+                    <tr key={tranche.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700 }}>
+                        {idx + 1}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <input
+                          value={tranche.description || ''}
+                          onChange={(e) => modifierTranche(idx, 'description', e.target.value)}
+                          placeholder={`Tranche ${idx + 1}`}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                        />
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={tranche.limiteInferieureCdf}
+                          onChange={(e) => modifierTranche(idx, 'limiteInferieureCdf', Number(e.target.value))}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', textAlign: 'right', fontWeight: 600 }}
+                        />
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Illimité (au-delà)"
+                            value={tranche.limiteSuperieureCdf ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? null : Number(e.target.value)
+                              modifierTranche(idx, 'limiteSuperieureCdf', val)
+                            }}
+                            style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', textAlign: 'right', fontWeight: 600 }}
+                          />
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="100"
+                            value={tranche.tauxPourcent}
+                            onChange={(e) => modifierTranche(idx, 'tauxPourcent', Number(e.target.value))}
+                            style={{ width: 60, padding: '5px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', textAlign: 'right', fontWeight: 700 }}
+                          />
+                          <span style={{ fontWeight: 700 }}>%</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => supprimerTranche(idx)}
+                          style={{ color: '#dc2626' }}
+                          title="Supprimer cette tranche"
+                        >
+                          <Trash size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* BARRE D'ACTIONS INFÉRIEURE : SAUVEGARDE & RECALCUL AUTOMATIQUE */}
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.88rem' }}>
+              <input
+                type="checkbox"
+                checked={recalculerBrouillonsAuto}
+                onChange={(e) => setRecalculerBrouillonsAuto(e.target.checked)}
+                style={{ cursor: 'pointer', width: 16, height: 16 }}
+              />
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>
+                ⚡ Recalculer automatiquement tous les bulletins en brouillon pour {moisNoms[selectedMois - 1]} {selectedAnnee} avec ces nouveaux barèmes
+              </span>
+            </label>
+
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => sauvegarderParametresMutation.mutate()}
+              disabled={sauvegarderParametresMutation.isPending}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', fontSize: '0.95rem', fontWeight: 700 }}
+            >
+              <CheckCircle size={18} weight="bold" />
+              {sauvegarderParametresMutation.isPending ? 'Enregistrement des barèmes...' : 'Enregistrer les Barèmes Fiscaux & Sociaux'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MODAL CALCULER UN BULLETIN */}
       {showGenerateBulletinModal && (
         <div className="modal-backdrop">
@@ -1002,10 +1594,14 @@ export function PayrollPage() {
                 </label>
               </div>
 
-              <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
                 <label>
                   Commission sur ventes (% commercial)
                   <input type="number" min="0" step="0.1" value={agentCommission} onChange={(e) => setAgentCommission(e.target.value)} />
+                </label>
+                <label>
+                  Enfants à charge (déduction légale IPR)
+                  <input type="number" min="0" max="15" value={agentEnfants} onChange={(e) => setAgentEnfants(e.target.value)} />
                 </label>
               </div>
 
