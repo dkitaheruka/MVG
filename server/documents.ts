@@ -1101,10 +1101,11 @@ export function renderBulletinPaieHtml(
   const primes = Number(bulletin.primes || 0)
   const brutTotal = salaireBase + commissions + primes
 
-  const cnssSalarie = Math.round(brutTotal * 0.05 * 100) / 100 // CNSS 5% part salarié
-  const ipr = Math.round(brutTotal * 0.10 * 100) / 100 // IPR indicatif
+  const cnssSalarie = Number(bulletin.cnssQpo || Math.round(brutTotal * 0.05 * 100) / 100)
+  const ipr = Number(bulletin.ipr || Math.round(brutTotal * 0.10 * 100) / 100)
   const avances = Number(bulletin.avancesDeduites || 0)
-  const totalRetenues = cnssSalarie + ipr + avances
+  const retenueRetards = Number(bulletin.retenueRetards || 0)
+  const totalRetenues = cnssSalarie + ipr + avances + retenueRetards
   const netAPayer = Number(bulletin.netAPayer || (brutTotal - totalRetenues))
 
   const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
@@ -1221,6 +1222,14 @@ export function renderBulletinPaieHtml(
         <td class="center">100%</td>
         <td class="right">-</td>
         <td class="right" style="color:#dc2626; font-weight:700;">-${avances.toFixed(2)}</td>
+      </tr>` : ''}
+      ${retenueRetards > 0 ? `
+      <tr>
+        <td><strong>Pénalité Disciplinaire pour Retards</strong> (${bulletin.retardsPenalises || 1} retard(s) pénalisé(s) sur ${bulletin.nombreRetardsDuMois || 1} constaté(s))</td>
+        <td class="center">${bulletin.retardsPenalises || 1} retard(s)</td>
+        <td class="center">Politique RH</td>
+        <td class="right">-</td>
+        <td class="right" style="color:#dc2626; font-weight:700;">-${retenueRetards.toFixed(2)}</td>
       </tr>` : ''}
     </tbody>
   </table>

@@ -1506,7 +1506,8 @@ tr:last-child td {
   body * {
     visibility: hidden;
   }
-  .voucher-ticket, .voucher-ticket * {
+  .voucher-ticket, .voucher-ticket *,
+  .print-container, .print-container * {
     visibility: visible;
   }
   .voucher-ticket {
@@ -1519,4 +1520,32 @@ tr:last-child td {
     padding: 10mm;
     border: none;
   }
+  .no-print, .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  .print-only {
+    display: block !important;
+    visibility: visible !important;
+  }
+  .print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 10mm;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .chart-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin-bottom: 16px;
+  }
 }
+

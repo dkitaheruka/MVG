@@ -1557,8 +1557,15 @@ export const baremesFiscauxSociauxParDefaut: DbParametresFiscauxSociaux = {
       description: 'Tranche 4 (Au-delà de 3 600 000 CDF / mois - Barème DGI)',
     },
   ],
+  heureDebutTravail: '08:00',
+  toleranceRetardMinutes: 10,
+  activerRetenueRetard: true,
+  seuilRetardsAvantRetenue: 2,
+  typeCalculRetenue: 'FORFAIT_FIXE',
+  valeurRetenueParRetard: 5,
+  deviseRetenue: 'USD',
   derniereModification: '2026-09-01T00:00:00Z',
-  modifiePar: 'Barème Officiel DGI & CNSS RDC',
+  modifiePar: 'Barème Officiel DGI, CNSS & Règlement d Entreprise',
 }
 
 export let parametresFiscauxSociaux: DbParametresFiscauxSociaux = JSON.parse(

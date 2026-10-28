@@ -355,6 +355,9 @@ export interface DbBulletinPaie {
   inpp: number
   onem: number
   avancesDeduites: number
+  nombreRetardsDuMois?: number
+  retardsPenalises?: number
+  retenueRetards?: number
   netAPayer: number
   devise: 'USD' | 'CDF'
   statut: 'BROUILLON' | 'VALIDE' | 'PAYE'
@@ -536,6 +539,14 @@ export interface DbParametresFiscauxSociaux {
   smigJournalierCdf?: number // SMIG journalier de référence (optionnel)
   deviseReferenceBareme: 'CDF' | 'USD'
   tranchesIpr: DbTrancheIpr[]
+  // Politique de ponctualité, heure de retard et retenues disciplinaires
+  heureDebutTravail?: string // Heure normale d'embauche (ex: "08:00")
+  toleranceRetardMinutes?: number // Période de grâce / tolérance en minutes (ex: 10)
+  activerRetenueRetard?: boolean // Activer ou non la retenue automatique sur salaire
+  seuilRetardsAvantRetenue?: number // Nombre de retards mensuels tolérés avant retenue (ex: 2)
+  typeCalculRetenue?: 'FORFAIT_FIXE' | 'POURCENTAGE_SALAIRE_JOURNALIER' // Méthode de calcul
+  valeurRetenueParRetard?: number // Montant ou % par retard excédentaire (ex: 5$ ou 25%)
+  deviseRetenue?: 'USD' | 'CDF'
   derniereModification?: string
   modifiePar?: string
 }

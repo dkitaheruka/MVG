@@ -40,6 +40,8 @@ import {
   Wrench,
   Sliders,
   Globe,
+  Printer,
+  FilePdf,
 } from '@phosphor-icons/react'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
@@ -574,10 +576,32 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 700, padding: '4px 10px', borderRadius: 6, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
               Taux Global : <strong style={{ color: '#10b981' }}>{presences?.tauxPresence || 0}%</strong>
             </span>
+            <a
+              href={`/api/export/print/presences${selectedAgenceId && selectedAgenceId !== 'CONSOLIDE' ? `?agenceId=${selectedAgenceId}` : ''}`}
+              target="_blank"
+              rel="noreferrer"
+              className="secondary-action"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '5px 10px', textDecoration: 'none' }}
+              title="Imprimer le registre officiel journalier des présences au format A4"
+            >
+              <Printer size={15} />
+              Imprimer Registre (PDF)
+            </a>
+            <a
+              href={`/api/export/print/presences-mensuel${selectedAgenceId && selectedAgenceId !== 'CONSOLIDE' ? `?agenceId=${selectedAgenceId}` : ''}`}
+              target="_blank"
+              rel="noreferrer"
+              className="secondary-action"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', padding: '5px 10px', textDecoration: 'none' }}
+              title="Imprimer le rapport mensuel d assiduité du personnel"
+            >
+              <FilePdf size={15} />
+              Rapport Mensuel (PDF)
+            </a>
           </div>
         </div>
 

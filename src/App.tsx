@@ -85,6 +85,7 @@ import { PurchasesPage } from './pages/PurchasesPage'
 import { StockTransfersPage } from './pages/StockTransfersPage'
 import { PayrollPage } from './pages/PayrollPage'
 import { MaintenancePage } from './pages/MaintenancePage'
+import { AnalyticsChartsPage } from './pages/AnalyticsChartsPage'
 import {
   listOfflineOperations,
   saveOfflineOperation,
@@ -127,6 +128,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { to: '/dashboard', labelKey: 'dashboard', icon: Gauge, permission: 'dashboard.voir' },
+  { to: '/diagrammes', labelKey: 'analytics_charts', icon: ChartBar, permission: 'dashboard.voir' },
   { to: '/ventes', labelKey: 'sales', icon: Receipt, permission: 'ventes.voir' },
   { to: '/stock', labelKey: 'stock', icon: Package, permission: 'stocks.voir' },
   { to: '/achats', labelKey: 'purchases', icon: ShoppingCart, permission: 'achats.gerer' },
@@ -672,6 +674,7 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/diagrammes" element={<AnalyticsChartsPage />} />
             <Route path="/ventes" element={<SalesPage />} />
             <Route path="/stock" element={<StockPage />} />
             <Route path="/achats" element={<PurchasesPage />} />

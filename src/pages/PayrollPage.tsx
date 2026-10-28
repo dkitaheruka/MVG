@@ -110,6 +110,16 @@ export function PayrollPage() {
   const [tranchesIpr, setTranchesIpr] = useState<any[]>([])
   const [recalculerBrouillonsAuto, setRecalculerBrouillonsAuto] = useState<boolean>(true)
 
+  // Paramétrage de la politique de ponctualité, heure de retard et retenues sur salaires
+  const [heureDebutTravail, setHeureDebutTravail] = useState<string>('08:00')
+  const [toleranceRetardMinutes, setToleranceRetardMinutes] = useState<number>(10)
+  const [activerRetenueRetard, setActiverRetenueRetard] = useState<boolean>(true)
+  const [seuilRetardsAvantRetenue, setSeuilRetardsAvantRetenue] = useState<number>(2)
+  const [typeCalculRetenue, setTypeCalculRetenue] = useState<'FORFAIT_FIXE' | 'POURCENTAGE_SALAIRE_JOURNALIER'>('FORFAIT_FIXE')
+  const [valeurRetenueParRetard, setValeurRetenueParRetard] = useState<number>(5)
+  const [deviseRetenue, setDeviseRetenue] = useState<'USD' | 'CDF'>('USD')
+  const [simulNbRetards, setSimulNbRetards] = useState<number>(4)
+
   // Simulateur fiscal en direct
   const [simulBrut, setSimulBrut] = useState<string>('559000')
   const [simulEnfants, setSimulEnfants] = useState<number>(0)
@@ -234,6 +244,13 @@ export function PayrollPage() {
     setPlafondIpr(p.plafondIprPourcent ?? 30.0)
     setSmigJournalier(p.smigJournalierCdf ?? 7079)
     setTranchesIpr(p.tranchesIpr ? JSON.parse(JSON.stringify(p.tranchesIpr)) : [])
+    setHeureDebutTravail(p.heureDebutTravail ?? '08:00')
+    setToleranceRetardMinutes(p.toleranceRetardMinutes ?? 10)
+    setActiverRetenueRetard(p.activerRetenueRetard ?? true)
+    setSeuilRetardsAvantRetenue(p.seuilRetardsAvantRetenue ?? 2)
+    setTypeCalculRetenue(p.typeCalculRetenue ?? 'FORFAIT_FIXE')
+    setValeurRetenueParRetard(p.valeurRetenueParRetard ?? 5)
+    setDeviseRetenue(p.deviseRetenue ?? 'USD')
     setFiscalFormLoaded(true)
   }
 
@@ -286,6 +303,14 @@ export function PayrollPage() {
           smigJournalierCdf: Number(smigJournalier),
           deviseReferenceBareme: 'CDF',
           tranchesIpr: tranchesIpr,
+          // Politique de ponctualité & retenues sur salaire
+          heureDebutTravail,
+          toleranceRetardMinutes: Number(toleranceRetardMinutes),
+          activerRetenueRetard: Boolean(activerRetenueRetard),
+          seuilRetardsAvantRetenue: Number(seuilRetardsAvantRetenue),
+          typeCalculRetenue,
+          valeurRetenueParRetard: Number(valeurRetenueParRetard),
+          deviseRetenue,
           recalculerBrouillons: recalculerBrouillonsAuto
             ? { agenceId, mois: selectedMois, annee: selectedAnnee }
             : undefined,
@@ -785,11 +810,21 @@ export function PayrollPage() {
               </strong>
               <small style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>Montant net décaissé aux collaborateurs</small>
             </div>
+
+            {Number((totaux as any).retenueRetards || 0) > 0 && (
+              <div className="card" style={{ padding: 12, background: 'var(--surface)', border: '1px solid #f59e0b' }}>
+                <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>DÉDUCTIONS RETARDS :</span>
+                <strong style={{ fontSize: '1.15rem', color: '#ef4444', display: 'block', marginTop: 4 }}>
+                  -{Number((totaux as any).retenueRetards).toLocaleString('fr-FR')} {feuilleData?.devise || 'CDF'}
+                </strong>
+                <small style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>Pénalités de ponctualité appliquées</small>
+              </div>
+            )}
           </div>
 
-          {/* TABLEAU EXACT CONFORME À LA FEUILLE DE PAIE OFFICIELLE (14 COLONNES) */}
+          {/* TABLEAU EXACT CONFORME À LA FEUILLE DE PAIE OFFICIELLE (15 COLONNES AVEC RETENUES) */}
           <div className="table-wrap" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
-            <table style={{ width: '100%', minWidth: 1050, fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', minWidth: 1100, fontSize: '0.82rem', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
                   <th rowSpan={2} style={{ padding: '8px 6px', textAlign: 'center', width: 40 }}>N° Ordre</th>
@@ -802,6 +837,7 @@ export function PayrollPage() {
                   <th colSpan={2} style={{ padding: '4px 6px', textAlign: 'center', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>CNSS</th>
                   <th rowSpan={2} style={{ padding: '8px 8px', textAlign: 'right', minWidth: 95 }}>REMUNERATION IMPOSABLE</th>
                   <th rowSpan={2} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 85 }}>IPR (BAREME)</th>
+                  <th rowSpan={2} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 80, color: '#f59e0b' }}>RET. RETARDS</th>
                   <th rowSpan={2} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 70 }}>INPP 3,5%</th>
                   <th rowSpan={2} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 65 }}>ONEM 0.5%</th>
                   <th rowSpan={2} style={{ padding: '8px 8px', textAlign: 'right', minWidth: 95, fontWeight: 900, color: 'var(--success)' }}>NET A PAYER</th>
@@ -827,6 +863,9 @@ export function PayrollPage() {
                   const inppVal = Number(b.inpp || 0)
                   const onemVal = Number(b.onem || 0)
                   const net = Number(b.netAPayer || 0)
+                  const retardsMois = Number(b.nombreRetardsDuMois || 0)
+                  const retardsPen = Number(b.retardsPenalises || 0)
+                  const retRetard = Number(b.retenueRetards || 0)
 
                   return (
                     <tr key={b.id || index} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -849,6 +888,15 @@ export function PayrollPage() {
                       <td style={{ textAlign: 'right' }}>{qpp.toLocaleString('fr-FR')}</td>
                       <td style={{ textAlign: 'right', fontWeight: 700 }}>{imposable.toLocaleString('fr-FR')}</td>
                       <td style={{ textAlign: 'right', color: '#b91c1c', fontWeight: 600 }}>{iprVal.toLocaleString('fr-FR')}</td>
+                      <td style={{ textAlign: 'right', color: retRetard > 0 ? '#ef4444' : 'var(--muted)', fontWeight: retRetard > 0 ? 700 : 400 }}>
+                        {retRetard > 0 ? (
+                          <span title={`${retardsMois} retard(s) dont ${retardsPen} pénalisé(s)`}>
+                            -{retRetard.toLocaleString('fr-FR')}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td style={{ textAlign: 'right' }}>{inppVal.toLocaleString('fr-FR')}</td>
                       <td style={{ textAlign: 'right' }}>{onemVal.toLocaleString('fr-FR')}</td>
                       <td style={{ textAlign: 'right', fontWeight: 900, fontSize: '0.92rem', color: 'var(--success)' }}>
@@ -887,6 +935,7 @@ export function PayrollPage() {
                   <td style={{ textAlign: 'right', fontWeight: 900 }}>{totaux.cnssQpp.toLocaleString('fr-FR')}</td>
                   <td style={{ textAlign: 'right', fontWeight: 900 }}>{totaux.remunerationImposable.toLocaleString('fr-FR')}</td>
                   <td style={{ textAlign: 'right', fontWeight: 900, color: '#b91c1c' }}>{totaux.ipr.toLocaleString('fr-FR')}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 900, color: '#ef4444' }}>{Number((totaux as any).retenueRetards || 0) > 0 ? `-${Number((totaux as any).retenueRetards).toLocaleString('fr-FR')}` : '-'}</td>
                   <td style={{ textAlign: 'right', fontWeight: 900 }}>{totaux.inpp.toLocaleString('fr-FR')}</td>
                   <td style={{ textAlign: 'right', fontWeight: 900 }}>{totaux.onem.toLocaleString('fr-FR')}</td>
                   <td style={{ textAlign: 'right', fontWeight: 900, color: 'var(--success)', fontSize: '0.98rem' }}>{totaux.netAPayer.toLocaleString('fr-FR')}</td>
@@ -914,6 +963,7 @@ export function PayrollPage() {
                   <th>Catégorie</th>
                   <th>Salaire Base</th>
                   <th>Brut Total</th>
+                  <th style={{ color: '#f59e0b' }}>Ret. Retards</th>
                   <th>Net à Payer</th>
                   <th>Statut</th>
                   <th>Actions</th>
@@ -928,6 +978,15 @@ export function PayrollPage() {
                     <td><span className="badge">{b.categorie || b.agent?.categorie || 'I'}</span></td>
                     <td>{Number(b.salaireBase || 0).toLocaleString('fr-FR')} {b.devise}</td>
                     <td style={{ fontWeight: 700 }}>{Number(b.salaireBrut || b.salaireBase).toLocaleString('fr-FR')} {b.devise}</td>
+                    <td style={{ textAlign: 'center', color: Number(b.retenueRetards || 0) > 0 ? '#ef4444' : 'var(--muted)', fontWeight: Number(b.retenueRetards || 0) > 0 ? 700 : 400 }}>
+                      {Number(b.retenueRetards || 0) > 0 ? (
+                        <span title={`${b.nombreRetardsDuMois || 0} retard(s) dont ${b.retardsPenalises || 0} pénalisé(s)`}>
+                          -{Number(b.retenueRetards).toLocaleString('fr-FR')} {b.devise}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td><strong style={{ fontSize: '1.02rem', color: 'var(--success)' }}>{Number(b.netAPayer).toLocaleString('fr-FR')} {b.devise}</strong></td>
                     <td>
                       <span className={clsx('badge', b.statut === 'PAYE' ? 'badge-success' : b.statut === 'VALIDE' ? 'badge-accent' : 'badge-warning')}>
@@ -1212,6 +1271,16 @@ export function PayrollPage() {
               <button
                 type="button"
                 className="secondary-action"
+                onClick={() => setActiveTab('parametres-fiscaux')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}
+                title="Configurer l'heure limite de retard et le barème des retenues"
+              >
+                <SlidersHorizontal size={16} />
+                Barème Retards & Retenues
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
                 onClick={() => setShowScanBiometriqueModal(true)}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)' }}
               >
@@ -1225,7 +1294,7 @@ export function PayrollPage() {
                   setEditingPointage(null)
                   setPointageFormAgentId('')
                   setPointageFormStatut('PRESENT')
-                  setPointageFormArrivee('08:00:00')
+                  setPointageFormArrivee(`${heureDebutTravail || '08:00'}:00`)
                   setPointageFormDepart('16:30:00')
                   setPointageFormObservations('')
                   setShowPointageModal(true)
@@ -1267,7 +1336,7 @@ export function PayrollPage() {
                   <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: '#10b981' }}>
                     {presentsCount}
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés avant 08:00</div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés avant {heureDebutTravail || '08:00'}</div>
                 </div>
 
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
@@ -1275,7 +1344,7 @@ export function PayrollPage() {
                   <div style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: 4, color: '#f59e0b' }}>
                     {retardsCount}
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés après 08:00</div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--muted)', marginTop: 2 }}>Pointés après {heureDebutTravail || '08:00'} (+{toleranceRetardMinutes || 0}m tol.)</div>
                 </div>
 
                 <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
@@ -1963,6 +2032,231 @@ export function PayrollPage() {
             </div>
           </div>
 
+          {/* CARTE 4 : POLITIQUE DE PONCTUALITÉ, HEURE DE RETARD & RETENUES SUR SALAIRES */}
+          <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Clock size={24} weight="duotone" style={{ color: 'var(--accent-strong)' }} />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', color: 'var(--text)' }}>
+                    4. Politique de Ponctualité, Heure de Retard & Retenues sur Salaires
+                  </h4>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                    Définissez l'heure officielle d'arrivée, le délai de tolérance, le seuil de retards avant sanction, et le montant/taux de la retenue sur bulletin.
+                  </p>
+                </div>
+              </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: 'var(--surface)', padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <input
+                  type="checkbox"
+                  checked={activerRetenueRetard}
+                  onChange={(e) => setActiverRetenueRetard(e.target.checked)}
+                  style={{ cursor: 'pointer', width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: activerRetenueRetard ? 'var(--accent-strong)' : 'var(--muted)' }}>
+                  {activerRetenueRetard ? 'Retenues disciplinaires Activées' : 'Retenues disciplinaires Désactivées'}
+                </span>
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              {/* Colonne 1 : Heure de début et tolérance */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Clock size={16} /> Horaires & Seuil de Tolérance
+                </div>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span style={{ fontWeight: 600 }}>Heure officielle de prise de service :</span>
+                  <input
+                    type="time"
+                    value={heureDebutTravail}
+                    onChange={(e) => setHeureDebutTravail(e.target.value)}
+                    style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontWeight: 700 }}
+                  />
+                  <small style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+                    Heure contractuelle à partir de laquelle la ponctualité est évaluée (ex: 08:00).
+                  </small>
+                </label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span style={{ fontWeight: 600 }}>Délai de grâce / tolérance (en minutes) :</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      value={toleranceRetardMinutes}
+                      onChange={(e) => setToleranceRetardMinutes(Number(e.target.value))}
+                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontWeight: 700, width: 90 }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>minutes</span>
+                  </div>
+                  <small style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+                    Ex: avec {toleranceRetardMinutes} min, tout pointage après {(() => {
+                      const [h, m] = (heureDebutTravail || '08:00').split(':').map(Number);
+                      const totalMin = (h || 8) * 60 + (m || 0) + (toleranceRetardMinutes || 0);
+                      const hh = String(Math.floor(totalMin / 60) % 24).padStart(2, '0');
+                      const mm = String(totalMin % 60).padStart(2, '0');
+                      return `${hh}:${mm}`;
+                    })()} est qualifié de retard automatique.
+                  </small>
+                </label>
+              </div>
+
+              {/* Colonne 2 : Franchise et Barème de retenue */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <SlidersHorizontal size={16} /> Franchise & Montant de la Retenue
+                </div>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                  <span style={{ fontWeight: 600 }}>Franchise : Retards mensuels tolérés sans retenue :</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max="31"
+                      value={seuilRetardsAvantRetenue}
+                      onChange={(e) => setSeuilRetardsAvantRetenue(Number(e.target.value))}
+                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontWeight: 700, width: 90 }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>retards tolérés / mois</span>
+                  </div>
+                  <small style={{ color: 'var(--muted)', fontSize: '0.74rem' }}>
+                    {seuilRetardsAvantRetenue === 0
+                      ? 'Aucune franchise : chaque retard constaté est immédiatement pénalisé dès le 1er.'
+                      : `Les ${seuilRetardsAvantRetenue} premiers retards du mois sont sans retenue. La pénalité s'applique à partir du ${seuilRetardsAvantRetenue + 1}ème retard.`}
+                  </small>
+                </label>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)' }}>Méthode de calcul de la retenue :</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer', padding: '6px 8px', borderRadius: 6, background: 'var(--surface-2)', border: typeCalculRetenue === 'FORFAIT_FIXE' ? '1px solid var(--accent-strong)' : '1px solid var(--border)' }}>
+                      <input
+                        type="radio"
+                        name="typeRetenue"
+                        value="FORFAIT_FIXE"
+                        checked={typeCalculRetenue === 'FORFAIT_FIXE'}
+                        onChange={() => setTypeCalculRetenue('FORFAIT_FIXE')}
+                      />
+                      <span>Montant fixe forfaitaire</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer', padding: '6px 8px', borderRadius: 6, background: 'var(--surface-2)', border: typeCalculRetenue === 'POURCENTAGE_SALAIRE_JOURNALIER' ? '1px solid var(--accent-strong)' : '1px solid var(--border)' }}>
+                      <input
+                        type="radio"
+                        name="typeRetenue"
+                        value="POURCENTAGE_SALAIRE_JOURNALIER"
+                        checked={typeCalculRetenue === 'POURCENTAGE_SALAIRE_JOURNALIER'}
+                        onChange={() => setTypeCalculRetenue('POURCENTAGE_SALAIRE_JOURNALIER')}
+                      />
+                      <span>% du salaire journalier (base 26j)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: typeCalculRetenue === 'FORFAIT_FIXE' ? '2fr 1fr' : '1fr', gap: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                    <span style={{ fontWeight: 600 }}>
+                      {typeCalculRetenue === 'FORFAIT_FIXE' ? 'Montant fixe par retard pénalisé :' : 'Pourcentage retenu par retard :'}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step={typeCalculRetenue === 'FORFAIT_FIXE' ? '1' : '0.5'}
+                        value={valeurRetenueParRetard}
+                        onChange={(e) => setValeurRetenueParRetard(Number(e.target.value))}
+                        style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontWeight: 700, width: '100%' }}
+                      />
+                      {typeCalculRetenue === 'POURCENTAGE_SALAIRE_JOURNALIER' && (
+                        <span style={{ fontWeight: 700 }}>% / jour</span>
+                      )}
+                    </div>
+                  </label>
+
+                  {typeCalculRetenue === 'FORFAIT_FIXE' && (
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.82rem', color: 'var(--text)' }}>
+                      <span style={{ fontWeight: 600 }}>Devise :</span>
+                      <select
+                        value={deviseRetenue}
+                        onChange={(e) => setDeviseRetenue(e.target.value as 'USD' | 'CDF')}
+                        style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)' }}
+                      >
+                        <option value="USD">USD ($)</option>
+                        <option value="CDF">CDF (FC)</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {/* Colonne 3 : Simulateur Dynamique de Sanction Ponctualité */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Calculator size={16} /> Simulateur de Retenue Retard
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: '0.82rem', color: 'var(--text)', flex: 1 }}>
+                    Retards constatés ce mois :
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="31"
+                    value={simulNbRetards}
+                    onChange={(e) => setSimulNbRetards(Number(e.target.value))}
+                    style={{ width: 75, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', fontWeight: 700, textAlign: 'center' }}
+                  />
+                </div>
+
+                {(() => {
+                  const retardsPenalises = Math.max(0, simulNbRetards - (seuilRetardsAvantRetenue || 0))
+                  const salaireJournalierSimul = (simBrutNum || 559000) / 26
+                  let montantTotalRetenue = 0
+                  if (activerRetenueRetard && retardsPenalises > 0) {
+                    if (typeCalculRetenue === 'FORFAIT_FIXE') {
+                      montantTotalRetenue = retardsPenalises * (valeurRetenueParRetard || 0)
+                    } else {
+                      montantTotalRetenue = retardsPenalises * (salaireJournalierSimul * ((valeurRetenueParRetard || 0) / 100))
+                    }
+                  }
+
+                  return (
+                    <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.82rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Total retards constatés :</span>
+                        <strong>{simulNbRetards} retards</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted)' }}>
+                        <span>Franchise tolérée :</span>
+                        <span>{Math.min(simulNbRetards, seuilRetardsAvantRetenue || 0)} retards sans retenue</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b', fontWeight: 600 }}>
+                        <span>Retards soumis à retenue :</span>
+                        <strong>{retardsPenalises} retards pénalisés</strong>
+                      </div>
+                      <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: '0.92rem' }}>
+                        <span>Retenue calculée :</span>
+                        <span style={{ color: montantTotalRetenue > 0 ? '#ef4444' : 'var(--success)' }}>
+                          {activerRetenueRetard
+                            ? `-${Math.round(montantTotalRetenue).toLocaleString('fr-FR')} ${typeCalculRetenue === 'FORFAIT_FIXE' ? deviseRetenue : simulDevise}`
+                            : '0 (Désactivée)'}
+                        </span>
+                      </div>
+                      <small style={{ color: 'var(--muted)', fontSize: '0.73rem', marginTop: 2 }}>
+                        Cette retenue est déduite sur le bulletin individuel et la feuille de paie collective après calcul des cotisations sociales.
+                      </small>
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+
           {/* BARRE D'ACTIONS INFÉRIEURE : SAUVEGARDE & RECALCUL AUTOMATIQUE */}
           <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.88rem' }}>
@@ -2193,6 +2487,12 @@ export function PayrollPage() {
                   <span>Retenue IPR (Barème DGI) :</span>
                   <strong>-{Number(voucherBulletin.ipr || 0).toLocaleString()} {voucherBulletin.devise}</strong>
                 </div>
+                {Number(voucherBulletin.retenueRetards || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b' }}>
+                    <span>Pénalité retards ({voucherBulletin.retardsPenalises || 0} pénalisé(s) / {voucherBulletin.nombreRetardsDuMois || 0}) :</span>
+                    <strong>-{Number(voucherBulletin.retenueRetards).toLocaleString()} {voucherBulletin.devise}</strong>
+                  </div>
+                )}
                 {Number(voucherBulletin.avancesDeduites || 0) > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--danger)' }}>
                     <span>Avances déduites :</span>
@@ -2276,12 +2576,10 @@ export function PayrollPage() {
                 if (editingPointage?.id) {
                   updatePointageMutation.mutate({
                     id: editingPointage.id,
-                    data: {
-                      statut: pointageFormStatut,
-                      heureArrivee: pointageFormArrivee,
-                      heureDepart: pointageFormDepart,
-                      observations: pointageFormObservations,
-                    },
+                    statut: pointageFormStatut,
+                    heureArrivee: pointageFormArrivee,
+                    heureDepart: pointageFormDepart,
+                    observations: pointageFormObservations,
                   })
                 } else {
                   if (!pointageFormAgentId) {

@@ -1234,8 +1234,12 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   // Vérifier si l'agent a déjà pointé aujourd'hui
   let pointageExistant = pointagesAgents.find((p) => p.agentId === agent.id && p.date === todayStr)
 
-  // Statut déterminé selon l'heure légale d'embauche (08h00)
-  const isRetard = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 0)
+  // Statut déterminé selon l'heure d'embauche configurée et la tolérance
+  const [seuilH, seuilM] = (parametresFiscauxSociaux.heureDebutTravail || '08:00').split(':').map(Number)
+  const tolMin = Number(parametresFiscauxSociaux.toleranceRetardMinutes ?? 10)
+  const minuteActuelle = now.getHours() * 60 + now.getMinutes()
+  const minuteLimite = (seuilH * 60 + (isNaN(seuilM) ? 0 : seuilM)) + tolMin
+  const isRetard = minuteActuelle > minuteLimite
   const statutCalcule = isRetard ? 'RETARD' : 'PRESENT'
 
   if (pointageExistant) {
@@ -1271,7 +1275,7 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
     empreinteMatchScore: Number(empreinteMatchScore) || +(98 + Math.random() * 1.9).toFixed(1),
     terminalId: terminalId || `BIO-SCAN-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
     temperature: Number(temperature) || +(36.4 + Math.random() * 0.4).toFixed(1),
-    observations: observations || (isRetard ? `Retard constaté à ${heureActuelle} (seuil: 08:00)` : `Arrivée conforme à ${heureActuelle}`),
+    observations: observations || (isRetard ? `Retard constaté à ${heureActuelle} (Heure normale: ${parametresFiscauxSociaux.heureDebutTravail || '08:00'} + ${tolMin} min tolérance)` : `Arrivée ponctuelle à ${heureActuelle}`),
   }
 
   pointagesAgents.push(nouveauPointage)
@@ -3980,6 +3984,8 @@ export function calculerLignePaieRdc(params: {
   indemniteLogement?: number
   commissionsVentes?: number
   avancesDeduites?: number
+  nombreRetardsDuMois?: number
+  retenueRetardsManuelle?: number
   nombreEnfantsACharge?: number
   devise?: 'USD' | 'CDF'
   tauxChange?: number
@@ -4059,8 +4065,45 @@ export function calculerLignePaieRdc(params: {
   const inpp = Math.round(salaireBrut * inppRate * 100) / 100
   const onem = Math.round(salaireBrut * onemRate * 100) / 100
 
-  // Net à payer = Rémunération imposable - IPR - Avances déduites
-  const netAPayer = Math.max(0, Math.round((remunerationImposable - ipr - avances) * 100) / 100)
+  // Retenues pour retards selon la politique disciplinaire configurée
+  const totalRetardsMois = Math.max(0, Number(params.nombreRetardsDuMois || 0))
+  let retardsPenalises = 0
+  let retenueRetards = 0
+
+  if (params.retenueRetardsManuelle !== undefined && params.retenueRetardsManuelle !== null) {
+    retenueRetards = Math.max(0, Number(params.retenueRetardsManuelle))
+    retardsPenalises = totalRetardsMois
+  } else if (p.activerRetenueRetard !== false && totalRetardsMois > 0) {
+    const seuilTolere = Number(p.seuilRetardsAvantRetenue ?? 2)
+    retardsPenalises = Math.max(0, totalRetardsMois - seuilTolere)
+
+    if (retardsPenalises > 0) {
+      const typeCalcul = p.typeCalculRetenue || 'FORFAIT_FIXE'
+      const valeur = Number(p.valeurRetenueParRetard ?? 5)
+      const devRetenue = p.deviseRetenue || 'USD'
+
+      if (typeCalcul === 'POURCENTAGE_SALAIRE_JOURNALIER') {
+        // En RDC, la base légale de calcul journalier est sur 26 jours ouvrables
+        const salaireJournalier = (salaireBase || 0) / 26
+        const retenueUnitaire = salaireJournalier * (valeur / 100)
+        retenueRetards = Math.round(retardsPenalises * retenueUnitaire * 100) / 100
+      } else {
+        // Forfait fixe par retard excédentaire
+        let montantUnitaire = valeur
+        if (devRetenue !== devise) {
+          if (devRetenue === 'USD' && devise === 'CDF') {
+            montantUnitaire = valeur * taux
+          } else if (devRetenue === 'CDF' && devise === 'USD') {
+            montantUnitaire = valeur / taux
+          }
+        }
+        retenueRetards = Math.round(retardsPenalises * montantUnitaire * 100) / 100
+      }
+    }
+  }
+
+  // Net à payer = Rémunération imposable - IPR - Avances déduites - Retenue pour retards
+  const netAPayer = Math.max(0, Math.round((remunerationImposable - ipr - avances - retenueRetards) * 100) / 100)
 
   return {
     salaireBase,
@@ -4075,6 +4118,9 @@ export function calculerLignePaieRdc(params: {
     inpp,
     onem,
     avancesDeduites: avances,
+    nombreRetardsDuMois: totalRetardsMois,
+    retardsPenalises,
+    retenueRetards,
     netAPayer,
     devise,
     nombreEnfantsACharge: enfants,
@@ -4087,6 +4133,9 @@ export function calculerLignePaieRdc(params: {
       iprBrutCdf: Math.round(iprBrutCdf),
       iprFinalCdf: Math.round(iprApresReductionCdf),
       nombreTranches: tranches.length,
+      seuilRetardsToleres: p.seuilRetardsAvantRetenue ?? 2,
+      retardsPenalises,
+      retenueRetards,
     },
   }
 }
@@ -7923,12 +7972,22 @@ router.get('/rh/feuille-paie', (req: Request, res: Response) => {
   if (list.length === 0) {
     const activeAgents = agents.filter((a) => (!agenceId || a.agenceId === agenceId) && a.actif)
     list = activeAgents.map((ag, idx) => {
+      let nbRetards = 0
+      pointagesAgents.forEach((p) => {
+        if (p.agentId === ag.id && p.statut === 'RETARD') {
+          const d = new Date(p.date)
+          if ((d.getMonth() + 1) === mois && d.getFullYear() === annee) {
+            nbRetards++
+          }
+        }
+      })
       const calc = calculerLignePaieRdc({
         salaireBase: ag.salaireBase,
         indemniteTransport: ag.indemniteTransport,
         indemniteLogement: ag.indemniteLogement,
         commissionsVentes: 0,
         avancesDeduites: 0,
+        nombreRetardsDuMois: nbRetards,
         nombreEnfantsACharge: ag.nombreEnfantsACharge,
         devise: ag.devise || 'CDF',
       })
@@ -7962,6 +8021,7 @@ router.get('/rh/feuille-paie', (req: Request, res: Response) => {
       acc.ipr += Number(b.ipr || 0)
       acc.inpp += Number(b.inpp || 0)
       acc.onem += Number(b.onem || 0)
+      acc.retenueRetards = (acc.retenueRetards || 0) + Number(b.retenueRetards || 0)
       acc.netAPayer += Number(b.netAPayer || 0)
       return acc
     },
@@ -7976,6 +8036,7 @@ router.get('/rh/feuille-paie', (req: Request, res: Response) => {
       ipr: 0,
       inpp: 0,
       onem: 0,
+      retenueRetards: 0,
       netAPayer: 0,
     }
   )
@@ -8013,12 +8074,24 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
     }
   })
 
+  // Retards enregistrés dans le registre biométrique
+  let nombreRetardsDuMois = 0
+  pointagesAgents.forEach((p) => {
+    if (p.agentId === agent.id && p.statut === 'RETARD') {
+      const d = new Date(p.date)
+      if ((d.getMonth() + 1) === Number(mois) && d.getFullYear() === Number(annee)) {
+        nombreRetardsDuMois++
+      }
+    }
+  })
+
   const calc = calculerLignePaieRdc({
     salaireBase: agent.salaireBase,
     indemniteTransport: agent.indemniteTransport,
     indemniteLogement: agent.indemniteLogement,
     commissionsVentes,
     avancesDeduites,
+    nombreRetardsDuMois,
     nombreEnfantsACharge: agent.nombreEnfantsACharge,
     devise: agent.devise || 'CDF',
   })
@@ -8043,6 +8116,9 @@ router.post('/rh/bulletins/generer', (req: Request, res: Response) => {
     bulletinExistant.inpp = calc.inpp
     bulletinExistant.onem = calc.onem
     bulletinExistant.avancesDeduites = avancesDeduites
+    bulletinExistant.nombreRetardsDuMois = calc.nombreRetardsDuMois
+    bulletinExistant.retardsPenalises = calc.retardsPenalises
+    bulletinExistant.retenueRetards = calc.retenueRetards
     bulletinExistant.netAPayer = calc.netAPayer
     bulletinExistant.devise = agent.devise || 'CDF'
     bulletinExistant.dateGeneration = new Date().toISOString()
@@ -8096,12 +8172,23 @@ router.post('/rh/feuille-paie/generer-mois', (req: Request, res: Response) => {
       }
     })
 
+    let nbRetards = 0
+    pointagesAgents.forEach((p) => {
+      if (p.agentId === agent.id && p.statut === 'RETARD') {
+        const d = new Date(p.date)
+        if ((d.getMonth() + 1) === m && d.getFullYear() === y) {
+          nbRetards++
+        }
+      }
+    })
+
     const calc = calculerLignePaieRdc({
       salaireBase: agent.salaireBase,
       indemniteTransport: agent.indemniteTransport,
       indemniteLogement: agent.indemniteLogement,
       commissionsVentes,
       avancesDeduites,
+      nombreRetardsDuMois: nbRetards,
       nombreEnfantsACharge: agent.nombreEnfantsACharge,
       devise: agent.devise || 'CDF',
     })
@@ -8122,6 +8209,9 @@ router.post('/rh/feuille-paie/generer-mois', (req: Request, res: Response) => {
       existing.inpp = calc.inpp
       existing.onem = calc.onem
       existing.avancesDeduites = avancesDeduites
+      existing.nombreRetardsDuMois = calc.nombreRetardsDuMois
+      existing.retardsPenalises = calc.retardsPenalises
+      existing.retenueRetards = calc.retenueRetards
       existing.netAPayer = calc.netAPayer
       existing.devise = agent.devise || 'CDF'
       resultats.push(existing)
@@ -8419,6 +8509,14 @@ router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
     smigJournalierCdf,
     deviseReferenceBareme,
     tranchesIpr,
+    // Paramètres Politique de Ponctualité & Retenues sur Salaires
+    heureDebutTravail,
+    toleranceRetardMinutes,
+    activerRetenueRetard,
+    seuilRetardsAvantRetenue,
+    typeCalculRetenue,
+    valeurRetenueParRetard,
+    deviseRetenue,
     recalculerBrouillons,
   } = req.body
 
@@ -8492,6 +8590,28 @@ router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
     }))
   }
 
+  if (heureDebutTravail !== undefined) {
+    parametresFiscauxSociaux.heureDebutTravail = String(heureDebutTravail).trim() || '08:00'
+  }
+  if (toleranceRetardMinutes !== undefined) {
+    parametresFiscauxSociaux.toleranceRetardMinutes = Math.max(0, Number(toleranceRetardMinutes))
+  }
+  if (activerRetenueRetard !== undefined) {
+    parametresFiscauxSociaux.activerRetenueRetard = Boolean(activerRetenueRetard)
+  }
+  if (seuilRetardsAvantRetenue !== undefined) {
+    parametresFiscauxSociaux.seuilRetardsAvantRetenue = Math.max(0, Number(seuilRetardsAvantRetenue))
+  }
+  if (typeCalculRetenue && (typeCalculRetenue === 'FORFAIT_FIXE' || typeCalculRetenue === 'POURCENTAGE_SALAIRE_JOURNALIER')) {
+    parametresFiscauxSociaux.typeCalculRetenue = typeCalculRetenue
+  }
+  if (valeurRetenueParRetard !== undefined) {
+    parametresFiscauxSociaux.valeurRetenueParRetard = Math.max(0, Number(valeurRetenueParRetard))
+  }
+  if (deviseRetenue && (deviseRetenue === 'USD' || deviseRetenue === 'CDF')) {
+    parametresFiscauxSociaux.deviseRetenue = deviseRetenue
+  }
+
   parametresFiscauxSociaux.derniereModification = new Date().toISOString()
   parametresFiscauxSociaux.modifiePar = currentUser.nom
 
@@ -8507,12 +8627,22 @@ router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
 
     brouillons.forEach((b) => {
       const ag = agents.find((a) => a.id === b.agentId)
+      let nombreRetards = 0
+      pointagesAgents.forEach((p) => {
+        if (p.agentId === b.agentId && p.statut === 'RETARD') {
+          const d = new Date(p.date)
+          if ((d.getMonth() + 1) === b.mois && d.getFullYear() === b.annee) {
+            nombreRetards++
+          }
+        }
+      })
       const calc = calculerLignePaieRdc({
         salaireBase: b.salaireBase,
         indemniteTransport: b.indemniteTransport,
         indemniteLogement: b.indemniteLogement,
         commissionsVentes: b.commissionsVentes,
         avancesDeduites: b.avancesDeduites,
+        nombreRetardsDuMois: nombreRetards,
         nombreEnfantsACharge: b.nombreEnfantsACharge || ag?.nombreEnfantsACharge,
         devise: b.devise,
         parametres: parametresFiscauxSociaux,
@@ -8524,6 +8654,9 @@ router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
       b.ipr = calc.ipr
       b.inpp = calc.inpp
       b.onem = calc.onem
+      b.nombreRetardsDuMois = calc.nombreRetardsDuMois
+      b.retardsPenalises = calc.retardsPenalises
+      b.retenueRetards = calc.retenueRetards
       b.netAPayer = calc.netAPayer
       countRecalcules++
     })
@@ -8532,7 +8665,7 @@ router.put('/rh/parametres-fiscaux', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'MAJ_PARAMETRES_FISC_SOCIAUX_PAIE',
-    `Mise à jour des barèmes fiscaux et sociaux (CNSS QPO: ${parametresFiscauxSociaux.cnssQpoPourcent}%, QPP: ${parametresFiscauxSociaux.cnssQppPourcent}%, INPP: ${parametresFiscauxSociaux.inppPourcent}%, ONEM: ${parametresFiscauxSociaux.onemPourcent}%, ${parametresFiscauxSociaux.tranchesIpr.length} tranches IPR). ${countRecalcules > 0 ? `${countRecalcules} bulletins brouillons recalculés.` : ''}`
+    `Mise à jour des barèmes fiscaux et sociaux (CNSS, IPR, Retards: Début ${parametresFiscauxSociaux.heureDebutTravail || '08:00'}, tolérance ${parametresFiscauxSociaux.toleranceRetardMinutes || 10} min, franchise ${parametresFiscauxSociaux.seuilRetardsAvantRetenue || 2} retards, retenue ${parametresFiscauxSociaux.valeurRetenueParRetard} ${parametresFiscauxSociaux.deviseRetenue}). ${countRecalcules > 0 ? `${countRecalcules} bulletins brouillons recalculés.` : ''}`
   )
 
   res.json({
