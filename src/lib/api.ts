@@ -29,6 +29,15 @@ export async function apiRequest<T>(
 
   const contentType = response.headers.get('content-type') ?? ''
   const isJson = contentType.includes('application/json')
+
+  if (!isJson && path.startsWith('/api')) {
+    const textBody = await response.text()
+    throw new HttpError(
+      response.ok ? 502 : response.status,
+      `Réponse invalide reçue de l API (${response.status} non-JSON): ${textBody.slice(0, 100)}`
+    )
+  }
+
   const body = isJson ? ((await response.json()) as ApiError | T) : await response.text()
 
   if (!response.ok) {

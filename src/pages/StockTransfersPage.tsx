@@ -63,7 +63,10 @@ export function StockTransfersPage() {
 
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -203,7 +206,7 @@ export function StockTransfersPage() {
         <div>
           <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Transferts Inter-Agences & Convois</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.88rem' }}>
-            Expéditions de farine en sacs, feuilles de route chauffeurs, suivi de flotte et réception contradictoire.
+            Expéditions de marchandises et stocks, feuilles de route chauffeurs, suivi de flotte et réception contradictoire.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -406,7 +409,7 @@ export function StockTransfersPage() {
               <label>
                 Agence de destination
                 <select value={agenceDestId} onChange={(e) => setAgenceDestId(Number(e.target.value))}>
-                  {(agencesQuery.data ?? [])
+                  {(Array.isArray(agencesQuery.data) ? agencesQuery.data : [])
                     .filter((a: any) => a.id !== agenceId)
                     .map((ag: any) => (
                       <option key={ag.id} value={ag.id}>
@@ -571,10 +574,10 @@ export function StockTransfersPage() {
               )}
               <div><strong>Responsable expédition :</strong> {voucherTransfert.initiateurNom}</div>
               <div style={{ marginTop: 8, padding: 8, background: 'var(--surface-2)', borderRadius: 6 }}>
-                <strong>Détail des sacs acheminés :</strong>
+                <strong>Détail des articles et unités acheminés :</strong>
                 {(voucherTransfert.lignes || []).map((l: any, i: number) => (
                   <div key={i} style={{ fontSize: '0.82rem', marginTop: 4 }}>
-                    - {l.article?.designation || 'Farine'} : <strong>{l.quantite} sacs</strong> (Lot: {l.numeroLot})
+                    - {l.article?.designation || 'Article'} : <strong>{l.quantite} unités</strong> (Lot: {l.numeroLot})
                   </div>
                 ))}
               </div>

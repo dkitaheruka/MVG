@@ -404,7 +404,7 @@ export function QrLabelPrintModal({
     numeroLot: data.numeroLot,
     designation: data.designation,
     agenceId: data.agenceId || 1,
-    nomAgence: data.agenceNom || 'Minoterie Centrale MVG',
+    nomAgence: data.agenceNom || 'Site Principal de Distribution',
     ...(isVente ? { prix: data.prix, montantTotal: data.montantTotal || data.prix, devise: data.devise || 'USD' } : {}),
   }
 
@@ -418,7 +418,7 @@ export function QrLabelPrintModal({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Tag size={22} style={{ color: 'var(--accent-strong)' }} />
-            Étiquette QR Code Certifiée (Sac / Carton / Bidon)
+            Étiquette QR Code Certifiée (Article / Conditionnement)
           </h3>
           <button className="icon-button" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
         </div>
@@ -439,19 +439,19 @@ export function QrLabelPrintModal({
         >
           <div style={{ borderBottom: '2px solid #0284c7', paddingBottom: 8, marginBottom: 10 }}>
             <div style={{ fontSize: '13px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0284c7' }}>
-              MINOTERIE DU VIRUNGA (MVG SARL)
+              ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)
             </div>
             <div style={{ fontSize: '9px', color: '#64748b' }}>
-              SYSTÈME DE TRAÇABILITÉ OFFICIEL • {data.agenceNom || 'USINE PRINCIPALE'}
+              SYSTÈME DE TRAÇABILITÉ OFFICIEL • {data.agenceNom || 'SITE PRINCIPAL'}
             </div>
           </div>
 
           <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>
-            {data.designation || 'Farine de Maïs Extra'}
+            {data.designation || 'Produit Fini Standard'}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', margin: '6px 0', padding: '4px 8px', background: '#f8fafc', borderRadius: 4, border: '1px solid #e2e8f0' }}>
-            <span>Réf / Code : <strong>{data.articleCode || 'FAR-001'}</strong></span>
+            <span>Réf / Code : <strong>{data.articleCode || 'PF-001'}</strong></span>
             <span>Lot FEFO : <strong>{data.numeroLot || 'LOT-STANDARD'}</strong></span>
           </div>
 
@@ -726,7 +726,7 @@ export function QrAccountingModal({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <h3 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8 }}>
             <QrIcon size={24} style={{ color: 'var(--accent-strong)' }} />
-            Encaissement Vente POS par Scan QR (Minoterie MVG)
+            Encaissement Vente POS par Scan QR
           </h3>
           <button className="icon-button" onClick={onClose} aria-label="Fermer"><X size={18} /></button>
         </div>
@@ -735,11 +735,11 @@ export function QrAccountingModal({
         <div style={{ background: 'var(--surface-2)', padding: 14, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <span style={{ fontSize: '0.76rem', color: 'var(--muted)', fontWeight: 600 }}>ARTICLE CERTIFIÉ PAR QR CODE</span>
-            <span className="badge badge-success">CERTIFICATION MVG</span>
+            <span className="badge badge-success">CERTIFICATION OFFICIELLE</span>
           </div>
 
           <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
-            {payload?.designation || payload?.reference || payload?.codeUnique || payload?.numeroLot || 'Produit MVG'}
+            {payload?.designation || payload?.reference || payload?.codeUnique || payload?.numeroLot || 'Article Standard'}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--muted)' }}>
@@ -846,8 +846,8 @@ export function QrAccountingModal({
             onChange={(e) => setModeTransport(e.target.value as any)}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', marginBottom: 8 }}
           >
-            <option value="ENLEVEMENT_MAGASIN">Retrait immédiat sur place (Comptoir Dépôt Minoterie)</option>
-            <option value="FLOTTE_ENTREPRISE">Camion de la Minoterie MVG (Flotte Interne)</option>
+            <option value="ENLEVEMENT_MAGASIN">Retrait immédiat sur place (Comptoir / Entrepôt)</option>
+            <option value="FLOTTE_ENTREPRISE">Véhicule de la société (Flotte Interne)</option>
             <option value="VEHICULE_CLIENT">Véhicule apporté par le Client (Chauffeur externe)</option>
           </select>
 

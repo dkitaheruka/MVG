@@ -68,7 +68,10 @@ export function MaintenancePage() {
   // Query Agences
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -253,7 +256,8 @@ export function MaintenancePage() {
     }
   }
 
-  const userAgence = agencesQuery.data?.find((a: any) => a.id === (activeAgenceId || session?.agenceId))
+  const safeAgences: any[] = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
+  const userAgence = safeAgences.find((a: any) => a.id === (activeAgenceId || session?.agenceId))
 
   return (
     <section className="page-grid">
@@ -448,7 +452,7 @@ export function MaintenancePage() {
               <tbody>
                 {filteredInterventions.map((m) => {
                   const coutTotal = (m.coutPiecesUsd || 0) + (m.coutMainOeuvreUsd || 0)
-                  const ag = (agencesQuery.data || []).find((a: any) => a.id === m.agenceId)
+                  const ag = safeAgences.find((a: any) => a.id === m.agenceId)
                   return (
                     <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '12px 14px' }}>
@@ -588,7 +592,7 @@ export function MaintenancePage() {
               </thead>
               <tbody>
                 {allEquipements.map((eq) => {
-                  const ag = (agencesQuery.data || []).find((a: any) => a.id === eq.agenceId)
+                  const ag = safeAgences.find((a: any) => a.id === eq.agenceId)
                   return (
                     <tr key={eq.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '12px 14px', fontWeight: 600 }}>
@@ -720,7 +724,7 @@ export function MaintenancePage() {
                     value={targetAgenceId}
                     onChange={(e) => setTargetAgenceId(Number(e.target.value))}
                   >
-                    {(agencesQuery.data || []).map((ag: any) => (
+                    {safeAgences.map((ag: any) => (
                       <option key={ag.id} value={ag.id}>
                         {ag.nom} ({ag.ville})
                       </option>
@@ -746,7 +750,7 @@ export function MaintenancePage() {
                   <input
                     value={nomEquipement}
                     onChange={(e) => setNomEquipement(e.target.value)}
-                    placeholder="ex: Moulin à maïs n°1, Camion Benne Actros..."
+                    placeholder="ex: Machine industrielle n°1, Camion Porteur, Groupe 250kVA..."
                     required
                   />
                 </label>
@@ -897,7 +901,7 @@ export function MaintenancePage() {
                     value={newEqAgenceId}
                     onChange={(e) => setNewEqAgenceId(Number(e.target.value))}
                   >
-                    {(agencesQuery.data || []).map((ag: any) => (
+                    {safeAgences.map((ag: any) => (
                       <option key={ag.id} value={ag.id}>
                         {ag.nom} ({ag.ville})
                       </option>

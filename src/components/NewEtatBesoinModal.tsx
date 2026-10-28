@@ -10,7 +10,7 @@ export const SERVICES_ENTREPRISE = [
   'Service Achats & Approvisionnement',
   'Service Logistique & Transferts',
   'Service Maintenance & Parc Technique',
-  'Service Production & Minoterie',
+  'Service Production & Transformation',
   'Service Trésorerie & Caisse',
   'Service Ressources Humaines & Paie',
   'Service Comptabilité & Finance',
@@ -195,7 +195,7 @@ export function NewEtatBesoinModal({
               type="text"
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
-              placeholder="Ex : Facture proforma en pièce jointe, urgence atelier minoterie..."
+              placeholder="Ex : Facture proforma en pièce jointe, approvisionnement urgent atelier..."
               style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }}
             />
           </label>

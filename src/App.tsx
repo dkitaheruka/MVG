@@ -486,9 +486,14 @@ function AppShell() {
 
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token: session?.token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token: session?.token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(session?.token),
   })
+
+  const safeAgences: any[] = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
 
   return (
     <>
@@ -606,7 +611,7 @@ function AppShell() {
                   aria-label="Sélectionner l'agence de travail ou vue consolidée"
                 >
                   <option value="CONSOLIDE">Vue Consolidée Siège (Toutes les Agences)</option>
-                  {(agencesQuery.data || []).map((ag: any) => (
+                  {safeAgences.map((ag: any) => (
                     <option key={ag.id} value={ag.id}>
                       {ag.estSiege ? '[Siège] ' : ''}{ag.nom} ({ag.ville})
                     </option>
@@ -616,7 +621,7 @@ function AppShell() {
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.78rem', fontWeight: 600 }}>
                 <Buildings size={16} color="var(--primary)" />
-                <span>{(agencesQuery.data || []).find((a: any) => a.id === session?.agenceId)?.nom || 'Mon Agence'}</span>
+                <span>{safeAgences.find((a: any) => a.id === session?.agenceId)?.nom || 'Mon Agence'}</span>
               </div>
             )}
 
@@ -2138,7 +2143,7 @@ function SalesPage() {
                         </div>
                       ) : proposedPrice ? (
                         <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                          <span>⏳ Proposition ${Number(proposedPrice.prix).toFixed(2)} en attente Siège</span>
+                          <span>[Attente] Proposition ${Number(proposedPrice.prix).toFixed(2)} en attente Siège</span>
                         </div>
                       ) : (
                         <div style={{ fontSize: '0.70rem', color: 'var(--muted)', marginTop: 2 }}>
@@ -2280,7 +2285,7 @@ function SalesPage() {
                 style={{ width: '100%', padding: '6px 8px', fontSize: '0.82rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', marginBottom: 6 }}
               >
                 <option value="ENLEVEMENT_MAGASIN">Retrait comptoir (Enlèvement direct dépôt)</option>
-                <option value="FLOTTE_ENTREPRISE">Camion Minoterie MVG (Flotte Interne)</option>
+                <option value="FLOTTE_ENTREPRISE">Véhicule de la société (Flotte Interne)</option>
                 <option value="VEHICULE_CLIENT">Véhicule apporté par le Client</option>
               </select>
 
@@ -2677,7 +2682,7 @@ function SalesPage() {
             <div>
               <h3 style={{ margin: 0 }}>Suivi des Livraisons & Bons de Livraison (BL)</h3>
               <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-                Affectation des camions de la minoterie, suivi en temps réel du trajet et décharges clients signées.
+                Affectation des véhicules de livraison, suivi en temps réel du trajet et décharges clients signées.
               </p>
             </div>
             <button className="primary-action" onClick={() => setShowNewBLModal(true)}>
@@ -2686,7 +2691,7 @@ function SalesPage() {
           </div>
 
           <DataTable
-            columns={['N° BL', 'Date', 'Client & Téléphone', 'Destination / Adresse', 'Camion & Chauffeur', 'Chargement (Sacs / Poids)', 'Statut Trajet', 'Actions']}
+            columns={['N° BL', 'Date', 'Client & Téléphone', 'Destination / Adresse', 'Véhicule & Chauffeur', 'Chargement (Unités / Poids)', 'Statut Trajet', 'Actions']}
             loading={livraisonsQuery.isLoading}
             rows={(livraisonsQuery.data ?? []).map((bl) => [
               <strong key={'nbl-' + bl.id}>{bl.numeroBL}</strong>,
@@ -2697,11 +2702,11 @@ function SalesPage() {
               </div>,
               bl.adresseLivraison,
               <div key={'vh-' + bl.id}>
-                <strong>{bl.vehicule?.plaqueImmatriculation ?? 'Camion non assigné'}</strong>
+                <strong>{bl.vehicule?.plaqueImmatriculation ?? 'Véhicule non assigné'}</strong>
                 <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>Chauffeur : {bl.chauffeurNom ?? bl.vehicule?.chauffeurNom ?? 'À assigner'}</div>
               </div>,
               <div key={'ch-' + bl.id}>
-                <strong>{bl.quantiteSacs} sacs</strong>
+                <strong>{bl.quantiteSacs} unités</strong>
                 <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{bl.poidsTotalKg.toLocaleString('fr-FR')} kg ({((bl.poidsTotalKg)/1000).toFixed(2)} T)</div>
               </div>,
               <span
@@ -2722,9 +2727,9 @@ function SalesPage() {
                     className="primary-action"
                     style={{ padding: '3px 8px', fontSize: '0.75rem' }}
                     onClick={() => updateBLStatutMutation.mutate({ id: bl.id, statut: 'EN_TRANSIT' })}
-                    title="Départ du camion minoterie"
+                    title="Départ du véhicule de livraison"
                   >
-                    Départ camion
+                    Départ convoi
                   </button>
                 )}
                 {bl.statut === 'EN_TRANSIT' && (
@@ -2792,7 +2797,7 @@ function SalesPage() {
                     <strong>{art.designation}</strong>
                     <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Code : {art.codeUnique}</div>
                   </div>,
-                  <span className="badge">{art.type === 'PRODUIT_FINI' ? 'Farine MVG' : 'Sous-produit'}</span>,
+                  <span className="badge">{art.type === 'PRODUIT_FINI' ? 'Produit Fini' : 'Sous-produit / Matière'}</span>,
                   <span style={{ color: 'var(--muted)', fontWeight: 600 }}>${Number(art.prixStandardSiege || art.prixVenteStandard || 0).toFixed(2)} USD</span>,
                   <div>
                     <span style={{ fontSize: '1.05rem', fontWeight: 800, color: isCustom ? '#16a34a' : 'var(--text)' }}>
@@ -2804,7 +2809,7 @@ function SalesPage() {
                     {hasPendingProposal ? (
                       <div>
                         <span className="badge badge-warning" style={{ fontWeight: 700 }}>
-                          ⏳ Proposition $ {Number(art.propositionEnAttente.prix).toFixed(2)} USD en attente Siège
+                          [En attente] Proposition $ {Number(art.propositionEnAttente.prix).toFixed(2)} USD en attente Siège
                         </span>
                         <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 2 }}>
                           {art.propositionEnAttente.proposePar || 'Chef d\'Agence'}
@@ -4057,7 +4062,7 @@ function StockPage() {
           <div className="modal-card">
             <h3>Ajouter un article ou une matière première</h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              Créez n importe quel produit fini (farine de manioc, pain, provende, huile...) ou matière première agricole / emballage.
+              Créez n importe quel produit fini manufacturé ou matière première / composant d approvisionnement.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createArticleMutation.mutate(); }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
@@ -4066,16 +4071,16 @@ function StockPage() {
                   <input
                     value={newArtCode}
                     onChange={(e) => setNewArtCode(e.target.value)}
-                    placeholder="ex: MAN-001, SOJ-RAW"
+                    placeholder="ex: ART-001, MAT-002"
                     required
                   />
                 </label>
                 <label>
-                  Désignation du produit ou matière
+                  Désignation du produit ou article
                   <input
                     value={newArtDesignation}
                     onChange={(e) => setNewArtDesignation(e.target.value)}
-                    placeholder="ex: Farine de Manioc Panifiable Extra 25kg"
+                    placeholder="ex: Produit Fini Standard A (Unité)"
                     required
                   />
                 </label>
@@ -4172,7 +4177,10 @@ function ProductionPage() {
 
   const { data: agencesList } = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -4256,7 +4264,7 @@ function ProductionPage() {
         setPrintProposal({
           title: 'Lot de Production Clôturé & Entré en Stock !',
           ref: res.numeroLot,
-          subtitle: `L'ordre de fabrication a été clôturé avec succès et les sacs de farine ont été crédités en stock. Imprimez le bon officiel :`,
+          subtitle: `L'ordre de fabrication a été clôturé avec succès et les unités fabriquées ont été créditées en stock. Imprimez le bon officiel :`,
           primaryDocName: 'Bon de Production Officiel',
           primaryDocUrl: `/api/production/ordres/${finishedOrdreId}/document`,
         })
@@ -4273,7 +4281,7 @@ function ProductionPage() {
             className="secondary-action"
             onClick={() => setShowProdEB(true)}
             style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
-            title="Faire une demande de fonds pour les intrants de fabrication, sacs ou maintenance minoterie"
+            title="Faire une demande de fonds pour les intrants de fabrication, fournitures ou maintenance d atelier"
           >
             <Coins size={17} /> État de Besoin Production
           </button>
@@ -4381,7 +4389,7 @@ function ProductionPage() {
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createOrdreMutation.mutate(); }}>
               <label>
-                Site / Agence de production (Minoterie ou Usine)
+                Site / Agence de production (Atelier ou Usine)
                 <select value={prodAgenceId} onChange={(e) => setProdAgenceId(Number(e.target.value))} required>
                   {(agencesList ?? []).map((ag: any) => (
                     <option key={ag.id} value={ag.id}>
@@ -4403,7 +4411,7 @@ function ProductionPage() {
                 </select>
               </label>
               <label style={{ marginTop: 12 }}>
-                Quantité prévue (en unités / sacs)
+                Quantité prévue (en unités)
                 <input type="number" min="1" value={quantitePrevue} onChange={(e) => setQuantitePrevue(e.target.value)} required />
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
@@ -4423,7 +4431,7 @@ function ProductionPage() {
           <div className="modal-card">
             <h3>Ajouter une recette / formule de fabrication</h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              Définit le ratio de matière première (maïs grain brut, blé brut) requis par unité de produit fini.
+              Définit le ratio de matière première requis par unité de produit fini.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createRecetteMutation.mutate(); }}>
               <label>
@@ -4851,7 +4859,10 @@ function TreasuryPage() {
 
   const agencesListQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -6380,7 +6391,10 @@ function AccountingPage() {
 
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -8785,7 +8799,10 @@ function ReportingPage() {
 
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -9612,7 +9629,10 @@ function AdminPage() {
 
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -11599,7 +11619,7 @@ function AdminPage() {
               </div>
 
               <div style={{ marginTop: 12, padding: 10, background: 'var(--accent-soft)', borderRadius: 8, fontSize: '0.8rem', color: 'var(--accent-strong)' }}>
-                ℹ️ Règle de sécurité : Le compteur des 5 tentatives erronées sera remis à zéro et le compte déverrouillé immédiatement.
+                Règle de sécurité : Le compteur des 5 tentatives erronées sera remis à zéro et le compte déverrouillé immédiatement.
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>

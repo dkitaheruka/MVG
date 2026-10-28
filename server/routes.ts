@@ -512,7 +512,7 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
     const diagrammeProduits = Object.entries(prodMap).map(([nom, quantite]) => ({
       label: nom,
       valeur: quantite,
-      unite: 'unités/sacs',
+      unite: 'unités',
     }))
 
     const machinesProd = equipementsParc.filter((e) => (!agenceId || e.agenceId === agenceId) && (e.type === 'MOULIN_BROYEUR' || e.type === 'SILO' || e.type === 'PONT_BASCULE'))
@@ -527,7 +527,7 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
       canSwitchService: isSuperOrAdminSiege || isChefAgence,
       kpis: [
         { label: 'Ordres de fabrication actifs', valeur: ordresActifs, icon: 'Gear', color: '#059669', detail: 'En cours d exécution' },
-        { label: 'Produits finis fabriqués', valeur: `${quantiteFabriquee.toLocaleString()} unités/sacs`, icon: 'Package', color: '#059669', detail: 'Conformes et stockés' },
+        { label: 'Produits finis fabriqués', valeur: `${quantiteFabriquee.toLocaleString()} unités`, icon: 'Package', color: '#059669', detail: 'Conformes et stockés' },
         { label: 'Matières premières consommées', valeur: `${Math.round(matieresConsommeesKg / 1000)} T`, icon: 'ChartBar', color: '#059669', detail: 'Transformées' },
         { label: 'Machines opérationnelles', valeur: `${machinesDispo} / ${machinesProd.length || 1}`, icon: 'CheckCircle', color: '#059669', detail: `${machinesPanne} en révision` },
       ],
@@ -771,7 +771,7 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
         series: [
           { label: 'Ventes Agence', valeur: Math.round(totalAgConsolideUsd), unite: 'USD' },
           { label: 'Caisse Locale', valeur: Math.round(soldeUsd), unite: 'USD' },
-          { label: 'Sacs Fabriqués', valeur: sacsProduits, unite: 'sacs' },
+          { label: 'Unités Fabriquées', valeur: sacsProduits, unite: 'unités' },
         ],
       },
       recents: vAg.slice(0, 5).map((v) => ({
@@ -810,7 +810,7 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
     return {
       label: ag.nom,
       valeur: total,
-      unite: 'unités/sacs',
+      unite: 'unités',
     }
   })
 
@@ -9558,10 +9558,10 @@ const permissionsCatalog = [
   { id: 16, code: 'flotte.gerer', module: 'Logistique & Convois', libelle: 'Administrer les camions, chauffeurs et disponibilités' },
   { id: 17, code: 'livraisons.gerer', module: 'Logistique & Convois', libelle: 'Générer les bordereaux de livraison (BL) et visas' },
 
-  // 6. Production & Meunerie
-  { id: 18, code: 'production.gerer', module: 'Production & Meunerie', libelle: 'Lancer, suivre et clôturer les ordres de fabrication (OF)' },
-  { id: 19, code: 'production.qr_generer', module: 'Production & Meunerie', libelle: 'Générer et imprimer les étiquettes QR codes des sacs de farine' },
-  { id: 20, code: 'production.recettes', module: 'Production & Meunerie', libelle: 'Paramétrer les recettes de mouture et rendements d extraction' },
+  // 6. Production & Transformation
+  { id: 18, code: 'production.gerer', module: 'Production & Transformation', libelle: 'Lancer, suivre et clôturer les ordres de fabrication (OF)' },
+  { id: 19, code: 'production.qr_generer', module: 'Production & Transformation', libelle: 'Générer et imprimer les étiquettes QR codes de traçabilité des articles' },
+  { id: 20, code: 'production.recettes', module: 'Production & Transformation', libelle: 'Paramétrer les recettes de fabrication et rendements de production' },
 
   // 7. Trésorerie & Banque
   { id: 21, code: 'tresorerie.voir', module: 'Trésorerie & Banques', libelle: 'Consulter les soldes des caisses comptoir et banques' },

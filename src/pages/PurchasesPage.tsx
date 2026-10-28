@@ -41,7 +41,7 @@ export function PurchasesPage() {
 
   // Form states for Bon de Commande (BC)
   const [bcFournisseurId, setBcFournisseurId] = useState<number | ''>(1)
-  const [bcProduit, setBcProduit] = useState('Maïs en grains blanc sec Katanga')
+  const [bcProduit, setBcProduit] = useState('Matière Première Industrielle Type 1')
   const [bcQuantiteKg, setBcQuantiteKg] = useState('20000')
   const [bcPrixKgUsd, setBcPrixKgUsd] = useState('0.42')
   const [bcObservations, setBcObservations] = useState('')
@@ -49,7 +49,7 @@ export function PurchasesPage() {
   // Form states for Réception Pont-Bascule (BR)
   const [pbCommandeId, setPbCommandeId] = useState<number | ''>('')
   const [pbFournisseurId, setPbFournisseurId] = useState<number | ''>(1)
-  const [pbProduit, setPbProduit] = useState('Maïs en grains blanc sec')
+  const [pbProduit, setPbProduit] = useState('Matière Première Type 1')
   const [pbCamion, setPbCamion] = useState('8920AC/19')
   const [pbChauffeur, setPbChauffeur] = useState('Amisi Jacques')
   const [pbPeseeBrute, setPbPeseeBrute] = useState('34500')
@@ -692,7 +692,7 @@ export function PurchasesPage() {
             <form onSubmit={(e) => { e.preventDefault(); createFournisseurMutation.mutate(); }}>
               <label>
                 Raison sociale
-                <input value={fournisseurNom} onChange={(e) => setFournisseurNom(e.target.value)} placeholder="ex: Minoterie du Kivu" required />
+                <input value={fournisseurNom} onChange={(e) => setFournisseurNom(e.target.value)} placeholder="ex: Fournisseur Principal SARL" required />
               </label>
               <label style={{ marginTop: 12 }}>
                 Nom du contact / Responsable
@@ -798,7 +798,7 @@ export function PurchasesPage() {
               <button className="icon-button" onClick={() => setShowNewCommandeModal(false)}><X size={18} /></button>
             </div>
             <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '4px 0 16px' }}>
-              Émission d'un bon de commande formel pour approvisionnement de la minoterie.
+              Émission d'un bon de commande formel pour approvisionnement de l'entreprise.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createCommandeMutation.mutate(); }}>
               <label>
@@ -816,7 +816,7 @@ export function PurchasesPage() {
                   required
                   value={bcProduit}
                   onChange={(e) => setBcProduit(e.target.value)}
-                  placeholder="ex: Maïs en grains blanc Katanga, Soja cru"
+                  placeholder="ex: Matière première type A, Fourniture industrielle"
                 />
               </label>
 
@@ -883,11 +883,11 @@ export function PurchasesPage() {
         <div className="modal-backdrop">
           <div className="modal-card" style={{ maxWidth: 540 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>Réception Pont-Bascule Minoterie (BR)</h3>
+              <h3 style={{ margin: 0 }}>Réception Pont-Bascule & Entrepôt (BR)</h3>
               <button className="icon-button" onClick={() => setShowNewReceptionModal(false)}><X size={18} /></button>
             </div>
             <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '4px 0 16px' }}>
-              Double pesée du camion (Brut à l'entrée - Tare à la sortie), contrôle d'humidité et entrée en stock usine.
+              Double pesée du convoi (Brut à l'entrée - Tare à la sortie), contrôle de conformité et entrée en stock usine.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createReceptionMutation.mutate(); }}>
               <label>

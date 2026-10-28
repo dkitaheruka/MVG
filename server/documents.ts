@@ -161,8 +161,8 @@ export function renderFactureHtml(
   const fraisTransp = Number(vente.fraisTransport || 0)
   const totalMarchandise = Math.max(0, totalUsd - fraisTransp)
   const totalCdf = Math.round(vente.montantCdf || totalUsd * (tauxActif || 2850))
-  const socNom = entreprise?.nomSociete || 'MINOTERIE MODERNE DU VILLAGE (MVG SARL)'
-  const socSlogan = entreprise?.slogan || 'Qualité Supérieure de Farine de Maïs en RDC'
+  const socNom = entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
+  const socSlogan = entreprise?.slogan || 'Distribution, Production & Logistique Multi-Agences'
   const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/20-B-0142'
   const socIdNat = entreprise?.idNat || '01-83-N12044F'
   const socNif = entreprise?.nif || 'A1209384Z'
@@ -170,10 +170,10 @@ export function renderFactureHtml(
   const compteClient = client?.compteComptable || (client?.id ? `411${String(client.id).padStart(3, '0')}` : '411000 (Client Comptoir)')
 
   const modeTranspLabel = vente.modeTransport === 'FLOTTE_ENTREPRISE'
-    ? 'Camion Minoterie MVG'
+    ? 'Véhicule de la société (Flotte Interne)'
     : (vente.modeTransport === 'VEHICULE_CLIENT' ? 'Véhicule Client (Enlèvement)' : 'Retrait sur place (Comptoir Dépôt)')
 
-  const vehiculeInfo = vente.clientVehicule || (vente.selectedVehiculeId ? `Camion Flotte #${vente.selectedVehiculeId}` : '')
+  const vehiculeInfo = vente.clientVehicule || (vente.selectedVehiculeId ? `Véhicule Flotte #${vente.selectedVehiculeId}` : '')
   const chauffeurInfo = vente.clientChauffeur || ''
 
   if (isThermal) {
@@ -316,7 +316,7 @@ export function renderFactureHtml(
   ` : ''}
 
   <div class="center" style="font-size: 8px; margin-top: 6px; border-top: 1px dotted #888; padding-top: 4px;">
-    Merci de votre fidélité ! MVG Farine Extra Pure.<br/>
+    Merci de votre fidélité et de votre confiance !<br/>
     - - - - - - - Découper ici - - - - - - -
   </div>
 </body>
@@ -409,9 +409,9 @@ export function renderFactureHtml(
       ${details.map((d: any, idx: number) => `
         <tr>
           <td class="center">${idx + 1}</td>
-          <td><strong>${d.article?.designation || 'Farine / Produit'}</strong> <small style="color:#64748b">(${d.article?.codeUnique || 'ART'})</small></td>
+          <td><strong>${d.article?.designation || 'Article / Produit'}</strong> <small style="color:#64748b">(${d.article?.codeUnique || 'ART'})</small></td>
           <td class="center"><code>${d.numeroLot || 'LOT-STD'}</code></td>
-          <td class="right"><strong>${d.quantite}</strong> ${d.article?.uniteMesure || 'sac(s)'}</td>
+          <td class="right"><strong>${d.quantite}</strong> ${d.article?.uniteMesure || 'unité(s)'}</td>
           <td class="right">$${(d.prixUnitaireApplique || 0).toFixed(2)}</td>
           <td class="right"><strong>$${((d.prixUnitaireApplique || 0) * d.quantite).toFixed(2)}</strong></td>
         </tr>
@@ -883,7 +883,7 @@ export function renderFeuilleRouteTransfertHtml(
       <tr>
         <th class="center" style="width: 40px;">#</th>
         <th>Code Article</th>
-        <th>Désignation Farine / Marchandises</th>
+        <th>Désignation Marchandises / Produits</th>
         <th class="center">Numéro de Lot FEFO</th>
         <th class="right">Conditionnement</th>
         <th class="right">Quantité Chargée</th>
@@ -896,9 +896,9 @@ export function renderFeuilleRouteTransfertHtml(
           <tr>
             <td class="center">${idx + 1}</td>
             <td><code>${l.article?.codeUnique || 'ART'}</code></td>
-            <td><strong>${l.article?.designation || 'Farine'}</strong></td>
+            <td><strong>${l.article?.designation || 'Article'}</strong></td>
             <td class="center"><code>${l.numeroLot || 'LOT-STD'}</code></td>
-            <td class="right">${l.article?.uniteMesure || 'Sac(s)'}</td>
+            <td class="right">${l.article?.uniteMesure || 'Unité(s)'}</td>
             <td class="right" style="font-weight:700; font-size:13px;">${l.quantite}</td>
           </tr>
         `
@@ -995,10 +995,10 @@ export function renderBonProductionHtml(
       </div>
       <div>
         <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase;">
-          Étiquette QR Code Traçabilité Lot • Minoterie MVG
+          Étiquette QR Code Traçabilité Lot
         </div>
         <div style="font-size: 11px; color: #334155; margin-top: 2px; line-height: 1.4;">
-          Ce QR code officiel est rattaché aux cartons, sacs ou bidons issus de cet ordre. Sans prix fixé dans le code, il détecte automatiquement le tarif fixé par le Chef d'Agence lors du scan au POS.
+          Ce QR code officiel est rattaché aux unités et conditionnements issus de cet ordre. Sans prix fixé dans le code, il détecte automatiquement le tarif fixé par le Chef d'Agence lors du scan au POS.
         </div>
       </div>
     </div>
@@ -1190,7 +1190,7 @@ export function renderBulletinPaieHtml(
       </tr>
       ${primes > 0 ? `
       <tr>
-        <td><strong>Primes de Rendement Minoterie & Assiduité</strong></td>
+        <td><strong>Primes de Rendement & Assiduité</strong></td>
         <td class="center">Forfait</td>
         <td class="center">-</td>
         <td class="right bold">+${primes.toFixed(2)}</td>
@@ -1635,7 +1635,7 @@ export function renderTicketPontBasculeHtml(
       <strong>Transport & Véhicule :</strong><br/>
       Camion : <strong style="font-size: 14px;">${reception.plaqueCamion || 'Non renseigné'}</strong><br/>
       Chauffeur : <strong>${reception.chauffeurNom || 'Chauffeur transporteur'}</strong><br/>
-      Matière livrée : <strong>${reception.produitNom || 'Grains de Maïs/Blé'}</strong>
+      Matière livrée : <strong>${reception.produitNom || 'Matière Première / Fourniture'}</strong>
     </div>
     <div class="meta-box">
       <strong>Fournisseur & Commande :</strong><br/>
@@ -2351,11 +2351,11 @@ export async function renderPlancheEtiquettesQrLotHtml(
   agence: any,
   articleFini: any,
   entreprise?: any,
-  emballageType: string = 'Sac de 25 kg',
+  emballageType: string = 'Unité Standard',
   count: number = 8
 ): Promise<string> {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
-  const sigle = entreprise?.sigle || 'MVG'
+  const socNom = entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
+  const sigle = entreprise?.sigle || 'ECI'
   const numeroLot = ordre.lotCree || `LOT-${ordre.codeOrdre}`
   const dateProd = (ordre.dateCloture || ordre.dateCreation || new Date().toISOString()).slice(0, 10)
   const dateExp = '2027-06-30'
@@ -2366,7 +2366,7 @@ export async function renderPlancheEtiquettesQrLotHtml(
     articleId: ordre.articleFiniId || articleFini?.id,
     codeArticle: articleFini?.codeUnique || `ART-${articleFini?.id || 1}`,
     numeroLot,
-    designation: articleFini?.designation || 'Farine de Maïs Extra',
+    designation: articleFini?.designation || 'Produit Fini Standard',
     uniteMesure: emballageType,
     quantiteInitiale: ordre.quantiteReelle || ordre.quantitePrevue || 50,
     dateFabrication: dateProd,
@@ -2525,17 +2525,17 @@ export async function renderPlancheEtiquettesQrLotHtml(
               ${qrSvg}
             </div>
             <div class="sticker-info">
-              <div class="sticker-product">${articleFini?.designation || 'Farine de Maïs Extra'}</div>
+              <div class="sticker-product">${articleFini?.designation || 'Produit Fini Standard'}</div>
               <div class="sticker-row"><span>Lot FEFO :</span> <strong>${numeroLot}</strong></div>
               <div class="sticker-row"><span>Conditionnement :</span> <strong>${emballageType}</strong></div>
-              <div class="sticker-row"><span>Site Minoterie :</span> <span>${agence?.nom || 'Atelier Principal'}</span></div>
+              <div class="sticker-row"><span>Site de Production :</span> <span>${agence?.nom || 'Atelier Principal'}</span></div>
               <div class="sticker-row"><span>Date Fabrication :</span> <span>${dateProd}</span></div>
               <div class="sticker-row"><span>Date Expiration :</span> <strong>${dateExp}</strong></div>
             </div>
           </div>
 
           <div class="sticker-footer">
-            <span>Certification OCC / MVG RDC</span>
+            <span>Certification Officielle / Contrôle Qualité</span>
             <span style="font-style: italic;">Prix détecté selon le barème agence au scan</span>
             <strong style="color: #0284c7;">Unité #${i + 1} / ${count}</strong>
           </div>
@@ -2553,12 +2553,12 @@ export function renderBilanHtml(
   exerciceAnnee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'MINOTERIE VOLCAN GRANDS-LACS (MVG SARL)'
+  const socNom = entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
   const rccm = entreprise?.rccm || 'CD/GOM/RCCM/17-B-0824'
   const idNat = entreprise?.idNat || '01-83-N48201R'
   const numImpot = entreprise?.numeroImpot || 'A0918234M'
-  const adresseSiege = entreprise?.adresse || 'Avenue de la Minoterie N° 12, Quartier Industriel, Goma, Nord-Kivu, RDC'
-  const sigle = entreprise?.sigle || 'MVG'
+  const adresseSiege = entreprise?.adresse || 'Avenue Industrielle N° 12, Quartier Commercial, Goma, Nord-Kivu, RDC'
+  const sigle = entreprise?.sigle || 'ECI'
 
   const dateGeneration = new Date().toLocaleDateString('fr-FR', {
     day: '2-digit',
@@ -3056,7 +3056,7 @@ export function renderFeuillePaieCollectiveHtml(params: {
 
   <div class="header-box">
     <div>
-      <div class="company-title">${entreprise?.nomSociete || 'MINOTERIE VILLE DE GOMA (MVG SARL)'}</div>
+      <div class="company-title">${entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'}</div>
       <div style="font-size: 10px; color: #475569;">
         RCCM : ${entreprise?.rccm || 'CD/GOM/RCCM/18-B-00892'} • ID Nat : ${entreprise?.idNat || '01-83-N48201Z'} • NIF : ${entreprise?.nif || 'A1938201P'}<br/>
         Agence d'affectation : <strong>${agence?.nom || 'Siège Social Goma'}</strong> (${agence?.ville || 'Nord-Kivu'})

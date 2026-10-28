@@ -132,7 +132,10 @@ export function AnalyticsChartsPage() {
   // Requête agences
   const agencesQuery = useQuery({
     queryKey: ['agences'],
-    queryFn: () => apiRequest<any[]>('/api/agences', { token }),
+    queryFn: async () => {
+      const res = await apiRequest<any[]>('/api/agences', { token })
+      return Array.isArray(res) ? res : []
+    },
     enabled: Boolean(token),
   })
 
@@ -148,7 +151,7 @@ export function AnalyticsChartsPage() {
   })
 
   const execData = executiveQuery.data
-  const agencesList = agencesQuery.data || []
+  const agencesList = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
   const prodData = productionQuery.data
 
   const isSuperOrAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN_SIEGE'
