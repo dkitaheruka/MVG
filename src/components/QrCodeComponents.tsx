@@ -365,7 +365,7 @@ export function QrScannerModal({
 }
 
 /**
- * MODAL D'ÉTIQUETTE QR CODE IMPRIMABLE (STICKER PHYSIQUE POUR SAC / LOT / PRODUIT)
+ * MODAL D'ÉTIQUETTE QR CODE IMPRIMABLE (STICKER PHYSIQUE POUR UNITÉ / LOT / PRODUIT)
  */
 export function QrLabelPrintModal({
   isOpen,
@@ -460,7 +460,7 @@ export function QrLabelPrintModal({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '10px', textAlign: 'left', background: '#f1f5f9', padding: '6px 8px', borderRadius: 4 }}>
-            <div>Emballage : <strong>{data.poids || data.emballage || 'Sac de 25 kg'}</strong></div>
+            <div>Conditionnement : <strong>{data.poids || data.emballage || 'Conditionnement Standard'}</strong></div>
             <div>Contrôle : <strong>Normes OCC Conformes</strong></div>
             <div>Date Prod : <strong>{data.dateProd || new Date().toLocaleDateString('fr-FR')}</strong></div>
             <div>Expiration : <strong>{data.dateExp || '2027-06-30'}</strong></div>
@@ -762,7 +762,7 @@ export function QrAccountingModal({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
             <div>
               <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600, marginBottom: 4 }}>
-                QUANTITÉ À VENDRE (Sacs / Unités)
+                QUANTITÉ À VENDRE (Unités)
               </span>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '4px 6px', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <button
@@ -966,7 +966,7 @@ export function QrAccountingModal({
         <div style={{ background: 'var(--accent-soft)', padding: 10, borderRadius: 8, marginBottom: 18, fontSize: '0.78rem', color: 'var(--accent-strong)', lineHeight: 1.4 }}>
           <strong>✓ Mouvements comptables & stocks réels :</strong>
           <div style={{ marginTop: 2 }}>
-            • <strong>Stock :</strong> Diminution automatique de <strong>{quantite} sac(s)</strong> sur le lot {payload?.numeroLot || 'actuel'}.
+            • <strong>Stock :</strong> Diminution automatique de <strong>{quantite} unité(s)</strong> sur le lot {payload?.numeroLot || 'actuel'}.
           </div>
           <div>
             • <strong>Marchandises :</strong> ${montantMarchandises.toFixed(2)} USD {numFraisTransport > 0 ? `+ Transport: $${numFraisTransport.toFixed(2)} USD` : ''}

@@ -102,44 +102,48 @@ export function renderCorporateHeaderAndWatermark(params: {
        </div>`
 
   const headerHtml = isThermal
-    ? `<div class="header" style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; position: relative; z-index: 1;">
-        ${logoUrl ? `<div style="text-align: center; margin-bottom: 6px;"><img src="${logoUrl}" alt="Logo" style="max-height: 42px; max-width: 160px; object-fit: contain;" /></div>` : ''}
-        <h1 class="company-name" style="font-size: 15px; font-weight: 800; margin: 0; color: #0f172a;">${socNom}</h1>
-        <div class="subtitle" style="font-size: 10px; color: #64748b; margin: 2px 0 4px;">${socSlogan}</div>
-        <div class="legal-info" style="font-size: 9px; color: #475569; line-height: 1.3;">
+    ? `<div class="header" style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; position: relative; z-index: 1;">
+        ${logoUrl ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logoUrl}" alt="Logo" style="max-height: 65px; max-width: 220px; object-fit: contain;" /></div>` : ''}
+        <h1 class="company-name" style="font-size: 16px; font-weight: 800; margin: 0; color: #0f172a;">${socNom}</h1>
+        <div class="subtitle" style="font-size: 10.5px; color: #64748b; margin: 2px 0 4px;">${socSlogan}</div>
+        <div class="legal-info" style="font-size: 9.5px; color: #475569; line-height: 1.35;">
           RCCM : ${socRccm} | ID. NAT : ${socIdNat} | NIF : ${socNif}<br/>
           Agence : ${params.agence?.nom || 'Agence locale'}
         </div>
-        <div class="doc-title" style="font-size: 13px; font-weight: 800; margin: 8px 0 2px; text-transform: uppercase; color: #0284c7;">${params.docTitle}</div>
+        <div class="doc-title" style="font-size: 13.5px; font-weight: 800; margin: 8px 0 2px; text-transform: uppercase; color: #0284c7;">${params.docTitle}</div>
         ${params.docReference ? `<div style="font-size: 11px; font-weight: 700; color: #334155;">N° ${params.docReference}</div>` : ''}
        </div>`
-    : `<div class="header-bilateral" style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; position: relative; z-index: 1;">
-        <!-- CÔTÉ GAUCHE : LOGO OFFICIEL CONFIGURABLE & NOM DE L'ENTREPRISE -->
-        <div style="flex: 1.2; display: flex; align-items: center; gap: 14px;">
-          ${logoUrl ? `<img src="${logoUrl}" alt="Logo Entreprise" style="max-height: 60px; max-width: 170px; object-fit: contain; border-radius: 4px;" />` : `<div style="width: 50px; height: 50px; background: #0f172a; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; flex-shrink: 0;">${socNom.slice(0, 2).toUpperCase()}</div>`}
-          <div>
-            <h1 class="company-name" style="font-size: 17px; font-weight: 800; color: #0f172a; margin: 0; line-height: 1.2;">${socNom}</h1>
-            <div class="subtitle" style="font-size: 11px; color: #64748b; margin-top: 3px;">${socSlogan}</div>
-            <div style="font-size: 10px; color: #475569; margin-top: 4px;">
-              Siège Social : ${socSiege} | Tél : ${socTel}
-            </div>
-          </div>
+    : `<div class="header-bilateral" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; position: relative; z-index: 1; gap: 16px;">
+        <!-- LOGO GAUCHE : MÊME TAILLE ET SUR LA MÊME LIGNE HORIZONTALE -->
+        <div style="flex: 0 0 140px; height: 80px; display: flex; align-items: center; justify-content: flex-start;">
+          ${logoUrl
+            ? `<img src="${logoUrl}" alt="Logo Entreprise" style="height: 80px; width: 140px; max-height: 80px; max-width: 140px; object-fit: contain; border-radius: 4px;" />`
+            : `<div style="width: 80px; height: 80px; background: #0f172a; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 24px;">${socNom.slice(0, 2).toUpperCase()}</div>`
+          }
         </div>
 
-        <!-- CÔTÉ DROIT : INFORMATIONS LÉGALES, LOGO/SCEAU DROIT (SI CONFIGURÉ) & TITRE DU DOCUMENT -->
-        <div style="flex: 1; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-          <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-end;">
-            <div style="font-size: 10px; color: #475569; line-height: 1.4; text-align: right;">
-              RCCM : <strong>${socRccm}</strong> | ID. NAT : <strong>${socIdNat}</strong><br/>
-              NIF : <strong>${socNif}</strong><br/>
-              Agence d'émission : <strong>${params.agence?.nom || 'Siège Principal'}</strong> (${params.agence?.ville || 'RDC'})
-            </div>
-            ${logoDroiteUrl ? `<img src="${logoDroiteUrl}" alt="Logo/Sceau Droit" style="max-height: 52px; max-width: 110px; object-fit: contain; border-radius: 4px;" />` : ''}
+        <!-- CENTRE : INFORMATIONS SOCIÉTÉ, MENTIONS LÉGALES & TITRE -->
+        <div style="flex: 1; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0;">
+          <h1 class="company-name" style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.02em;">${socNom}</h1>
+          <div class="subtitle" style="font-size: 11px; color: #64748b; margin-top: 2px;">${socSlogan}</div>
+          <div style="font-size: 9.5px; color: #475569; margin-top: 4px; line-height: 1.35;">
+            RCCM : <strong>${socRccm}</strong> | ID. NAT : <strong>${socIdNat}</strong> | NIF : <strong>${socNif}</strong><br/>
+            Siège : ${socSiege} • Tél : ${socTel} • Agence : <strong>${params.agence?.nom || 'Siège Principal'}</strong>
           </div>
-          <div class="doc-title" style="font-size: 14px; font-weight: 800; margin: 6px 0 2px; text-transform: uppercase; color: #0284c7; letter-spacing: 0.02em;">
+          <div class="doc-title" style="font-size: 14.5px; font-weight: 800; margin: 6px 0 2px; text-transform: uppercase; color: #0284c7; letter-spacing: 0.02em;">
             ${params.docTitle}
           </div>
-          ${params.docReference ? `<div style="font-size: 12px; font-weight: 700; color: #047857;">Réf : ${params.docReference}</div>` : ''}
+          ${params.docReference ? `<div style="font-size: 11.5px; font-weight: 700; color: #047857;">${params.docReference}</div>` : ''}
+        </div>
+
+        <!-- LOGO DROIT / SCEAU OFFICIEL : MÊME TAILLE ET SUR LA MÊME LIGNE HORIZONTALE -->
+        <div style="flex: 0 0 140px; height: 80px; display: flex; align-items: center; justify-content: flex-end;">
+          ${logoDroiteUrl
+            ? `<img src="${logoDroiteUrl}" alt="Logo / Sceau Droit" style="height: 80px; width: 140px; max-height: 80px; max-width: 140px; object-fit: contain; border-radius: 4px;" />`
+            : logoUrl
+              ? `<img src="${logoUrl}" alt="Sceau Entreprise" style="height: 80px; width: 140px; max-height: 80px; max-width: 140px; object-fit: contain; border-radius: 4px;" />`
+              : `<div style="width: 80px; height: 80px; border: 2px dashed #94a3b8; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; color: #64748b; text-align: center; padding: 4px; line-height: 1.1;">SCEAU OFFICIEL CERTIFIÉ</div>`
+          }
         </div>
        </div>`
 
@@ -593,7 +597,7 @@ export function renderBonLivraisonHtml(
           <td><code>${d.article?.codeUnique || 'ART'}</code></td>
           <td><strong>${d.article?.designation || 'Produit'}</strong></td>
           <td class="center"><code>${d.numeroLot || 'LOT-STD'}</code></td>
-          <td class="right">${d.article?.uniteMesure || 'Sac(s)'}</td>
+          <td class="right">${d.article?.uniteMesure || 'Unité(s)'}</td>
           <td class="right" style="font-weight:700; font-size:13px;">${d.quantite}</td>
         </tr>
       `).join('')}
@@ -783,7 +787,7 @@ export function renderInventaireHtml(stocks: any[], agenceNom: string, entrepris
             <td><strong>${art?.designation || 'Article'}</strong></td>
             <td class="center"><code>${s.numeroLot || 'LOT-STD'}</code></td>
             <td class="center">${new Date(s.dateExpiration).toLocaleDateString('fr-FR')}</td>
-            <td class="right">${s.quantite} ${art?.uniteMesure || 'sac(s)'}</td>
+            <td class="right">${s.quantite} ${art?.uniteMesure || 'unité(s)'}</td>
             <td class="right">$${pu.toFixed(2)}</td>
             <td class="right"><strong>$${valLigne.toFixed(2)}</strong></td>
           </tr>
@@ -904,15 +908,15 @@ export function renderFeuilleRouteTransfertHtml(
         `
       }).join('')}
       <tr style="background:#f1f5f9; font-weight:800;">
-        <td colspan="5" class="center">TOTAL CHARGEMENT CAMION (SACS)</td>
-        <td class="right" style="font-size:14px; color:#0f172a;">${totalSacs} sacs</td>
+        <td colspan="5" class="center">TOTAL CHARGEMENT CAMION (UNITÉS)</td>
+        <td class="right" style="font-size:14px; color:#0f172a;">${totalSacs} unités</td>
       </tr>
     </tbody>
   </table>
 
   <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 20px; font-size: 11px;">
     <strong>Engagement de Convoi & Intégrité du Chargement :</strong><br/>
-    Le chauffeur certifie avoir pris en charge la quantité de sacs mentionnée ci-dessus après comptage contradictoire et vérification de l'étanchéité de la bâche de transport. À l'arrivée, le chef de magasin récepteur procédera au déchargement et au visa de conformité.
+    Le chauffeur certifie avoir pris en charge la quantité de marchandises et unités mentionnée ci-dessus après comptage contradictoire et vérification de l'arrimage de transport. À l'arrivée, le chef de magasin récepteur procédera au déchargement et au visa de conformité.
   </div>
 
   <div class="signatures" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
@@ -1031,7 +1035,7 @@ export function renderBonProductionHtml(
         <th class="center" style="width: 40px;">#</th>
         <th>Matière Première Consommée</th>
         <th class="center">Unité</th>
-        <th class="right">Norme Recette / Sac</th>
+        <th class="right">Norme Recette / Unité</th>
         <th class="right">Besoin Théorique Total</th>
         <th class="right">Statut Déduction</th>
       </tr>
@@ -1275,9 +1279,6 @@ export function renderGrandLivreHtml(
   annee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
-  const logo = entreprise?.logoUrl
-
   // Regrouper les écritures par numéro de compte
   const accountsMap: Record<string, { compte: any; ecritures: any[]; totalDebit: number; totalCredit: number }> = {}
 
@@ -1301,6 +1302,13 @@ export function renderGrandLivreHtml(
 
   const sortedKeys = Object.keys(accountsMap).sort()
 
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'GRAND LIVRE GÉNÉRAL DES COMPTES',
+    docReference: `SYSCOHADA - EXERCICE ${annee}`,
+  })
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1308,11 +1316,11 @@ export function renderGrandLivreHtml(
   <title>Grand Livre Comptable OHADA - ${annee}</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 12px; }
+    body { margin: 0; padding: 24px; color: #1e293b; background: #fff; font-size: 12px; position: relative; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
     .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
-    .account-block { margin-bottom: 24px; page-break-inside: avoid; }
+    .account-block { margin-bottom: 24px; page-break-inside: avoid; position: relative; z-index: 1; }
     .account-header { background: #0f172a; color: #fff; padding: 8px 12px; font-weight: 700; font-size: 13px; border-radius: 4px 4px 0 0; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
     th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px; }
@@ -1327,15 +1335,8 @@ export function renderGrandLivreHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Grand Livre Général des Comptes - Exercice ${annee}`)}
-
-  <div class="header">
-    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div style="font-size: 11px; color:#64748b;">Système Comptable SYSCOHADA Révisé</div>
-    <div class="doc-title">GRAND LIVRE GÉNÉRAL DES COMPTES</div>
-    <div style="font-size: 12px; font-weight: 600;">Périmètre : ${agenceNom} | Exercice : ${annee}</div>
-    <div style="font-size: 10px; color:#475569;">Édité le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   ${sortedKeys.map((k) => {
     const acc = accountsMap[k]
@@ -1388,11 +1389,15 @@ export function renderCompteResultatHtml(
   resultatNet: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
-  const logo = entreprise?.logoUrl
-
   const charges = groupedComptes.filter((c) => c.numeroCompte.startsWith('6'))
   const produits = groupedComptes.filter((c) => c.numeroCompte.startsWith('7'))
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'COMPTE DE RÉSULTAT ANALYTIQUE (PRODUITS & CHARGES)',
+    docReference: `SYSCOHADA - EXERCICE ${annee}`,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -1401,16 +1406,16 @@ export function renderCompteResultatHtml(
   <title>Compte de Résultat OHADA - ${annee}</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
     .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
-    .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+    .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; position: relative; z-index: 1; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; }
     td { border: 1px solid #e2e8f0; padding: 7px 8px; font-size: 12px; }
     .right { text-align: right; }
-    .result-box { border: 2px solid ${resultatNet >= 0 ? '#16a34a' : '#dc2626'}; border-radius: 8px; padding: 16px; background: ${resultatNet >= 0 ? '#f0fdf4' : '#fef2f2'}; text-align: center; margin-top: 20px; }
+    .result-box { border: 2px solid ${resultatNet >= 0 ? '#16a34a' : '#dc2626'}; border-radius: 8px; padding: 16px; background: ${resultatNet >= 0 ? '#f0fdf4' : '#fef2f2'}; text-align: center; margin-top: 20px; position: relative; z-index: 1; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
     ${COMMON_SCROLLBAR_CSS}
@@ -1418,14 +1423,8 @@ export function renderCompteResultatHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Compte de Résultat Analytique OHADA - Exercice ${annee}`)}
-
-  <div class="header">
-    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div style="font-size: 11px; color:#64748b;">Système Comptable SYSCOHADA Révisé</div>
-    <div class="doc-title">COMPTE DE RÉSULTAT ANALYTIQUE (PRODUITS & CHARGES)</div>
-    <div style="font-size: 12px; font-weight: 600;">Périmètre : ${agenceNom} | Exercice : ${annee}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <div class="two-cols">
     <div>
@@ -1692,13 +1691,17 @@ export function renderTableauImmobilisationsHtml(
   annee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || entreprise?.sigle || 'Entreprise'
-  const logo = entreprise?.logoUrl
-
   const totalAcq = immos.reduce((sum, i) => sum + Number(i.valeurAcquisitionUsd || 0), 0)
   const totalAmort = immos.reduce((sum, i) => sum + Number(i.amortissementCumuleUsd || 0), 0)
   const totalVnc = immos.reduce((sum, i) => sum + Number(i.valeurNetteComptableUsd || 0), 0)
   const totalDot = immos.reduce((sum, i) => sum + Number(i.dotationAnnuelleUsd || 0), 0)
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'TABLEAU DES IMMOBILISATIONS & AMORTISSEMENTS (ÉTAT FINANCIER)',
+    docReference: `SYSCOHADA - EXERCICE ${annee}`,
+  })
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -1707,17 +1710,17 @@ export function renderTableauImmobilisationsHtml(
   <title>Tableau des Immobilisations & Amortissements OHADA</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+    body { margin: 0; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; position: relative; }
     .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
     .company-name { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0; }
     .doc-title { font-size: 16px; font-weight: 800; text-transform: uppercase; color: #0284c7; margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; position: relative; z-index: 1; }
     th { background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; text-align: left; font-size: 11px; }
     td { border: 1px solid #e2e8f0; padding: 7px 8px; font-size: 12px; }
     .right { text-align: right; }
     .center { text-align: center; }
     .total-row { background: #f8fafc; font-weight: 800; }
-    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; font-size: 11px; position: relative; z-index: 1; }
     .sig-box { border-top: 1px solid #94a3b8; padding-top: 8px; height: 75px; }
     .print-btn { background: #0284c7; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     @media print { .no-print { display: none !important; } body { padding: 0; } }
@@ -1726,14 +1729,8 @@ export function renderTableauImmobilisationsHtml(
 </head>
 <body>
   ${renderStickyToolbar(`Tableau des Immobilisations & Amortissements OHADA (Exercice ${annee})`)}
-
-  <div class="header">
-    ${logo ? `<div style="text-align: center; margin-bottom: 8px;"><img src="${logo}" alt="Logo" style="max-height: 50px; max-width: 200px; object-fit: contain;" /></div>` : ''}
-    <h1 class="company-name">${socNom}</h1>
-    <div style="font-size: 11px; color:#64748b;">Système Comptable SYSCOHADA Révisé - Actif Immobilisé (Classe 2)</div>
-    <div class="doc-title">TABLEAU DES IMMOBILISATIONS & AMORTISSEMENTS (ÉTAT FINANCIER)</div>
-    <div style="font-size: 12px; font-weight: 600;">Site / Agence : ${agenceNom} | Exercice : ${annee}</div>
-  </div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <table>
     <thead>
@@ -2503,7 +2500,7 @@ export async function renderPlancheEtiquettesQrLotHtml(
     <div>
       <strong style="font-size: 14px; color: #0f172a;">Planche d'Étiquettes QR Code Traçabilité • Lot ${numeroLot}</strong>
       <div style="font-size: 11px; color: #64748b;">
-        Conçu pour impression et collage sur ${emballageType} (Cartons, Bidons, Sacs). Scan direct sans prix préenregistré.
+        Conçu pour impression et collage sur ${emballageType} (Cartons, Bidons, Colis, Unités). Scan direct sans prix préenregistré.
       </div>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
@@ -2553,17 +2550,19 @@ export function renderBilanHtml(
   exerciceAnnee: number,
   entreprise?: any
 ): string {
-  const socNom = entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
-  const rccm = entreprise?.rccm || 'CD/GOM/RCCM/17-B-0824'
-  const idNat = entreprise?.idNat || '01-83-N48201R'
-  const numImpot = entreprise?.numeroImpot || 'A0918234M'
-  const adresseSiege = entreprise?.adresse || 'Avenue Industrielle N° 12, Quartier Commercial, Goma, Nord-Kivu, RDC'
-  const sigle = entreprise?.sigle || 'ECI'
+  const socNom = entreprise?.nomSociete || 'SOCIÉTÉ COMMERCIALE & INDUSTRIELLE'
 
   const dateGeneration = new Date().toLocaleDateString('fr-FR', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
+  })
+
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'BILAN COMPTABLE NORMALISÉ (SYSCOHADA)',
+    docReference: `EXERCICE-${exerciceAnnee}`,
   })
 
   return `<!DOCTYPE html>
@@ -2573,7 +2572,7 @@ export function renderBilanHtml(
   <title>Bilan Comptable OHADA - ${socNom} - Exercice ${exerciceAnnee}</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { margin: 0; padding: 24px; color: #0f172a; background: #f8fafc; font-size: 11.5px; line-height: 1.4; }
+    body { margin: 0; padding: 24px; color: #0f172a; background: #f8fafc; font-size: 11.5px; line-height: 1.4; position: relative; }
     .bilan-page { max-width: 280mm; margin: 0 auto; background: #fff; padding: 18mm 16mm; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border-radius: 8px; position: relative; }
     
     .company-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; }
@@ -2583,7 +2582,7 @@ export function renderBilanHtml(
     .doc-title { font-size: 18px; font-weight: 800; color: #0f172a; margin: 0 0 4px; text-transform: uppercase; }
     .doc-badge { display: inline-block; background: #0284c7; color: #fff; padding: 3px 10px; font-weight: 700; border-radius: 4px; font-size: 10.5px; }
     
-    .bilan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+    .bilan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; position: relative; z-index: 1; }
     .bilan-table-card { border: 1.5px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #fff; }
     .bilan-table-head { background: #0f172a; color: #fff; font-weight: 700; padding: 7px 10px; font-size: 12px; display: flex; justify-content: space-between; }
     
@@ -2598,10 +2597,10 @@ export function renderBilanHtml(
     .text-center { text-align: center; }
     .text-bold { font-weight: 700; }
     
-    .cert-box { margin-top: 14px; border: 1.5px dashed #0284c7; border-radius: 6px; padding: 10px 14px; background: #f0f9ff; display: flex; justify-content: space-between; align-items: center; }
+    .cert-box { margin-top: 14px; border: 1.5px dashed #0284c7; border-radius: 6px; padding: 10px 14px; background: #f0f9ff; display: flex; justify-content: space-between; align-items: center; position: relative; z-index: 1; }
     .cert-text { font-size: 10px; color: #0369a1; }
     
-    .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 22px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; }
+    .signatures-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 22px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; position: relative; z-index: 1; }
     .signature-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; text-align: center; min-height: 85px; display: flex; flex-direction: column; justify-content: space-between; background: #fafafa; }
     .signature-card .role { font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; }
     .signature-card .hint { font-size: 8.5px; color: #64748b; font-style: italic; }
@@ -2628,22 +2627,11 @@ export function renderBilanHtml(
   </div>
 
   <div class="bilan-page">
-    <div class="company-header">
-      <div>
-        <div class="company-brand">${sigle} • ${socNom}</div>
-        <div class="company-legal">
-          ${adresseSiege}<br>
-          RCCM : <strong>${rccm}</strong> | Id. Nat. : <strong>${idNat}</strong> | N° Impôt : <strong>${numImpot}</strong>
-        </div>
-      </div>
-      <div class="doc-meta">
-        <h1 class="doc-title">Bilan Comptable</h1>
-        <div class="doc-badge">SYSTÈME COMPTABLE OHADA RÉVISÉ</div>
-        <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
-          Périmètre : <strong>${agenceNom}</strong><br>
-          Arrêté au 31 décembre ${exerciceAnnee} (Édité le ${dateGeneration})
-        </div>
-      </div>
+    ${watermarkHtml}
+    ${headerHtml}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 11px; color: #475569;">
+      <span>Arrêté au 31 décembre ${exerciceAnnee} (Édité le ${dateGeneration})</span>
+      <span class="doc-badge">SYSTÈME COMPTABLE OHADA RÉVISÉ</span>
     </div>
 
     <div class="bilan-grid">
@@ -2933,6 +2921,13 @@ export function renderFeuillePaieCollectiveHtml(params: {
     })
     .join('')
 
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence,
+    docTitle: 'FEUILLE DE PAIE • LIVRE DES SALAIRES',
+    docReference: `${nomMois.toUpperCase()} ${annee} (${devise})`,
+  })
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -3053,24 +3048,8 @@ export function renderFeuillePaieCollectiveHtml(params: {
 </head>
 <body>
   ${renderStickyToolbar(`Feuille de Paie - ${nomMois} ${annee} (${agence?.nom || 'Agence'})`)}
-
-  <div class="header-box">
-    <div>
-      <div class="company-title">${entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'}</div>
-      <div style="font-size: 10px; color: #475569;">
-        RCCM : ${entreprise?.rccm || 'CD/GOM/RCCM/18-B-00892'} • ID Nat : ${entreprise?.idNat || '01-83-N48201Z'} • NIF : ${entreprise?.nif || 'A1938201P'}<br/>
-        Agence d'affectation : <strong>${agence?.nom || 'Siège Social Goma'}</strong> (${agence?.ville || 'Nord-Kivu'})
-      </div>
-    </div>
-    <div style="text-align: right;">
-      <div style="font-size: 10px; font-weight: 700;">RÉPUBLIQUE DÉMOCRATIQUE DU CONGO</div>
-      <div style="font-size: 9.5px; color: #475569;">MINISTÈRE DU TRAVAIL ET DE LA PRÉVOYANCE SOCIALE</div>
-      <div style="font-size: 9.5px; font-weight: 600; color: #0284c7;">LIVRE / ÉTAT DE PAIE MENSUEL NORMALISÉ</div>
-    </div>
-  </div>
-
-  <div class="sheet-title">FEUILLE DE PAIE • LIVRE DES SALAIRES</div>
-  <div class="sheet-sub">Période : ${nomMois.toUpperCase()} ${annee} • Devise de référence : ${devise}</div>
+  ${watermarkHtml}
+  ${headerHtml}
 
   <table>
     <thead>
@@ -3131,6 +3110,322 @@ export function renderFeuillePaieCollectiveHtml(params: {
     <div class="sig-card">
       <div class="sig-role">La Direction Générale</div>
       <div class="sig-hint">Bon pour décaissement en caisse</div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+function escapeHtml(str: any): string {
+  if (str == null) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function renderDossierDiagrammesHtml(
+  data: any,
+  productionData: any,
+  agenceNom: string,
+  periodeLabel: string,
+  chartTarget: string | undefined,
+  entreprise?: any
+): string {
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    docTitle: chartTarget && chartTarget !== 'TOUT'
+      ? `RAPPORT ANALYTIQUE : ${chartTarget.replace('_', ' ').toUpperCase()}`
+      : "DOSSIER D'ANALYSES & DIAGRAMMES DÉCISIONNELS",
+    docReference: `DIAG-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`,
+    agence: { nom: agenceNom },
+  })
+
+  const exec = data || {}
+  const prod = productionData || {}
+  const nowStr = new Date().toLocaleString('fr-FR')
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <title>Dossier Diagrammes & Analyses - ${escapeHtml(agenceNom)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 16px; background: #fff; }
+    .print-bar { position: sticky; top: 0; z-index: 1000; background: #0f172a; color: #fff; padding: 10px 18px; margin: -16px -16px 16px -16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .print-btn { background: #0284c7; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; }
+    .grid-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .kpi-box { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; background: #f8fafc; }
+    .kpi-title { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+    .kpi-val { font-size: 17px; font-weight: 900; color: #0f172a; }
+    .kpi-sub { font-size: 9px; color: #475569; margin-top: 2px; }
+    .section-title { font-size: 13px; font-weight: 800; color: #0284c7; border-bottom: 2px solid #0284c7; padding-bottom: 4px; margin: 18px 0 10px 0; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+    .table-data { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 14px; }
+    .table-data th { background: #f1f5f9; padding: 7px 9px; border: 1px solid #cbd5e1; text-align: left; font-weight: 700; color: #334155; }
+    .table-data td { padding: 6px 9px; border: 1px solid #e2e8f0; }
+    .table-data tr:nth-child(even) { background: #f8fafc; }
+    .bar-bg { background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden; width: 100%; }
+    .bar-fill { height: 100%; border-radius: 5px; }
+    .signatures-block { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 26px; padding-top: 14px; border-top: 1.5px solid #cbd5e1; page-break-inside: avoid; }
+    .sig-card { border: 1px dashed #94a3b8; border-radius: 8px; padding: 12px; text-align: center; height: 75px; background: #f8fafc; }
+    .sig-role { font-weight: 800; font-size: 11px; text-transform: uppercase; color: #0f172a; }
+    .sig-hint { font-size: 9px; color: #64748b; margin-top: 3px; font-style: italic; }
+    @media print {
+      .print-bar { display: none !important; }
+      body { padding: 0; background: #fff; }
+      .page-break { page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div>
+      <strong>Dossier Graphique Décisionnel — ${escapeHtml(agenceNom)}</strong>
+      <span style="font-size: 11px; opacity: 0.8; margin-left: 10px;">Période : ${escapeHtml(periodeLabel)}</span>
+    </div>
+    <button class="print-btn" onclick="window.print()">Imprimer en A4 Paysage (PDF)</button>
+  </div>
+
+  ${watermarkHtml}
+  ${headerHtml}
+
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 10.5px; color: #475569; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">
+    <span><strong>Périmètre :</strong> ${escapeHtml(agenceNom)} | <strong>Période :</strong> ${escapeHtml(periodeLabel)}</span>
+    <span><strong>Édition :</strong> ${nowStr} | <strong>Certification :</strong> SYSTÈME ERP CERTIFIÉ</span>
+  </div>
+
+  <!-- SECTION 1 : VENTES ET CHIFFRE D'AFFAIRES -->
+  <div class="section-title">
+    <span>1. Situation des Ventes & Chiffre d'Affaires</span>
+    <span style="font-size: 10px; font-weight: 600; color: #64748b;">Flux Consolidés USD</span>
+  </div>
+
+  <div class="grid-kpis">
+    <div class="kpi-box">
+      <div class="kpi-title">Total Ventes Global</div>
+      <div class="kpi-val" style="color: #16a34a;">$${Number(exec.ventesJournalieres?.totalVentesUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</div>
+      <div class="kpi-sub">Consolidé multi-devises</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-title">Ventes Comptant (Cash)</div>
+      <div class="kpi-val">$${Number(exec.ventesJournalieres?.totalComptantUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</div>
+      <div class="kpi-sub">Encaissements immédiats caisse/banque</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-title">Ventes à Crédit</div>
+      <div class="kpi-val" style="color: #ea580c;">$${Number(exec.ventesJournalieres?.totalCreditUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</div>
+      <div class="kpi-sub">Créances clients compte 411</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-title">Nombre de Transactions</div>
+      <div class="kpi-val">${exec.ventesJournalieres?.parAgence?.reduce((s: number, a: any) => s + (Number(a.nombreTransactions) || 0), 0) || 0}</div>
+      <div class="kpi-sub">Factures & reçus validés</div>
+    </div>
+  </div>
+
+  <table class="table-data">
+    <thead>
+      <tr>
+        <th>Agence / Point de Vente</th>
+        <th style="text-align: right;">Ventes USD</th>
+        <th style="text-align: right;">Ventes CDF</th>
+        <th style="text-align: right;">Total Consolidé USD</th>
+        <th style="text-align: right;">Comptant</th>
+        <th style="text-align: right;">Crédit</th>
+        <th style="width: 140px;">Proportion</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(exec.ventesJournalieres?.parAgence || []).map((v: any) => {
+        const total = Number(exec.ventesJournalieres?.totalVentesUsd || 1)
+        const pct = Math.min(100, Math.round(((Number(v.totalConsolideUsd) || 0) / (total || 1)) * 100))
+        return `<tr>
+          <td><strong>${escapeHtml(v.agenceNom)}</strong> (${escapeHtml(v.ville)})</td>
+          <td style="text-align: right;">$${Number(v.ventesUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: right;">${Number(v.ventesCdf || 0).toLocaleString('fr-FR')} FC</td>
+          <td style="text-align: right; font-weight: 700; color: #16a34a;">$${Number(v.totalConsolideUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: right;">$${Number(v.comptantUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: right; color: #ea580c;">$${Number(v.creditUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div class="bar-bg"><div class="bar-fill" style="background: #16a34a; width: ${pct}%;"></div></div>
+              <span style="font-size: 9px; font-weight: 700;">${pct}%</span>
+            </div>
+          </td>
+        </tr>`
+      }).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 2 : DÉPENSES OPÉRATIONNELLES -->
+  <div class="section-title">
+    <span>2. Répartition Analytique des Dépenses & Charges</span>
+    <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Charges : $${Number(exec.depensesJournalieres?.totalDepensesUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
+  </div>
+
+  <table class="table-data">
+    <thead>
+      <tr>
+        <th>Catégorie de Dépense</th>
+        <th style="text-align: right;">Montant USD</th>
+        <th style="width: 160px;">Poids Budgétaire</th>
+        <th>Interprétation de Gestion</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(exec.depensesJournalieres?.depensesCategories || []).map((c: any) => `
+        <tr>
+          <td><strong>${escapeHtml(c.categorie)}</strong></td>
+          <td style="text-align: right; font-weight: 700; color: #dc2626;">$${Number(c.montantUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div class="bar-bg"><div class="bar-fill" style="background: #dc2626; width: ${Math.min(100, c.pourcentage || 0)}%;"></div></div>
+              <span style="font-size: 9px; font-weight: 700;">${c.pourcentage}%</span>
+            </div>
+          </td>
+          <td style="color: #64748b; font-size: 9.5px;">Charge opérationnelle décaissée sur la période</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 3 : TRÉSORERIE & LIQUIDITÉS -->
+  <div class="section-title">
+    <span>3. Trésorerie & Liquidités Disponibles</span>
+    <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Trésorerie : $${Number(exec.tresorerie?.totalTresorerieUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
+  </div>
+
+  <table class="table-data">
+    <thead>
+      <tr>
+        <th>Agence / Dépôt</th>
+        <th style="text-align: right;">Caisse USD ($)</th>
+        <th style="text-align: right;">Caisse CDF (FC)</th>
+        <th style="text-align: right;">Comptes Bancaires ($)</th>
+        <th style="text-align: right;">Total Équivalent USD</th>
+        <th style="text-align: center;">Statut Liquidité</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(exec.tresorerie?.tresorerieParAgence || []).map((t: any) => `
+        <tr>
+          <td><strong>${escapeHtml(t.agenceNom)}</strong></td>
+          <td style="text-align: right;">$${Number(t.caisseUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: right;">${Number(t.caisseCdf || 0).toLocaleString('fr-FR')} FC</td>
+          <td style="text-align: right;">$${Number(t.banqueUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: right; font-weight: 800; color: #0284c7;">$${Number(t.totalUsdEquiv || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: center;"><span style="background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 700;">LIQUIDE</span></td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 4 : PRÉSENCES ET ASSIDUITÉ BIOMÉTRIQUE -->
+  <div class="section-title">
+    <span>4. Pointage Biométrique & Assiduité des Agents</span>
+    <span style="font-size: 10px; font-weight: 600; color: #64748b;">Taux Moyen : ${exec.presences?.tauxPresence || 0}%</span>
+  </div>
+
+  <table class="table-data">
+    <thead>
+      <tr>
+        <th>Agence</th>
+        <th style="text-align: center;">Effectif Suivi</th>
+        <th style="text-align: center;">Présents à l'heure</th>
+        <th style="text-align: center;">Retards constatés</th>
+        <th style="text-align: center;">Absents / En attente</th>
+        <th style="text-align: right;">Taux de Ponctualité</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(exec.presences?.presencesParAgence || []).map((p: any) => `
+        <tr>
+          <td><strong>${escapeHtml(p.agenceNom)}</strong></td>
+          <td style="text-align: center;">${p.effectifTotal} agents</td>
+          <td style="text-align: center; color: #16a34a; font-weight: 700;">${p.presents}</td>
+          <td style="text-align: center; color: #f59e0b; font-weight: 700;">${p.retards}</td>
+          <td style="text-align: center; color: #ef4444; font-weight: 700;">${p.absents}</td>
+          <td style="text-align: right; font-weight: 800; color: #0284c7;">${p.tauxPresence}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 5 : FLOTTE & TRANSPORT -->
+  <div class="section-title">
+    <span>5. Disponibilité de la Flotte de Transport & Capacité de Fret</span>
+    <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Véhicules : ${exec.parcVehicules?.total || 0}</span>
+  </div>
+
+  <table class="table-data">
+    <thead>
+      <tr>
+        <th>Agence / Base</th>
+        <th style="text-align: center;">Parc Total</th>
+        <th style="text-align: center;">Disponibles</th>
+        <th style="text-align: center;">En Convoi / Course</th>
+        <th style="text-align: center;">En Maintenance</th>
+        <th style="text-align: right;">Capacité Tonnes</th>
+        <th style="text-align: right;">Capacité Unités</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(exec.parcVehicules?.parcParAgence || []).map((f: any) => `
+        <tr>
+          <td><strong>${escapeHtml(f.agenceNom)}</strong></td>
+          <td style="text-align: center;">${f.total} camions</td>
+          <td style="text-align: center; color: #16a34a; font-weight: 700;">${f.disponibles}</td>
+          <td style="text-align: center; color: #0284c7; font-weight: 700;">${f.enCourse}</td>
+          <td style="text-align: center; color: #dc2626; font-weight: 700;">${f.enMaintenance}</td>
+          <td style="text-align: right; font-weight: 700;">${f.capaciteTonnes} T</td>
+          <td style="text-align: right; font-weight: 700;">${Number(f.capaciteSacs || 0).toLocaleString('fr-FR')} unités</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 6 : PRODUCTION INDUSTRIELLE -->
+  ${prod.diagramme?.series && prod.diagramme.series.length > 0 ? `
+    <div class="section-title">
+      <span>6. Production Industrielle & Transformation Usine</span>
+      <span style="font-size: 10px; font-weight: 600; color: #64748b;">Rendement Usine</span>
+    </div>
+    <table class="table-data">
+      <thead>
+        <tr>
+          <th>Produit Fini Fabriqué</th>
+          <th style="text-align: right;">Quantité Fabriquée</th>
+          <th>Unité de Mesure</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${prod.diagramme.series.map((s: any) => `
+          <tr>
+            <td><strong>${escapeHtml(s.label)}</strong></td>
+            <td style="text-align: right; font-weight: 800; color: #0284c7;">${Number(s.valeur || 0).toLocaleString('fr-FR')}</td>
+            <td>${escapeHtml(s.unite || 'unités')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  ` : ''}
+
+  <!-- SIGNATURES DIRECTIONNELLES -->
+  <div class="signatures-block">
+    <div class="sig-card">
+      <div class="sig-role">Le Responsable Analytique</div>
+      <div class="sig-hint">Extraction & consolidation des données certifiées</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">Le Chef d'Agence</div>
+      <div class="sig-hint">Vérifié & approuvé pour l'exploitation locale</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">La Direction Générale</div>
+      <div class="sig-hint">Visa officiel de gouvernance et pilotage</div>
     </div>
   </div>
 </body>

@@ -844,7 +844,7 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 700, padding: '4px 10px', borderRadius: 6, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              Capacité Flotte : <strong style={{ color: 'var(--accent-strong)' }}>{flotte?.capaciteTotaleTonnes || 0} Tonnes</strong> ({flotte?.capaciteTotaleSacs || 0} sacs)
+              Capacité Flotte : <strong style={{ color: 'var(--accent-strong)' }}>{flotte?.capaciteTotaleTonnes || 0} Tonnes</strong> ({flotte?.capaciteTotaleSacs || 0} unités)
             </span>
           </div>
         </div>
@@ -943,9 +943,9 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
                   </span>
                 </div>
 
-                <div style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                <div style={{ fontSize: '0.74rem', color: 'var(--muted)', display: 'flex', borderTop: '1px solid var(--border)', paddingTop: 6, justifyContent: 'space-between' }}>
                   <span>Chauffeur : <strong style={{ color: 'var(--text)' }}>{veh.chauffeurNom}</strong></span>
-                  <span><strong>{veh.capaciteTonnes}T</strong> ({veh.capaciteSacs} sacs)</span>
+                  <span><strong>{veh.capaciteTonnes}T</strong> ({veh.capaciteSacs} unités)</span>
                 </div>
               </div>
             ))}

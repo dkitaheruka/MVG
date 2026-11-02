@@ -318,6 +318,11 @@ export interface DbAgent {
   devise?: 'USD' | 'CDF'
   nombreEnfantsACharge?: number
   actif: boolean
+  biometrieEnregistree?: boolean
+  empreinteHash?: string
+  dateEnrolementBiometrique?: string
+  doigtEnrole?: string
+  qualiteEmpreinte?: number
 }
 
 export interface DbAvanceSalaire {

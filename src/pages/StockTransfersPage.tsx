@@ -267,7 +267,7 @@ export function StockTransfersPage() {
                   <td>{t.agenceDest?.nom ?? `Agence #${t.agenceDestId}`}</td>
                   <td>
                     <div>{ligne?.article?.designation || 'Article'}</div>
-                    <small style={{ color: 'var(--muted)' }}>Qté: <strong>{ligne?.quantite}</strong> sacs | Lot: {ligne?.numeroLot}</small>
+                    <small style={{ color: 'var(--muted)' }}>Qté: <strong>{ligne?.quantite}</strong> unités | Lot: {ligne?.numeroLot}</small>
                   </td>
                   <td>
                     {t.immatriculationCamion ? (
@@ -431,7 +431,7 @@ export function StockTransfersPage() {
                     .filter((s: any) => s.quantite > 0)
                     .map((s: any) => (
                       <option key={s.id} value={s.id}>
-                        {s.article?.designation} - Lot: {s.numeroLot} (Dispo : {s.quantite} sacs)
+                        {s.article?.designation} - Lot: {s.numeroLot} (Dispo : {s.quantite} unités)
                       </option>
                     ))}
                 </select>
@@ -446,14 +446,14 @@ export function StockTransfersPage() {
                   <option value="">Affectation automatique / Aucun véhicule attitré</option>
                   {(flotteQuery.data ?? []).map((v: any) => (
                     <option key={v.id} value={v.id}>
-                      {v.plaqueImmatriculation} - {v.marqueModele} ({v.capaciteTonnes}T / {v.capaciteSacs} sacs) - {v.chauffeurNom} [{v.statut}]
+                      {v.plaqueImmatriculation} - {v.marqueModele} ({v.capaciteTonnes}T / {v.capaciteSacs} unités) - {v.chauffeurNom} [{v.statut}]
                     </option>
                   ))}
                 </select>
               </label>
 
               <label style={{ marginTop: 12 }}>
-                Quantité en sacs à expédier
+                Quantité en unités / colis à expédier
                 <input
                   type="number"
                   min="1"
@@ -485,7 +485,7 @@ export function StockTransfersPage() {
             <form onSubmit={(e) => { e.preventDefault(); receptionMutation.mutate(); }}>
               <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 8, marginBottom: 12 }}>
                 <div><strong>Article expédié :</strong> {receptionTransfert.lignes?.[0]?.article?.designation}</div>
-                <div><strong>Quantité annoncée :</strong> {receptionTransfert.lignes?.[0]?.quantite} sacs</div>
+                <div><strong>Quantité annoncée :</strong> {receptionTransfert.lignes?.[0]?.quantite} unités</div>
                 <div><strong>Numéro de lot :</strong> {receptionTransfert.lignes?.[0]?.numeroLot}</div>
                 {receptionTransfert.immatriculationCamion && (
                   <div><strong>Camion convoi :</strong> {receptionTransfert.immatriculationCamion} (Chauffeur : {receptionTransfert.chauffeurNom})</div>
@@ -507,7 +507,7 @@ export function StockTransfersPage() {
                   <input
                     value={motifEcart}
                     onChange={(e) => setMotifEcart(e.target.value)}
-                    placeholder="ex: 2 sacs déchirés pendant le transport..."
+                    placeholder="ex: 2 unités endommagées pendant le transport..."
                     required
                   />
                 </label>

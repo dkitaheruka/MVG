@@ -49,7 +49,7 @@ export const users: DbUser[] = [
     role: 'SUPER_ADMIN',
     agenceId: 1,
     permissions: [
-      'dashboard.voir', 'agences.gerer', 'utilisateurs.gerer', 'roles.gerer', 'appareils.gerer',
+      'dashboard.voir', 'analytics.voir', 'agences.gerer', 'utilisateurs.gerer', 'roles.gerer', 'appareils.gerer',
       'audit.voir', 'articles.gerer', 'stocks.voir', 'stocks.corriger', 'stocks.valider_correction',
       'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
       'clients.credit_gerer', 'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir',
@@ -71,7 +71,7 @@ export const users: DbUser[] = [
     role: 'ADMIN_SIEGE',
     agenceId: 1,
     permissions: [
-      'dashboard.voir', 'agences.gerer', 'utilisateurs.gerer', 'audit.voir', 'articles.gerer',
+      'dashboard.voir', 'analytics.voir', 'agences.gerer', 'utilisateurs.gerer', 'audit.voir', 'articles.gerer',
       'stocks.voir', 'ventes.voir', 'credits.valider', 'clients.gerer', 'tresorerie.valider',
       'tresorerie.voir', 'reporting.voir', 'reporting.exporter', 'comptabilite.ecritures_voir',
       'achats.gerer', 'transferts.gerer', 'rh.gerer', 'flotte.gerer',
@@ -90,7 +90,7 @@ export const users: DbUser[] = [
     role: 'CHEF_AGENCE',
     agenceId: 1,
     permissions: [
-      'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
+      'dashboard.voir', 'analytics.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
       'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
       'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
       'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
@@ -111,7 +111,7 @@ export const users: DbUser[] = [
     role: 'CHEF_AGENCE',
     agenceId: 2,
     permissions: [
-      'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
+      'dashboard.voir', 'analytics.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
       'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
       'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
       'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
@@ -132,7 +132,7 @@ export const users: DbUser[] = [
     role: 'CHEF_AGENCE',
     agenceId: 3,
     permissions: [
-      'dashboard.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
+      'dashboard.voir', 'analytics.voir', 'articles.gerer', 'stocks.voir', 'stocks.valider_correction',
       'ventes.creer', 'ventes.voir', 'ventes.annuler', 'credits.valider', 'clients.gerer',
       'tresorerie.demande', 'tresorerie.valider', 'tresorerie.voir', 'reporting.voir',
       'achats.gerer', 'transferts.gerer', 'rh.gerer', 'production.gerer',
@@ -423,10 +423,10 @@ export const stocksAgence: DbStockAgence[] = [
   { id: 3, agenceId: 1, articleId: 3, quantite: 95, numeroLot: 'LOT-2609-03', dateExpiration: '2026-10-08', seuilAlerte: 40 },
   { id: 4, agenceId: 1, articleId: 4, quantite: 210, numeroLot: 'LOT-2609-04', dateExpiration: '2027-02-15', seuilAlerte: 30 },
   { id: 5, agenceId: 2, articleId: 1, quantite: 140, numeroLot: 'LOT-2609-05', dateExpiration: '2027-03-31', seuilAlerte: 30 },
-  { id: 6, agenceId: 1, articleId: 7, quantite: 500, numeroLot: 'LOT-MAIS-2609-01', dateExpiration: '2027-05-31', seuilAlerte: 60 },
-  { id: 7, agenceId: 1, articleId: 8, quantite: 120, numeroLot: 'LOT-SON-2609-01', dateExpiration: '2027-01-31', seuilAlerte: 30 },
-  { id: 8, agenceId: 1, articleId: 9, quantite: 45, numeroLot: 'LOT-RAW-MAIS-01', dateExpiration: '2028-09-30', seuilAlerte: 10 },
-  { id: 9, agenceId: 3, articleId: 7, quantite: 180, numeroLot: 'LOT-MAIS-BK-01', dateExpiration: '2027-05-31', seuilAlerte: 40 },
+  { id: 6, agenceId: 1, articleId: 7, quantite: 500, numeroLot: 'LOT-RAW-2609-01', dateExpiration: '2027-05-31', seuilAlerte: 60 },
+  { id: 7, agenceId: 1, articleId: 8, quantite: 120, numeroLot: 'LOT-PKG-2609-01', dateExpiration: '2027-01-31', seuilAlerte: 30 },
+  { id: 8, agenceId: 1, articleId: 9, quantite: 45, numeroLot: 'LOT-RAW-STD-01', dateExpiration: '2028-09-30', seuilAlerte: 10 },
+  { id: 9, agenceId: 3, articleId: 7, quantite: 180, numeroLot: 'LOT-RAW-BK-01', dateExpiration: '2027-05-31', seuilAlerte: 40 },
 ]
 
 export const clients: DbClient[] = [
@@ -605,7 +605,7 @@ export const planComptable: DbPlanComptable[] = [
   { numero: '5721', libelle: 'Caisse Ventes Comptoir CDF (Guichet)', estModifiable: true, classe: 5, nature: 'ACTIF', parentNumero: '572', actif: true },
   { numero: '5722', libelle: 'Caisse Menue Dépense CDF (Petite Caisse)', estModifiable: true, classe: 5, nature: 'ACTIF', parentNumero: '572', actif: true },
   { numero: '573', libelle: 'Caisses auxiliaires des succursales et dépôts', estModifiable: true, classe: 5, nature: 'ACTIF', actif: true },
-  { numero: '574', libelle: 'Caisses usine, minoterie et bascule', estModifiable: true, classe: 5, nature: 'ACTIF', actif: true },
+  { numero: '574', libelle: 'Caisses usine, atelier et bascule', estModifiable: true, classe: 5, nature: 'ACTIF', actif: true },
   { numero: '581', libelle: 'Régies d avances accordées aux chefs de dépôts', estModifiable: true, classe: 5, nature: 'ACTIF', actif: true },
   { numero: '585', libelle: 'Virements internes de fonds (Caisse / Banque / Inter-agences)', estModifiable: true, classe: 5, nature: 'SPECIAL', actif: true },
 
@@ -671,11 +671,11 @@ export const planComptable: DbPlanComptable[] = [
   // ================= CLASSE 9 : COMPTABILITE ANALYTIQUE ET ENGAGEMENTS HORS BILAN =================
   { numero: '901', libelle: 'Engagements de caution et garanties données aux banques', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
   { numero: '902', libelle: 'Engagements de caution et garanties reçus des tiers', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
-  { numero: '921', libelle: 'Section analytique : Centre de Mouture et Minoterie Usine', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
-  { numero: '922', libelle: 'Section analytique : Centre de Conditionnement et Ensachage', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
+  { numero: '921', libelle: 'Section analytique : Centre de Production et Transformation Usine', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
+  { numero: '922', libelle: 'Section analytique : Centre de Conditionnement et Emballage', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
   { numero: '923', libelle: 'Section analytique : Centre Logistique, Convois et Flotte', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
   { numero: '924', libelle: 'Section analytique : Centres Commerciaux des Agences et Dépôts', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
-  { numero: '931', libelle: 'Coûts de revient calculés des farines produites', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
+  { numero: '931', libelle: 'Coûts de revient calculés des produits fabriqués', estModifiable: true, classe: 9, nature: 'SPECIAL', actif: true },
 ]
 
 export const ecrituresComptables: DbEcritureComptable[] = [
@@ -824,7 +824,7 @@ export const ecrituresComptables: DbEcritureComptable[] = [
     montant: 8400.0,
     devise: 'USD',
     tauxApplique: 2850,
-    libelle: 'Achat grains de maïs blanc sec (Coopérative Rutshuru)',
+    libelle: 'Achat matières premières industrielles Type 1 (Fournisseur Rutshuru)',
     sourceModule: 'ACHATS',
     sourceType: 'ACHAT',
     sourceId: '1',
@@ -1074,7 +1074,7 @@ export const ordresProduction: DbOrdreProduction[] = [
     id: 2,
     codeOrdre: 'OP-KIN-202610-002',
     agenceId: 2,
-    articleFiniId: 7, // Farine de Maïs Blanche 25kg
+    articleFiniId: 7, // Produit Fini Principal
     quantitePrevue: 80,
     quantiteReelle: 80,
     statut: 'TERMINE',
@@ -1086,7 +1086,7 @@ export const ordresProduction: DbOrdreProduction[] = [
     id: 3,
     codeOrdre: 'OP-BUK-202610-003',
     agenceId: 3,
-    articleFiniId: 1, // Farine de Froment MVG Extra 25kg
+    articleFiniId: 1, // Produit Fini Standard Qualité A
     quantitePrevue: 40,
     quantiteReelle: 40,
     statut: 'TERMINE',
@@ -1098,7 +1098,7 @@ export const ordresProduction: DbOrdreProduction[] = [
     id: 4,
     codeOrdre: 'OP-KIN-202610-004',
     agenceId: 2,
-    articleFiniId: 8, // Son de Maïs pour Provende
+    articleFiniId: 8, // Sous-Produit Dérivé
     quantitePrevue: 60,
     quantiteReelle: 0,
     statut: 'EN_COURS',
@@ -1195,7 +1195,7 @@ export const transfertsStock: DbTransfertStock[] = [
     lignes: [
       {
         id: 1,
-        articleId: 1, // Farine Extra 25kg
+        articleId: 1, // Produit Fini Standard Type A
         quantite: 100,
         numeroLot: 'LOT-2609-01',
       },
@@ -1223,7 +1223,7 @@ export const transfertsStock: DbTransfertStock[] = [
     lignes: [
       {
         id: 1,
-        articleId: 7, // Farine de Maïs Extra Blanche 25kg
+        articleId: 7, // Produit Fini Principal
         quantite: 150,
         numeroLot: 'LOT-KIN-2610-02',
       },
@@ -1272,6 +1272,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 2.5,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-1-E92A',
+    dateEnrolementBiometrique: '2026-01-15T08:00:00Z',
+    doigtEnrole: 'Index Droit',
+    qualiteEmpreinte: 98.7,
   },
   {
     id: 2,
@@ -1287,6 +1292,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 0.0,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-2-A83B',
+    dateEnrolementBiometrique: '2026-01-15T08:15:00Z',
+    doigtEnrole: 'Pouce Droit',
+    qualiteEmpreinte: 99.1,
   },
   {
     id: 3,
@@ -1302,6 +1312,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 0.0,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-3-B71C',
+    dateEnrolementBiometrique: '2026-01-15T08:30:00Z',
+    doigtEnrole: 'Index Droit',
+    qualiteEmpreinte: 97.8,
   },
   {
     id: 4,
@@ -1317,6 +1332,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 3.0,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-4-C55D',
+    dateEnrolementBiometrique: '2026-01-15T08:45:00Z',
+    doigtEnrole: 'Index Droit',
+    qualiteEmpreinte: 98.4,
   },
   {
     id: 5,
@@ -1332,6 +1352,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 0.0,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-5-D44E',
+    dateEnrolementBiometrique: '2026-01-15T09:00:00Z',
+    doigtEnrole: 'Index Droit',
+    qualiteEmpreinte: 99.0,
   },
   {
     id: 6,
@@ -1347,6 +1372,11 @@ export const agents: DbAgent[] = [
     tauxCommission: 0.0,
     devise: 'CDF',
     actif: true,
+    biometrieEnregistree: true,
+    empreinteHash: 'BIO-FP-AGT-6-E33F',
+    dateEnrolementBiometrique: '2026-01-15T09:15:00Z',
+    doigtEnrole: 'Index Droit',
+    qualiteEmpreinte: 98.9,
   },
   {
     id: 7,
@@ -1710,13 +1740,13 @@ export const commandesAchat: DbCommandeAchat[] = [
     agenceId: 1,
     fournisseurId: 1,
     fournisseurNom: 'Coopérative Agricole de Rutshuru (COOPAR)',
-    produit: 'Maïs en grains blanc sec qualité supérieure',
+    produit: 'Matière Première Industrielle Type 1 (Qualité Supérieure)',
     quantiteKg: 20000,
     prixUnitaireKgUsd: 0.42,
     montantTotalUsd: 8400,
     dateCommande: '2026-09-28T10:00:00.000Z',
     statut: 'SOLDEE',
-    observations: 'Contrat livraison approvisionnement moulin usine.',
+    observations: 'Contrat d approvisionnement pour atelier de fabrication.',
   },
   {
     id: 2,
@@ -1724,7 +1754,7 @@ export const commandesAchat: DbCommandeAchat[] = [
     agenceId: 1,
     fournisseurId: 2,
     fournisseurNom: 'Agro-Business Kivu SARL',
-    produit: 'Soja grain cru sélectionné',
+    produit: 'Composant Industriel Sélectionné Type 2',
     quantiteKg: 10000,
     prixUnitaireKgUsd: 0.58,
     montantTotalUsd: 5800,
@@ -1744,7 +1774,7 @@ export const receptionsPontBascule: DbReceptionPontBascule[] = [
     agenceId: 1,
     fournisseurId: 1,
     fournisseurNom: 'Coopérative Agricole de Rutshuru (COOPAR)',
-    produit: 'Maïs en grains blanc sec',
+    produit: 'Matière Première Industrielle Type 1',
     immatriculationCamion: '8920AC/19',
     chauffeur: 'Amisi Jacques',
     peseeBruteKg: 34500, // Poids avec camion
@@ -1760,7 +1790,7 @@ export const receptionsPontBascule: DbReceptionPontBascule[] = [
     datePeseeBrute: '2026-09-29T09:00:00.000Z',
     datePeseeTare: '2026-09-29T10:15:00.000Z',
     magasinierNom: 'Baraka (Magasinier)',
-    observations: 'Conforme aux normes qualitatives minoterie. Grains sains et secs.',
+    observations: 'Conforme aux normes qualitatives d agréage et de contrôle technique.',
   },
 ]
 
@@ -1980,7 +2010,7 @@ export const etatsBesoin: DbEtatBesoin[] = [
     justificatifFourni: true,
     dateApurement: '2026-10-04T16:00:00Z',
     entretienTechniqueId: 2,
-    observations: 'Entretien préventif programmé avant lancement du convoi de maïs.',
+    observations: 'Entretien préventif programmé avant lancement du convoi de marchandises.',
   },
   {
     id: 3,
@@ -1989,7 +2019,7 @@ export const etatsBesoin: DbEtatBesoin[] = [
     serviceDemandeur: 'Ventes & Logistique Commerciale',
     demandeurNom: 'Mwamba Eric (Commercial)',
     demandeurId: 4,
-    motif: 'Approvisionnement carburant gasoil (220 Litres) pour convoi de livraison farine vers Sake et Minova',
+    motif: 'Approvisionnement carburant gasoil (220 Litres) pour convoi de livraison marchandises vers agences secondaires',
     montant: 350,
     devise: 'USD',
     compteImputation: '612',
@@ -2141,14 +2171,14 @@ export const entretiensTechniques: DbEntretienTechnique[] = [
     coutMainOeuvreUsd: 150,
     coutTotalUsd: 230,
     statut: 'PLANIFIE',
-    observations: 'Contrôle réglementaire obligatoire pour garantir la précision des pesées de grains de maïs à l agréage.',
+    observations: 'Contrôle réglementaire obligatoire pour garantir la précision des pesées de matières premières à l agréage.',
   },
   {
     id: 5,
     numeroIntervention: 'MAINT-2026-0005',
     agenceId: 1,
     typeEquipement: 'SILO',
-    nomEquipement: 'Batterie de silos verticaux 500T (Silo n°2 Maïs)',
+    nomEquipement: 'Batterie de silos verticaux 500T (Silo n°2 Stockage)',
     immatriculationOuSerie: 'SILO-VERT-02',
     typeMaintenance: 'PREVENTIF',
     natureTravaux: 'Inspection de la vis d Archimède d extraction, dépoussiérage des filtres à manches et contrôle des sondes de température anti-échauffement',

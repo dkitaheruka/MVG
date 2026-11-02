@@ -60,6 +60,7 @@ import {
   renderRapportOfficielHtml,
   renderPlancheEtiquettesQrLotHtml,
   renderBilanHtml,
+  renderDossierDiagrammesHtml,
   generateMvgQrSvg,
 } from './documents'
 
@@ -876,6 +877,215 @@ router.get('/dashboard/service-summary', (req: Request, res: Response) => {
   })
 })
 
+// Helper de calcul du dossier exécutif et des diagrammes décisionnels
+export function computeExecutiveDossier(agenceId?: number) {
+  const currentAgence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = currentAgence ? currentAgence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
+  const tauxRef = 2850
+
+  const targetAgences = agenceId ? agences.filter((a) => a.id === agenceId) : agences
+  const ventesAgences = targetAgences.map((ag) => {
+    const vList = ventes.filter((v) => v.agenceId === ag.id && v.statutAnnulation !== 'ANNULEE')
+    const vUsd = vList.filter((v) => v.devise === 'USD').reduce((s, v) => s + v.montantTotal, 0)
+    const vCdf = vList.filter((v) => v.devise === 'CDF').reduce((s, v) => s + v.montantTotal, 0)
+    const totalUsdEq = vUsd + (vCdf / tauxRef)
+    const comptantUsd = vList.filter((v) => !v.estCredit).reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / tauxRef), 0)
+    const creditUsd = vList.filter((v) => v.estCredit).reduce((s, v) => s + (v.devise === 'USD' ? v.montantTotal : v.montantTotal / tauxRef), 0)
+
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      ville: ag.ville,
+      ventesUsd: vUsd,
+      ventesCdf: vCdf,
+      totalConsolideUsd: Math.round(totalUsdEq),
+      comptantUsd: Math.round(comptantUsd),
+      creditUsd: Math.round(creditUsd),
+      nombreTransactions: vList.length,
+    }
+  })
+
+  const totalVentesUsd = ventesAgences.reduce((s, v) => s + v.ventesUsd, 0)
+  const totalVentesCdf = ventesAgences.reduce((s, v) => s + v.ventesCdf, 0)
+  const totalVentesConsolideUsd = ventesAgences.reduce((s, v) => s + v.totalConsolideUsd, 0)
+  const totalTransactionsVentes = ventesAgences.reduce((s, v) => s + v.nombreTransactions, 0)
+  const totalComptantUsd = ventesAgences.reduce((s, v) => s + v.comptantUsd, 0)
+  const totalCreditUsd = ventesAgences.reduce((s, v) => s + v.creditUsd, 0)
+
+  const depensesAgences = targetAgences.map((ag) => {
+    const txSorties = transactions.filter((t) => t.agenceId === ag.id && t.type === 'SORTIE')
+    const ebSorties = etatsBesoin.filter((eb) => eb.agenceId === ag.id && (eb.statut === 'APPROUVE_SIEGE' || eb.statut === 'APPROUVE_CHEF'))
+    const depUsd = txSorties.filter((t) => t.devise === 'USD').reduce((s, t) => s + t.montant, 0) +
+                 ebSorties.filter((eb) => eb.devise === 'USD').reduce((s, eb) => s + eb.montant, 0)
+    const depCdf = txSorties.filter((t) => t.devise === 'CDF').reduce((s, t) => s + t.montant, 0) +
+                 ebSorties.filter((eb) => eb.devise === 'CDF').reduce((s, eb) => s + eb.montant, 0)
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      depensesUsd: depUsd,
+      depensesCdf: depCdf,
+      totalConsolideUsd: Math.round(depUsd + (depCdf / tauxRef)),
+    }
+  })
+  const totalDepensesUsd = depensesAgences.reduce((s, d) => s + d.totalConsolideUsd, 0)
+
+  const catMap: Record<string, number> = {}
+  transactions.filter((t) => (!agenceId || t.agenceId === agenceId) && t.type === 'SORTIE').forEach((t) => {
+    const cat = (t as any).categorie || t.libelle || 'Charges diverses'
+    catMap[cat] = (catMap[cat] || 0) + (t.devise === 'USD' ? t.montant : t.montant / tauxRef)
+  })
+  const depensesCategories = Object.entries(catMap).map(([categorie, montant]) => ({
+    categorie,
+    montantUsd: Math.round(montant),
+    pourcentage: totalDepensesUsd > 0 ? Math.round((montant / totalDepensesUsd) * 100) : 0,
+  }))
+
+  const tresorerieParAgence = targetAgences.map((ag) => {
+    const caisseUsd = transactions.filter((t) => t.agenceId === ag.id && t.devise === 'USD')
+      .reduce((s, t) => s + (t.type === 'ENTREE' ? t.montant : -t.montant), 18500)
+    const caisseCdf = transactions.filter((t) => t.agenceId === ag.id && t.devise === 'CDF')
+      .reduce((s, t) => s + (t.type === 'ENTREE' ? t.montant : -t.montant), 32000000)
+    const banqueUsd = 45000
+    const totalEq = Math.round(caisseUsd + (caisseCdf / tauxRef) + banqueUsd)
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      caisseUsd: Math.max(0, Math.round(caisseUsd)),
+      caisseCdf: Math.max(0, Math.round(caisseCdf)),
+      banqueUsd,
+      totalUsdEquiv: totalEq,
+    }
+  })
+  const totalTresorerieUsd = tresorerieParAgence.reduce((s, t) => s + t.totalUsdEquiv, 0)
+
+  const targetAgents = agents.filter((a) => a.actif && (!agenceId || a.agenceId === agenceId))
+  const filteredPointages = pointagesAgents.filter((p) => !agenceId || p.agenceId === agenceId)
+  const presentsCount = filteredPointages.filter((p) => p.statut === 'PRESENT').length
+  const retardsCount = filteredPointages.filter((p) => p.statut === 'RETARD').length
+  const missionsCount = filteredPointages.filter((p) => p.statut === 'MISSION').length
+  const absentsCount = Math.max(0, targetAgents.length - (presentsCount + retardsCount + missionsCount))
+  const tauxPresence = targetAgents.length > 0 ? Math.round(((presentsCount + retardsCount + missionsCount) / targetAgents.length) * 100) : 0
+
+  const presencesParAgence = targetAgences.map((ag) => {
+    const agAgt = agents.filter((a) => a.actif && a.agenceId === ag.id)
+    const agPt = pointagesAgents.filter((p) => p.agenceId === ag.id)
+    const pres = agPt.filter((p) => p.statut === 'PRESENT').length
+    const ret = agPt.filter((p) => p.statut === 'RETARD').length
+    const abs = Math.max(0, agAgt.length - (pres + ret))
+    const taux = agAgt.length > 0 ? Math.round(((pres + ret) / agAgt.length) * 100) : 0
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      effectifTotal: agAgt.length,
+      presents: pres,
+      retards: ret,
+      absents: abs,
+      tauxPresence: taux,
+    }
+  })
+
+  const targetVehicules = vehicules.filter((v) => !agenceId || v.agenceId === agenceId)
+  const parcParAgence = targetAgences.map((ag) => {
+    const agVeh = vehicules.filter((v) => v.agenceId === ag.id)
+    const dispo = agVeh.filter((v) => v.statut === 'DISPONIBLE').length
+    const course = agVeh.filter((v) => v.statut === 'EN_COURSE').length
+    const maint = agVeh.filter((v) => v.statut === 'EN_MAINTENANCE').length
+    const tonnes = agVeh.reduce((s, v) => s + (v.capaciteTonnes || 0), 0)
+    const sacs = agVeh.reduce((s, v) => s + (v.capaciteSacs || 0), 0)
+    return {
+      agenceId: ag.id,
+      agenceNom: ag.nom,
+      total: agVeh.length,
+      disponibles: dispo,
+      enCourse: course,
+      enMaintenance: maint,
+      capaciteTonnes: tonnes,
+      capaciteSacs: sacs,
+    }
+  })
+
+  const ordres = ordresProduction.filter((o) => !agenceId || o.agenceId === agenceId)
+  const prodMap: Record<string, number> = {}
+  ordres.forEach((o) => {
+    const art = articles.find((a) => a.id === o.articleFiniId)
+    const nom = art?.designation || `Produit #${o.articleFiniId}`
+    prodMap[nom] = (prodMap[nom] || 0) + (o.quantiteReelle || o.quantitePrevue || 0)
+  })
+  const diagrammeProduits = Object.entries(prodMap).map(([nom, quantite]) => ({
+    label: nom,
+    valeur: quantite,
+    unite: 'unités',
+  }))
+
+  return {
+    agenceNom,
+    execData: {
+      ventesJournalieres: {
+        totalVentesUsd,
+        totalVentesCdf,
+        totalVentesConsolideUsd,
+        totalTransactionsVentes,
+        totalComptantUsd,
+        totalCreditUsd,
+        parAgence: ventesAgences,
+      },
+      depensesJournalieres: {
+        totalDepensesUsd,
+        depensesCategories,
+      },
+      tresorerie: {
+        totalTresorerieUsd,
+        tresorerieParAgence,
+      },
+      presences: {
+        tauxPresence,
+        presentsCount,
+        retardsCount,
+        missionsCount,
+        absentsCount,
+        presencesParAgence,
+      },
+      parcVehicules: {
+        total: targetVehicules.length,
+        parcParAgence,
+      },
+    },
+    prodData: {
+      diagramme: {
+        series: diagrammeProduits.length > 0 ? diagrammeProduits : [{ label: 'Farine Maïs 25kg', valeur: 850, unite: 'sacs' }],
+      },
+    },
+  }
+}
+
+// ROUTE D'IMPRESSION OFFICIELLE DU DOSSIER GRAPHIQUE ET DES DIAGRAMMES
+router.get(['/analytics/diagrammes/document', '/reporting/export/diagrammes', '/export/print/diagrammes'], (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId && req.query.agenceId !== 'CONSOLIDE' ? toInt(req.query.agenceId) : undefined
+  const periode = String(req.query.periode || 'MOIS')
+  const chartTarget = req.query.chart ? String(req.query.chart) : undefined
+
+  const periodeLabels: Record<string, string> = {
+    JOUR: "Aujourd'hui",
+    SEMAINE: '7 Derniers Jours',
+    MOIS: 'Mois en cours (Octobre 2026)',
+    ANNEE: 'Exercice Annuel 2026',
+  }
+  const periodeLabel = periodeLabels[periode] || 'Mois en cours'
+
+  const dossier = computeExecutiveDossier(agenceId)
+  const html = renderDossierDiagrammesHtml(
+    dossier.execData,
+    dossier.prodData,
+    dossier.agenceNom,
+    periodeLabel,
+    chartTarget,
+    parametresEntreprise
+  )
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
 // ----------------- TABLEAU DE BORD EXÉCUTIF (ADMIN SIÈGE & SUPER ADMIN) -----------------
 router.get('/dashboard/direction-executive', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
@@ -1213,14 +1423,27 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { agentId, modePointage, empreinteMatchScore, terminalId, temperature, observations } = req.body
-  if (!agentId) {
-    return res.status(400).json({ message: 'Agent ID obligatoire pour le pointage' })
+  const { agentId, empreinteHash, modePointage, empreinteMatchScore, terminalId, temperature, observations, typeScan } = req.body
+  
+  let agent: any = undefined
+  if (agentId) {
+    agent = agents.find((a) => a.id === toInt(agentId))
+  } else if (empreinteHash) {
+    agent = agents.find((a) => a.empreinteHash === String(empreinteHash).trim())
   }
 
-  const agent = agents.find((a) => a.id === toInt(agentId))
   if (!agent) {
-    return res.status(404).json({ message: 'Agent non trouvé dans le registre RH' })
+    return res.status(404).json({ message: 'Aucun collaborateur correspondant à cette empreinte digitale.' })
+  }
+
+  // Vérifier si l'agent a déjà son empreinte enregistrée dans le système
+  if (!agent.biometrieEnregistree) {
+    // Si l'agent n'est pas encore enrôlé, nous l'enrôlons automatiquement avec le hash scanné
+    agent.biometrieEnregistree = true
+    agent.empreinteHash = empreinteHash || `BIO-FP-AGT-${agent.id}-AUTOSCAN`
+    agent.doigtEnrole = 'Index Droit'
+    agent.qualiteEmpreinte = Number(empreinteMatchScore) || 98.6
+    agent.dateEnrolementBiometrique = new Date().toISOString()
   }
 
   const ag = agences.find((a) => a.id === agent.agenceId)
@@ -1231,9 +1454,6 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   const ss = String(now.getSeconds()).padStart(2, '0')
   const heureActuelle = `${hh}:${mm}:${ss}`
 
-  // Vérifier si l'agent a déjà pointé aujourd'hui
-  let pointageExistant = pointagesAgents.find((p) => p.agentId === agent.id && p.date === todayStr)
-
   // Statut déterminé selon l'heure d'embauche configurée et la tolérance
   const [seuilH, seuilM] = (parametresFiscauxSociaux.heureDebutTravail || '08:00').split(':').map(Number)
   const tolMin = Number(parametresFiscauxSociaux.toleranceRetardMinutes ?? 10)
@@ -1242,21 +1462,73 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   const isRetard = minuteActuelle > minuteLimite
   const statutCalcule = isRetard ? 'RETARD' : 'PRESENT'
 
-  if (pointageExistant) {
-    pointageExistant.heureDepart = heureActuelle
-    pointageExistant.observations = observations || `Scan empreinte départ enregistré à ${heureActuelle}`
-    
+  // Vérifier si l'agent a déjà pointé aujourd'hui
+  let pointageExistant = pointagesAgents.find((p) => p.agentId === agent.id && p.date === todayStr)
+
+  const scanDemande = typeScan || 'AUTO'
+
+  // CAS 1 : SCAN DE SORTIE EXPLICITE OU AUTO SI DÉJÀ POINTÉ ENTRÉE
+  if (scanDemande === 'SORTIE' || (scanDemande === 'AUTO' && pointageExistant)) {
+    if (!pointageExistant) {
+      // Pas d'arrivée enregistrée ce jour, on crée un pointage avec heure de sortie directe
+      pointageExistant = {
+        id: pointagesAgents.length + 1,
+        agentId: agent.id,
+        matricule: agent.matricule,
+        agentNom: agent.nom,
+        poste: agent.poste,
+        agenceId: agent.agenceId,
+        agenceNom: ag?.nom || 'Siège Social Goma',
+        date: todayStr,
+        heureArrivee: `${parametresFiscauxSociaux.heureDebutTravail || '08:00'}:00`,
+        heureDepart: heureActuelle,
+        statut: 'PRESENT',
+        modePointage: modePointage || 'EMPREINTE_DIGITALE',
+        empreinteMatchScore: Number(empreinteMatchScore) || +(98 + Math.random() * 1.9).toFixed(1),
+        terminalId: terminalId || `BIO-SCAN-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
+        temperature: Number(temperature) || +(36.4 + Math.random() * 0.4).toFixed(1),
+        observations: observations || `Scan empreinte de sortie enregistré directement à ${heureActuelle}`,
+      }
+      pointagesAgents.push(pointageExistant)
+    } else {
+      pointageExistant.heureDepart = heureActuelle
+      pointageExistant.observations = observations || `${pointageExistant.observations ? pointageExistant.observations + ' | ' : ''}Sortie scannée à ${heureActuelle}`
+    }
+
     logAudit(
       currentUser.nom,
       'POINTAGE_BIOMETRIQUE_DEPART',
-      `Scan empreinte de départ pour ${agent.nom} (${agent.matricule}) à ${heureActuelle}`,
+      `Scan empreinte de SORTIE validé pour ${agent.nom} (${agent.matricule}) à ${heureActuelle}`,
       agent.agenceId
     )
 
     return res.json({
-      message: `Heure de sortie enregistrée avec succès pour ${agent.nom} à ${heureActuelle}`,
+      message: `Sortie confirmée par empreinte digitale pour ${agent.nom} à ${heureActuelle} ! Fin de service enregistrée.`,
       pointage: pointageExistant,
       typeScan: 'DEPART',
+      agent: {
+        id: agent.id,
+        nom: agent.nom,
+        matricule: agent.matricule,
+        poste: agent.poste,
+        doigtEnrole: agent.doigtEnrole || 'Index Droit',
+      },
+    })
+  }
+
+  // CAS 2 : SCAN D'ENTRÉE (ARRIVÉE)
+  if (pointageExistant) {
+    return res.json({
+      message: `${agent.nom} a déjà émargé son arrivée ce jour à ${pointageExistant.heureArrivee}. Pour badger votre départ, sélectionnez "Sortie".`,
+      pointage: pointageExistant,
+      typeScan: 'DEJA_PRESENTE',
+      agent: {
+        id: agent.id,
+        nom: agent.nom,
+        matricule: agent.matricule,
+        poste: agent.poste,
+        doigtEnrole: agent.doigtEnrole || 'Index Droit',
+      },
     })
   }
 
@@ -1283,14 +1555,21 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'POINTAGE_BIOMETRIQUE_ARRIVEE',
-    `Scan empreinte digitale validé pour ${agent.nom} (${agent.matricule}) - Statut: ${statutCalcule} - Score: ${nouveauPointage.empreinteMatchScore}%`,
+    `Scan empreinte d ENTRÉE validé pour ${agent.nom} (${agent.matricule}) - Statut: ${statutCalcule} - Score: ${nouveauPointage.empreinteMatchScore}%`,
     agent.agenceId
   )
 
   res.status(201).json({
-    message: `Pointage biométrique validé avec succès pour ${agent.nom} ! Statut : ${statutCalcule === 'PRESENT' ? 'Présent à l heure' : 'Retard constaté'}.`,
+    message: `Arrivée validée par empreinte digitale pour ${agent.nom} ! Statut : ${statutCalcule === 'PRESENT' ? 'Présent à l heure' : 'Retard constaté'}.`,
     pointage: nouveauPointage,
     typeScan: 'ARRIVEE',
+    agent: {
+      id: agent.id,
+      nom: agent.nom,
+      matricule: agent.matricule,
+      poste: agent.poste,
+      doigtEnrole: agent.doigtEnrole || 'Index Droit',
+    },
   })
 })
 
@@ -1468,7 +1747,7 @@ router.get('/reporting/siege/transactions-multi-agences', (req: Request, res: Re
         agenceNom: ag?.nom || `Agence #${op.agenceId}`,
         module: 'PRODUCTION',
         typeFlux: 'ORDRE_FABRICATION',
-        libelle: `Fabrication ${art?.designation || 'Produits Finis'}: ${op.quantiteReelle || op.quantitePrevue} ${art?.uniteMesure || 'unités/sacs'}`,
+        libelle: `Fabrication ${art?.designation || 'Produits Finis'}: ${op.quantiteReelle || op.quantitePrevue} ${art?.uniteMesure || 'unités'}`,
         montant: (op.quantiteReelle || op.quantitePrevue) * (art?.prixVenteStandard || 20),
         devise: 'USD',
         operateurNom: 'Équipe Production',
@@ -3010,7 +3289,7 @@ router.get('/reporting/direction-kpis', (req: Request, res: Response) => {
   const caMoisUsd = ventesAg.reduce((acc, v) => acc + (v.montantTotal || 0), 0)
   const caMoisCdf = ventesAg.reduce((acc, v) => acc + (v.montantCdf || ((v.montantTotal || 0) * 2850)), 0)
 
-  // 2. Marge Brute par sac / unité
+  // 2. Marge Brute par unité
   const sacsVendus = ventesAg.reduce((acc, v) => {
     return acc + (v.details || []).reduce((sum: number, d: any) => sum + (d.quantite || 0), 0)
   }, 0)
@@ -3168,6 +3447,7 @@ router.get('/admin/backup/export', (req: Request, res: Response) => {
     immobilisations,
     etatsBesoin,
     entretiensTechniques,
+    bilansSaisis,
   }
 
   const filename = `backup-matabishi-erp-${new Date().toISOString().slice(0, 10)}.json`
@@ -3278,6 +3558,11 @@ router.post('/admin/backup/restore', (req: Request, res: Response) => {
     restoredCounts.entretiensTechniques = entretiensTechniques.length
   }
 
+  if (payload.bilansSaisis && typeof payload.bilansSaisis === 'object') {
+    Object.assign(bilansSaisis, payload.bilansSaisis)
+    restoredCounts.bilansSaisis = Object.keys(payload.bilansSaisis).length
+  }
+
   logAudit(
     currentUser.nom,
     'RESTAURATION_BACKUP',
@@ -3307,7 +3592,7 @@ router.get('/admin/export/csv/:type', (req: Request, res: Response) => {
     stocksAgence.forEach((s) => {
       const ag = agences.find((a) => a.id === s.agenceId)
       const art = articles.find((a) => a.id === s.articleId)
-      csv += `"${ag?.nom || s.agenceId}","${art?.designation || s.articleId}","${art?.codeUnique || ''}",${s.quantite},"${art?.uniteMesure || 'Sac'}",${s.seuilAlerte || 0},"${s.numeroLot || ''}","${s.dateExpiration || ''}"\n`
+      csv += `"${ag?.nom || s.agenceId}","${art?.designation || s.articleId}","${art?.codeUnique || ''}",${s.quantite},"${art?.uniteMesure || 'Unité'}",${s.seuilAlerte || 0},"${s.numeroLot || ''}","${s.dateExpiration || ''}"\n`
     })
   } else if (type === 'ecritures') {
     csv = 'Piece,Date,CompteNumero,Libelle,Sens,Montant,Devise,Agence\n'
@@ -3417,7 +3702,7 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
     })
   } else if (type === 'inventaire' || type === 'stocks') {
     filename = `inventaire-stocks-valorise.csv`
-    csv = 'AGENCE;ARTICLE / FARINE;CODE UNIQUE;N° LOT;DATE EXPIRATION;QUANTITÉ EN STOCK;UNITÉ;PRIX UNITAIRE USD;VALEUR STOCK ESTIMÉE USD;STATUT SEUIL\n'
+    csv = 'AGENCE;ARTICLE / PRODUIT;CODE UNIQUE;N° LOT;DATE EXPIRATION;QUANTITÉ EN STOCK;UNITÉ;PRIX UNITAIRE USD;VALEUR STOCK ESTIMÉE USD;STATUT SEUIL\n'
     stocksAgence.forEach((s) => {
       if (!agenceId || s.agenceId === agenceId) {
         const ag = agences.find((a) => a.id === s.agenceId)
@@ -3425,7 +3710,7 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
         const pu = art?.prixVenteStandard || 20
         const valTot = (s.quantite || 0) * pu
         const seuilStat = (s.quantite || 0) <= (s.seuilAlerte || 0) ? 'ALERTE SEUIL BAS' : 'NORMAL'
-        csv += `"${ag?.nom || s.agenceId}";"${(art?.designation || '').replace(/"/g, '""')}";"${art?.codeUnique || ''}";"${s.numeroLot || ''}";"${s.dateExpiration || ''}";${s.quantite};"${art?.uniteMesure || 'Sac'}";${pu.toFixed(2)};${valTot.toFixed(2)};"${seuilStat}"\n`
+        csv += `"${ag?.nom || s.agenceId}";"${(art?.designation || '').replace(/"/g, '""')}";"${art?.codeUnique || ''}";"${s.numeroLot || ''}";"${s.dateExpiration || ''}";${s.quantite};"${art?.uniteMesure || 'Unité'}";${pu.toFixed(2)};${valTot.toFixed(2)};"${seuilStat}"\n`
       }
     })
   } else if (type === 'ventes') {
@@ -3499,7 +3784,7 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
       if (!agenceId || op.agenceId === agenceId) {
         const ag = agences.find((a) => a.id === op.agenceId)
         const art = articles.find((a) => a.id === op.articleFiniId)
-        csv += `"${op.codeOrdre}";"${(op.dateCreation || '').slice(0, 10)}";"${ag?.nom || op.agenceId}";"PRODUCTION";"ORDRE_MEUNERIE";"Mouture ${art?.designation || 'Farine'} (${op.quantiteReelle || op.quantitePrevue} sacs)";${((op.quantiteReelle || op.quantitePrevue) * 20).toFixed(2)};"USD";"Équipe Meunerie";"${op.statut}"\n`
+        csv += `"${op.codeOrdre}";"${(op.dateCreation || '').slice(0, 10)}";"${ag?.nom || op.agenceId}";"PRODUCTION";"ORDRE_FABRICATION";"Fabrication ${art?.designation || 'Produit'} (${op.quantiteReelle || op.quantitePrevue} unités)";${((op.quantiteReelle || op.quantitePrevue) * 20).toFixed(2)};"USD";"Équipe Production";"${op.statut}"\n`
       }
     })
     // 5. Transferts
@@ -3507,7 +3792,7 @@ router.get('/export/excel/:type', (req: Request, res: Response) => {
       if (!agenceId || tr.agenceSourceId === agenceId || tr.agenceDestId === agenceId) {
         const agSrc = agences.find((a) => a.id === tr.agenceSourceId)
         const agDst = agences.find((a) => a.id === tr.agenceDestId)
-        csv += `"${tr.referenceTransfert || `TRF-${tr.id}`}";"${(tr.dateExpedition || '').slice(0, 10)}";"${agSrc?.nom || tr.agenceSourceId} -> ${agDst?.nom || tr.agenceDestId}";"LOGISTIQUE";"TRANSFERT_INTER_AGENCES";"Transfert de farine vers ${agDst?.nom}";${(tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) * 20).toFixed(2)};"USD";"${tr.chauffeurNom || 'Chauffeur'}";"${tr.statut}"\n`
+        csv += `"${tr.referenceTransfert || `TRF-${tr.id}`}";"${(tr.dateExpedition || '').slice(0, 10)}";"${agSrc?.nom || tr.agenceSourceId} -> ${agDst?.nom || tr.agenceDestId}";"LOGISTIQUE";"TRANSFERT_INTER_AGENCES";"Transfert de marchandises vers ${agDst?.nom}";${(tr.lignes?.reduce((s: number, l: any) => s + (l.quantite || 0), 0) * 20).toFixed(2)};"USD";"${tr.chauffeurNom || 'Chauffeur'}";"${tr.statut}"\n`
       }
     })
     // 6. Pont-Bascule
@@ -3706,7 +3991,7 @@ router.get('/export/print/:type', (req: Request, res: Response) => {
       ])
   } else if (type === 'inventaire' || type === 'stocks') {
     docTitle = `INVENTAIRE OFFICIEL & ÉTAT DES STOCKS PHYSIQUES`
-    colonnes = ['Agence', 'Désignation Farine / Article', 'Code Unique', 'N° Lot', 'Expiration', 'Stock Disponible', 'Unité', 'P.U (USD)', 'Valeur Stock']
+    colonnes = ['Agence', 'Désignation Article / Produit', 'Code Unique', 'N° Lot', 'Expiration', 'Stock Disponible', 'Unité', 'P.U (USD)', 'Valeur Stock']
     let totalVal = 0
     lignes = stocksAgence
       .filter((s) => !agenceId || s.agenceId === agenceId)
@@ -3723,7 +4008,7 @@ router.get('/export/print/:type', (req: Request, res: Response) => {
           s.numeroLot || '-',
           s.dateExpiration || '-',
           `<strong>${s.quantite}</strong>`,
-          art?.uniteMesure || 'Sac',
+          art?.uniteMesure || 'Unité',
           `$${pu.toFixed(2)}`,
           `$${valTot.toFixed(2)}`,
         ]
@@ -4257,9 +4542,25 @@ router.get(['/comptabilite/compte-resultat/document', '/comptabilite/export/comp
 })
 
 // ----------------- BILAN COMPTABLE NORMALISÉ SYSCOHADA (ACTIF & PASSIF) -----------------
+const bilansSaisis: Record<string, any> = {}
+
+function getBilanStorageKey(agenceId?: number, annee: number = new Date().getFullYear()): string {
+  return `${agenceId || 'CONSOLIDE'}_${annee}`
+}
+
 function computeBilan(agenceId?: number, annee: number = new Date().getFullYear()) {
   const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
   const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
+
+  const key = getBilanStorageKey(agenceId, annee)
+  if (bilansSaisis[key]) {
+    return {
+      ...bilansSaisis[key],
+      exerciceAnnee: annee,
+      agenceNom,
+      estSaisiManuellement: true,
+    }
+  }
 
   const ecr = ecrituresComptables.filter((e) => !e.annulee && (!agenceId || e.agenceId === agenceId))
 
@@ -4335,7 +4636,7 @@ function computeBilan(agenceId?: number, annee: number = new Date().getFullYear(
       amort: 0,
       net: brutActifCirc,
       lignes: [
-        { ref: 'BA', libelle: 'Stocks physiques valorisés (Produits finis & sacs)', brut: valStocks, amort: 0, net: valStocks },
+        { ref: 'BA', libelle: 'Stocks physiques valorisés (Produits finis & marchandises)', brut: valStocks, amort: 0, net: valStocks },
         { ref: 'BG', libelle: 'Créances clients & comptes rattachés (Compte 411)', brut: creancesClients, amort: 0, net: creancesClients },
       ],
     },
@@ -4384,18 +4685,177 @@ function computeBilan(agenceId?: number, annee: number = new Date().getFullYear(
     },
     resultatNet,
     equilibre: true,
+    estSaisiManuellement: false,
   }
 }
 
 router.get('/comptabilite/bilan', (req: Request, res: Response) => {
-  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const agenceId = req.query.agenceId && req.query.agenceId !== 'CONSOLIDE' ? toInt(req.query.agenceId) : undefined
   const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
   const data = computeBilan(agenceId, annee)
   res.json(data)
 })
 
+router.post('/comptabilite/bilan', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agenceId = req.body.agenceId && req.body.agenceId !== 'CONSOLIDE' ? toInt(req.body.agenceId) : undefined
+  const annee = req.body.annee ? Number(req.body.annee) : new Date().getFullYear()
+  const key = getBilanStorageKey(agenceId, annee)
+
+  const payload = req.body.bilan || req.body
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ message: 'Données de bilan invalides' })
+  }
+
+  // Recalcul conforme SYSCOHADA des sous-totaux et de l'équilibre
+  const brutImmo = (payload.actifImmobilise?.lignes || []).reduce((s: number, l: any) => s + (Number(l.brut) || 0), 0)
+  const amortImmo = (payload.actifImmobilise?.lignes || []).reduce((s: number, l: any) => s + (Number(l.amort) || 0), 0)
+  const netImmo = (payload.actifImmobilise?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) || Math.max(0, brutImmo - amortImmo)
+
+  const brutCirc = (payload.actifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.brut) || 0), 0)
+  const amortCirc = (payload.actifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.amort) || 0), 0)
+  const netCirc = (payload.actifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) || Math.max(0, brutCirc - amortCirc)
+
+  const brutTresor = (payload.tresorerieActif?.lignes || []).reduce((s: number, l: any) => s + (Number(l.brut) || 0), 0)
+  const netTresor = (payload.tresorerieActif?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) || brutTresor
+
+  const totalActifBrut = Math.round((brutImmo + brutCirc + brutTresor) * 100) / 100
+  const totalActifAmort = Math.round((amortImmo + amortCirc) * 100) / 100
+  const totalActifNet = Math.round((netImmo + netCirc + netTresor) * 100) / 100
+
+  const netCapitaux = (payload.capitauxPropres?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)
+  const netDettesFin = (payload.dettesFinancieres?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)
+  const netPassifCirc = (payload.passifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)
+  const netTresorPassif = (payload.tresoreriePassif?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)
+  const totalPassifNet = Math.round((netCapitaux + netDettesFin + netPassifCirc + netTresorPassif) * 100) / 100
+
+  const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
+  const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
+
+  const savedBilan = {
+    exerciceAnnee: annee,
+    agenceNom,
+    dateArrete: `31/12/${annee}`,
+    actifImmobilise: {
+      brut: brutImmo,
+      amort: amortImmo,
+      net: netImmo,
+      lignes: (payload.actifImmobilise?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'IM',
+        libelle: l.libelle || 'Rubrique Immobilisation',
+        brut: Number(l.brut) || 0,
+        amort: Number(l.amort) || 0,
+        net: Number(l.net) || Math.max(0, (Number(l.brut) || 0) - (Number(l.amort) || 0)),
+      })),
+    },
+    actifCirculant: {
+      brut: brutCirc,
+      amort: amortCirc,
+      net: netCirc,
+      lignes: (payload.actifCirculant?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'AC',
+        libelle: l.libelle || 'Rubrique Actif Circulant',
+        brut: Number(l.brut) || 0,
+        amort: Number(l.amort) || 0,
+        net: Number(l.net) || Math.max(0, (Number(l.brut) || 0) - (Number(l.amort) || 0)),
+      })),
+    },
+    tresorerieActif: {
+      brut: brutTresor,
+      amort: 0,
+      net: netTresor,
+      lignes: (payload.tresorerieActif?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'TR',
+        libelle: l.libelle || 'Disponibilité Trésorerie',
+        brut: Number(l.brut) || 0,
+        amort: 0,
+        net: Number(l.net) || Number(l.brut) || 0,
+      })),
+    },
+    totalActif: {
+      brut: totalActifBrut,
+      amort: totalActifAmort,
+      net: totalActifNet,
+    },
+    capitauxPropres: {
+      net: netCapitaux,
+      lignes: (payload.capitauxPropres?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'CP',
+        libelle: l.libelle || 'Rubrique Capitaux Propres',
+        net: Number(l.net) || 0,
+      })),
+    },
+    dettesFinancieres: {
+      net: netDettesFin,
+      lignes: (payload.dettesFinancieres?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'DF',
+        libelle: l.libelle || 'Rubrique Dette Financière',
+        net: Number(l.net) || 0,
+      })),
+    },
+    passifCirculant: {
+      net: netPassifCirc,
+      lignes: (payload.passifCirculant?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'PC',
+        libelle: l.libelle || 'Rubrique Passif Circulant',
+        net: Number(l.net) || 0,
+      })),
+    },
+    tresoreriePassif: {
+      net: netTresorPassif,
+      lignes: (payload.tresoreriePassif?.lignes || []).map((l: any) => ({
+        ref: l.ref || 'TP',
+        libelle: l.libelle || 'Découvert / Crédit Trésorerie',
+        net: Number(l.net) || 0,
+      })),
+    },
+    totalPassif: {
+      net: totalPassifNet,
+    },
+    resultatNet: (payload.capitauxPropres?.lignes || []).find((l: any) => l.ref === 'DI')?.net || payload.resultatNet || 0,
+    equilibre: Math.abs(totalActifNet - totalPassifNet) < 0.05,
+    estSaisiManuellement: true,
+    modifieLe: new Date().toISOString(),
+    modifiePar: currentUser.nom,
+  }
+
+  bilansSaisis[key] = savedBilan
+
+  logAudit(
+    currentUser.nom,
+    'SAISIE_BILAN_MANUEL',
+    `Complétion directe du Bilan OHADA (Exercice ${annee}, Total Actif: $${totalActifNet} USD, Total Passif: $${totalPassifNet} USD)`,
+    agenceId || 1
+  )
+
+  res.json({ message: 'Bilan comptable personnalisé enregistré et validé avec succès !', bilan: savedBilan })
+})
+
+router.post('/comptabilite/bilan/reinitialiser', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agenceId = req.body.agenceId && req.body.agenceId !== 'CONSOLIDE' ? toInt(req.body.agenceId) : undefined
+  const annee = req.body.annee ? Number(req.body.annee) : new Date().getFullYear()
+  const key = getBilanStorageKey(agenceId, annee)
+
+  delete bilansSaisis[key]
+
+  logAudit(
+    currentUser.nom,
+    'RESET_BILAN_AUTOMATIQUE',
+    `Réinitialisation du Bilan aux écritures comptables automatiques (Exercice ${annee})`,
+    agenceId || 1
+  )
+
+  const automaticBilan = computeBilan(agenceId, annee)
+  res.json({ message: 'Bilan réinitialisé aux calculs automatiques du journal.', bilan: automaticBilan })
+})
+
 router.get(['/comptabilite/bilan/document', '/reporting/export/bilan', '/comptabilite/export/bilan'], (req: Request, res: Response) => {
-  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const agenceId = req.query.agenceId && req.query.agenceId !== 'CONSOLIDE' ? toInt(req.query.agenceId) : undefined
   const annee = req.query.annee ? Number(req.query.annee) : new Date().getFullYear()
   const agence = agenceId ? agences.find((a) => a.id === agenceId) : null
   const agenceNom = agence ? agence.nom : (parametresEntreprise.nomSociete + ' - Consolidation Réseau')
@@ -5067,7 +5527,7 @@ router.post('/logistique/livraisons', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'CREATION_BON_LIVRAISON',
-    `Bordereau ${refBL} généré (${mode === 'ENLEVEMENT_MAGASIN' ? 'Retrait comptoir' : mode === 'VEHICULE_CLIENT' ? `Véhicule client ${clientVehicule || ''}` : `Camion société ${vehicule?.marqueModele || ''}`}, ${nouveauBL.quantiteSacs} sacs)`,
+    `Bordereau ${refBL} généré (${mode === 'ENLEVEMENT_MAGASIN' ? 'Retrait comptoir' : mode === 'VEHICULE_CLIENT' ? `Véhicule client ${clientVehicule || ''}` : `Camion société ${vehicule?.marqueModele || ''}`}, ${nouveauBL.quantiteSacs} unités)`,
     numAg
   )
   res.json({ ...nouveauBL, vehicule })
@@ -5138,7 +5598,7 @@ router.get('/logistique/livraisons/:id/document', (req: Request, res: Response) 
   const details = [
     {
       articleId: defaultArt?.id || 1,
-      article: defaultArt || { id: 1, designation: 'Farine Extra Matabishi 25kg', uniteMesure: 'Sac 25kg' },
+      article: defaultArt || { id: 1, designation: 'Produit Fini Standard Type A', uniteMesure: 'Unité' },
       quantite: bl.quantiteSacs || 1,
       prixUnitaire: 0,
       montantLigne: 0,
@@ -6222,7 +6682,7 @@ router.get('/comptabilite/classes', (req: Request, res: Response) => {
       classe: 3,
       numero: '3',
       titre: 'Comptes de Stocks et En-cours',
-      sousTitre: 'Stocks matières premières (maïs), produits finis (farine, sons) et emballages',
+      sousTitre: 'Stocks de matières premières, produits finis et conditionnements',
       nature: 'ACTIF_CIRCULANT',
     },
     {
@@ -6528,7 +6988,7 @@ router.get('/comptabilite/clients/:id/releve-pdf', (req: Request, res: Response)
 
   const compteClient = client.compteComptable || `411${String(client.id).padStart(3, '0')}`
   const activeRate = 2850
-  const socNom = parametresEntreprise?.nomSociete || 'MINOTERIE MODERNE DU VILLAGE (MVG SARL)'
+  const socNom = parametresEntreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
   const socRccm = parametresEntreprise?.rccm || 'CD/GOM/RCCM/20-B-0142'
   const socIdNat = parametresEntreprise?.idNat || '01-83-N12044F'
   const socNif = parametresEntreprise?.nif || 'A1209384Z'
@@ -6696,7 +7156,7 @@ router.get('/comptabilite/clients/:id/releve-pdf', (req: Request, res: Response)
 router.get('/comptabilite/classes/document', (req: Request, res: Response) => {
   const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
   const activeRate = tauxChanges.find((t) => t.agenceId === (agenceId || 1) && t.actif)?.taux || 2850
-  const socNom = parametresEntreprise?.nomSociete || 'MINOTERIE MODERNE DU VILLAGE (MVG SARL)'
+  const socNom = parametresEntreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
   const agenceNom = agenceId ? (agences.find((a) => a.id === agenceId)?.nom || `Agence #${agenceId}`) : 'Consolidation Multi-Agences'
 
   // Récupérer les classes calculées
@@ -6831,7 +7291,7 @@ router.get('/comptabilite/classes/document', (req: Request, res: Response) => {
   <div style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end;">
     <div>
       <h1 style="margin: 0; font-size: 18px; font-weight: 800; color: #0f172a;">${socNom}</h1>
-      <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Minoterie Industrielle de Maïs & Provende Animale</div>
+      <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Entreprise Industrielle & Commerciale Multi-Agences</div>
       <div style="font-size: 11px; color: #334155; margin-top: 4px;">Périmètre : <strong>${agenceNom}</strong> | Taux officiel appliqué : 1 USD = ${activeRate} CDF</div>
     </div>
     <div style="text-align: right;">
@@ -6907,8 +7367,32 @@ router.post('/production/recettes', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { articleFiniId, articleMatiereId, quantiteRequise } = req.body
-  if (!articleFiniId || !articleMatiereId || !quantiteRequise) {
+  const { articleFiniId, articleMatiereId, quantiteRequise, lignes, ingredients } = req.body
+  if (!articleFiniId) {
+    return res.status(400).json({ message: 'Identifiant du produit fini requis.' })
+  }
+
+  const items = Array.isArray(lignes) ? lignes : (Array.isArray(ingredients) ? ingredients : [])
+  if (items.length > 0) {
+    const created: any[] = []
+    for (const item of items) {
+      if (item.articleMatiereId && Number(item.quantiteRequise) > 0) {
+        const nouv = {
+          id: recettes.length + 1,
+          articleFiniId: Number(articleFiniId),
+          articleMatiereId: Number(item.articleMatiereId),
+          quantiteRequise: Number(item.quantiteRequise),
+        }
+        recettes.push(nouv)
+        created.push(nouv)
+      }
+    }
+    const artFini = articles.find((a) => a.id === Number(articleFiniId))
+    logAudit(currentUser.nom, 'AJOUT_RECETTE_MULTI_BOM', `Formule technique multi-ingrédients enregistrée (${created.length} composant(s)) pour ${artFini?.designation || `article #${articleFiniId}`}`, 1)
+    return res.json({ message: 'Formule technique enregistrée avec succès', recettes: created })
+  }
+
+  if (!articleMatiereId || !quantiteRequise) {
     return res.status(400).json({ message: 'Tous les paramètres de recette sont requis.' })
   }
 
@@ -6922,6 +7406,17 @@ router.post('/production/recettes', (req: Request, res: Response) => {
   recettes.push(nouvelleRecette)
   logAudit(currentUser.nom, 'AJOUT_RECETTE_PRODUCTION', `Nouvelle formule technique enregistrée pour article #${articleFiniId}`, 1)
   res.json(nouvelleRecette)
+})
+
+router.delete('/production/recettes/:id', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  const id = toInt(req.params.id)
+  const idx = recettes.findIndex((r) => r.id === id)
+  if (idx === -1) return res.status(404).json({ message: 'Ligne de recette non trouvée' })
+  const removed = recettes.splice(idx, 1)[0]
+  logAudit(currentUser.nom, 'SUPPRESSION_LIGNE_RECETTE', `Suppression ingrédient #${removed.articleMatiereId} de la recette #${removed.articleFiniId}`, 1)
+  res.json({ message: 'Ligne d ingrédient supprimée de la recette', removed })
 })
 
 router.post('/production/ordres', (req: Request, res: Response) => {
@@ -7069,7 +7564,7 @@ router.get('/production/ordres/:id/etiquettes', async (req: Request, res: Respon
 
   const agence = agences.find((a) => a.id === ordre.agenceId)
   const articleFini = articles.find((a) => a.id === ordre.articleFiniId)
-  const emballageType = (req.query.emballage as string) || articleFini?.uniteMesure || 'Sac de 25 kg'
+  const emballageType = (req.query.emballage as string) || articleFini?.uniteMesure || 'Unité standard'
   const quantiteProduite = Number(ordre.quantiteReelle) || Number(ordre.quantitePrevue) || 50
   const count = req.query.count ? Math.max(1, toInt(req.query.count)) : quantiteProduite
 
@@ -7140,7 +7635,7 @@ router.post('/achats/commandes', (req: Request, res: Response) => {
     agenceId: numAg,
     fournisseurId: numFourn,
     fournisseurNom: four.nom,
-    produit: String(produit || 'Maïs en grains blanc sec').trim(),
+    produit: String(produit || 'Matière Première Type 1').trim(),
     quantiteKg: qte,
     prixUnitaireKgUsd: pu,
     montantTotalUsd: total,
@@ -7220,7 +7715,7 @@ router.post('/achats/receptions', (req: Request, res: Response) => {
     agenceId: numAg,
     fournisseurId: numFourn,
     fournisseurNom: four ? four.nom : 'Fournisseur Local',
-    produit: String(produit || (cmd ? cmd.produit : 'Maïs en grains blanc sec')).trim(),
+    produit: String(produit || (cmd ? cmd.produit : 'Matière Première Type 1')).trim(),
     immatriculationCamion: String(immatriculationCamion || 'CAMION-LOCAL').trim().toUpperCase(),
     chauffeur: String(chauffeur || 'Chauffeur').trim(),
     peseeBruteKg: pBrut,
@@ -7242,7 +7737,7 @@ router.post('/achats/receptions', (req: Request, res: Response) => {
   receptionsPontBascule.unshift(nouvelleReception)
 
   // 1. Entrée automatique en stock matière première
-  const artGrains = articles.find((a) => a.designation.toLowerCase().includes('maïs') && a.designation.toLowerCase().includes('grain')) || articles[0]
+  const artGrains = articles.find((a) => a.type === 'MATIERE_PREMIERE') || articles[0]
   if (artGrains) {
     const lotId = `LOT-PONT-${Date.now().toString().slice(-4)}`
     stocksAgence.push({
@@ -7821,6 +8316,42 @@ router.put('/rh/agents/:id', (req: Request, res: Response) => {
 
   logAudit(currentUser.nom, 'MODIFICATION_AGENT', `Mise à jour agent ${agent.nom}`, agent.agenceId)
   res.json(agent)
+})
+
+router.post('/rh/agents/:id/enrolement-biometrique', (req: Request, res: Response) => {
+  const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+
+  const agentId = toInt(req.params.id)
+  const agent = agents.find((a) => a.id === agentId)
+  if (!agent) return res.status(404).json({ message: 'Collaborateur introuvable' })
+
+  const { doigtEnrole, empreinteHash, qualiteEmpreinte } = req.body
+  const doigt = String(doigtEnrole || 'Index Droit').trim()
+  const qualite = Number(qualiteEmpreinte) || +(98 + Math.random() * 1.8).toFixed(1)
+  const hash = String(empreinteHash || `BIO-FP-AGT-${agent.id}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`).trim()
+
+  agent.biometrieEnregistree = true
+  agent.empreinteHash = hash
+  agent.doigtEnrole = doigt
+  agent.qualiteEmpreinte = qualite
+  agent.dateEnrolementBiometrique = new Date().toISOString()
+
+  logAudit(
+    currentUser.nom,
+    'ENROLEMENT_BIOMETRIQUE_AGENT',
+    `Empreinte biométrique enregistrée pour ${agent.nom} (${agent.matricule}). Doigt: ${doigt}, Qualité: ${qualite}%, Gabarit: ${hash}`,
+    agent.agenceId
+  )
+
+  const ag = agences.find((a) => a.id === agent.agenceId)
+  res.json({
+    message: `Empreinte digitale enregistrée avec succès pour ${agent.nom} (${doigt}, qualité: ${qualite}%) !`,
+    agent: {
+      ...agent,
+      agence: ag,
+    },
+  })
 })
 
 router.get('/rh/avances', (req: Request, res: Response) => {
@@ -8743,6 +9274,11 @@ router.get('/admin/users', (req: Request, res: Response) => {
 
 router.post('/admin/users', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
+  if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à créer ou gérer des utilisateurs.' })
+  }
+
   const { nom, email, role, agenceId, permissions } = req.body
 
   if (!email || !nom || !role) {
@@ -8770,13 +9306,16 @@ router.post('/admin/users', (req: Request, res: Response) => {
   }
 
   users.push(nouvelUtilisateur)
-  logAudit(currentUser?.nom || 'Admin', 'CREATION_UTILISATEUR', `Création du compte ${email} (${role}) affecté à agence #${nouvelUtilisateur.agenceId}`)
+  logAudit(currentUser?.nom || 'Super Admin', 'CREATION_UTILISATEUR', `Création du compte ${email} (${role}) affecté à agence #${nouvelUtilisateur.agenceId}`)
   res.json(nouvelUtilisateur)
 })
 
 router.put('/admin/users/:id', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à modifier les utilisateurs.' })
+  }
 
   const userId = toInt(req.params.id)
   const targetUser = users.find((u) => u.id === userId)
@@ -8817,6 +9356,9 @@ router.put('/admin/users/:id', (req: Request, res: Response) => {
 router.post('/admin/users/:id/toggle-statut', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à modifier le statut des utilisateurs.' })
+  }
 
   const userId = toInt(req.params.id)
   const targetUser = users.find((u) => u.id === userId)
@@ -8846,6 +9388,9 @@ router.post('/admin/users/:id/toggle-statut', (req: Request, res: Response) => {
 router.post('/admin/users/:id/deconnecter', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à déconnecter des utilisateurs.' })
+  }
 
   const userId = toInt(req.params.id)
   const targetUser = users.find((u) => u.id === userId)
@@ -8859,7 +9404,7 @@ router.post('/admin/users/:id/deconnecter', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'DECONNEXION_FORCEE',
-    `Déconnexion forcée du compte #${userId} (${targetUser.nom}) par l administrateur. Session et appareil déliés.`,
+    `Déconnexion forcée du compte #${userId} (${targetUser.nom}) par le Super Admin. Session et appareil déliés.`,
     targetUser.agenceId
   )
 
@@ -8869,6 +9414,9 @@ router.post('/admin/users/:id/deconnecter', (req: Request, res: Response) => {
 router.post('/admin/users/:id/debloquer-reinitialiser', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à débloquer ou réinitialiser un compte.' })
+  }
 
   const userId = toInt(req.params.id)
   const targetUser = users.find((u) => u.id === userId)
@@ -8909,6 +9457,9 @@ router.post('/admin/users/:id/debloquer-reinitialiser', (req: Request, res: Resp
 router.post('/admin/users/:id/toggle-vip', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
+  if (currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur est autorisé à modifier le statut VIP des utilisateurs.' })
+  }
 
   const userId = toInt(req.params.id)
   const targetUser = users.find((u) => u.id === userId)
@@ -8919,7 +9470,7 @@ router.post('/admin/users/:id/toggle-vip', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'MODIFICATION_STATUT_VIP',
-    `Statut VIP (multi-appareils autorisés) ${targetUser.estVip ? 'ACTIVÉ' : 'DÉSACTIVÉ'} pour #${userId} (${targetUser.nom})`,
+    `Statut VIP (multi-appareils autorisés) ${targetUser.estVip ? 'ACTIVÉ' : 'DÉSACTIVÉ'} pour #${userId} (${targetUser.nom}) par le Super Admin`,
     targetUser.agenceId
   )
 
@@ -9322,7 +9873,7 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
   let compteDebit = dev === 'USD' ? parametresComptables.compteCaisseUsd : parametresComptables.compteCaisseCdf
   let libelleDebit = `[SCAN QR] Encaissement vente comptant ${refVente} (${ag.nom})`
   const compteCredit = parametresComptables.compteVenteMarchandises
-  const libelleCredit = `[SCAN QR] Produits ventes ${art.designation} (Lot ${lotUtilise}, Sacs: ${qte})`
+  const libelleCredit = `[SCAN QR] Produits ventes ${art.designation} (Lot ${lotUtilise}, Unités: ${qte})`
 
   if (!isCredit) {
     caisseUtilisee = comptesCaisse.find((c) => c.id === (caisseId ? Number(caisseId) : (c.agenceId === numAg ? c.id : 1))) || comptesCaisse[0]
@@ -9458,7 +10009,7 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
   logAudit(
     currentUser.nom,
     'VENTE_SCAN_QR_COMPLETE',
-    `Vente express par scan QR ${refVente} (${qte} sacs de ${art.designation}) pour ${ag.nom}. Montant: $${numMontant} ${dev}. BL ${refBL} émis. Stock décrémenté.`,
+    `Vente express par scan QR ${refVente} (${qte} unités de ${art.designation}) pour ${ag.nom}. Montant: $${numMontant} ${dev}. BL ${refBL} émis. Stock décrémenté.`,
     numAg
   )
 
@@ -9549,7 +10100,7 @@ const permissionsCatalog = [
   { id: 11, code: 'articles.gerer', module: 'Stocks & Entrepôt', libelle: 'Créer et modifier les articles, types et conditionnements' },
 
   // 4. Achats & Matières Premières
-  { id: 12, code: 'achats.gerer', module: 'Achats & Matières Premières', libelle: 'Consulter et enregistrer les achats de grains maïs/blé' },
+  { id: 12, code: 'achats.gerer', module: 'Achats & Matières Premières', libelle: 'Consulter et enregistrer les achats de matières premières et intrants' },
   { id: 13, code: 'achats.commandes', module: 'Achats & Matières Premières', libelle: 'Émettre et valider les bons de commande fournisseurs (BC)' },
   { id: 14, code: 'achats.pont_bascule', module: 'Achats & Matières Premières', libelle: 'Effectuer les pesées pont-bascule et contrôles agréage' },
 
@@ -9598,13 +10149,14 @@ const permissionsCatalog = [
   { id: 42, code: 'documents.gerer', module: 'Gestion Documentaire', libelle: 'Imprimer les 12 documents légaux avec logo et signatures officielles' },
   { id: 43, code: 'maintenance.gerer', module: 'Logistique & Convois', libelle: 'Superviser les entretiens techniques des camions et machines usine' },
   { id: 44, code: 'comptabilite.voir', module: 'Comptabilité SYSCOHADA', libelle: 'Consulter et accéder aux modules comptables d agence' },
+  { id: 45, code: 'analytics.voir', module: 'Reporting & Décisionnel', libelle: 'Consulter les diagrammes et analyses graphiques (Consolidé pour le siège, agence locale pour le chef)' },
 ]
 
 const rolesPermissionsMap: Record<string, string[]> = {
   SUPER_ADMIN: permissionsCatalog.map((p) => p.code),
   ADMIN_SIEGE: permissionsCatalog.filter((p) => !['sync.voir'].includes(p.code)).map((p) => p.code),
   CHEF_AGENCE: [
-    'dashboard.voir', 'ventes.voir', 'ventes.creer', 'ventes.annuler', 'credits.valider', 'clients.gerer', 'clients.credit_gerer',
+    'dashboard.voir', 'analytics.voir', 'ventes.voir', 'ventes.creer', 'ventes.annuler', 'credits.valider', 'clients.gerer', 'clients.credit_gerer',
     'stocks.voir', 'stocks.corriger', 'stocks.valider_correction', 'articles.gerer',
     'achats.gerer', 'achats.commandes', 'achats.pont_bascule',
     'transferts.gerer', 'flotte.gerer', 'livraisons.gerer', 'production.gerer',
@@ -9706,8 +10258,8 @@ router.get('/admin/users/:id/permissions', (req: Request, res: Response) => {
 
 router.put('/admin/users/:id/permissions', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
-  if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN_SIEGE')) {
-    return res.status(403).json({ message: 'Seul un Administrateur peut modifier les fonctionnalités d un utilisateur.' })
+  if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Seul le Super Administrateur peut modifier les fonctionnalités d un utilisateur.' })
   }
 
   const userId = toInt(req.params.id)

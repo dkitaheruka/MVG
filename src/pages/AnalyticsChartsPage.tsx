@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   ResponsiveContainer,
@@ -46,7 +46,7 @@ import {
   CaretDown,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
-import { apiRequest } from '../lib/api'
+import { apiRequest, downloadUrl } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
 
 type ChartViewType = 'BAR' | 'LINE' | 'AREA' | 'PIE'
@@ -101,10 +101,20 @@ export function AnalyticsChartsPage() {
   const userRole = useAppStore((state) => state.session?.role)
   const userAgenceId = useAppStore((state) => state.session?.agenceId)
 
-  // Filtres
-  const [selectedAgence, setSelectedAgence] = useState<string>('CONSOLIDE')
+  const isSuperOrAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN_SIEGE'
+
+  // Filtres : Le Super Admin et Admin Siège ont accès au Consolidé, le Chef d'Agence est strictement restreint à son agence locale
+  const [selectedAgence, setSelectedAgence] = useState<string>(
+    isSuperOrAdmin ? 'CONSOLIDE' : String(userAgenceId || 1)
+  )
   const [selectedPeriode, setSelectedPeriode] = useState<'JOUR' | 'SEMAINE' | 'MOIS' | 'ANNEE'>('JOUR')
   const [activeTab, setActiveTab] = useState<ActiveTabType>('TOUT')
+
+  useEffect(() => {
+    if (!isSuperOrAdmin && userAgenceId) {
+      setSelectedAgence(String(userAgenceId))
+    }
+  }, [isSuperOrAdmin, userAgenceId])
 
   // Types de graphiques personnalisables
   const [typeVentes, setTypeVentes] = useState<ChartViewType>('BAR')
@@ -154,21 +164,20 @@ export function AnalyticsChartsPage() {
   const agencesList = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
   const prodData = productionQuery.data
 
-  const isSuperOrAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN_SIEGE'
-
-  // Fonction pour imprimer toute la page ou le conteneur ciblé
+  // Fonction pour imprimer le dossier ou le diagramme ciblé via le document serveur A4 certifié
   const declencherImpression = (cible?: string) => {
-    if (cible) {
-      setPrintChartTarget(cible)
-      setTimeout(() => {
-        window.print()
-      }, 250)
-    } else {
-      setPrintChartTarget(null)
-      setTimeout(() => {
-        window.print()
-      }, 150)
-    }
+    const docUrl = downloadUrl(
+      `/api/analytics/diagrammes/document?agenceId=${encodeURIComponent(selectedAgence)}&periode=${encodeURIComponent(selectedPeriode)}${
+        cible ? `&chart=${encodeURIComponent(cible)}` : ''
+      }`
+    )
+    const link = document.createElement('a')
+    link.href = docUrl
+    link.target = '_blank'
+    link.rel = 'noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   // Exportation globale de tous les indicateurs clés
@@ -234,7 +243,7 @@ export function AnalyticsChartsPage() {
         'Véhicules Disponibles',
         `${f.disponibles} / ${f.total}`,
         'engins',
-        `En course: ${f.enCourse} | En maintenance: ${f.enMaintenance} | Capacité: ${f.capaciteTonnes} T (${f.capaciteSacs} sacs)`,
+        `En course: ${f.enCourse} | En maintenance: ${f.enMaintenance} | Capacité: ${f.capaciteTonnes} T (${f.capaciteSacs} unités)`,
       ])
     })
 
@@ -296,16 +305,19 @@ export function AnalyticsChartsPage() {
             Exporter Tout (Excel)
           </button>
 
-          <button
-            type="button"
+          <a
             className="primary-action"
-            onClick={() => declencherImpression()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-            title="Imprimer le dossier complet des graphiques en format A4 Paysage"
+            href={downloadUrl(
+              `/api/analytics/diagrammes/document?agenceId=${encodeURIComponent(selectedAgence)}&periode=${encodeURIComponent(selectedPeriode)}`
+            )}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, textDecoration: 'none' }}
+            title="Ouvrir le dossier officiel imprimable au format A4 avec en-têtes officiels, filigrane et bouton d'impression"
           >
             <Printer size={18} />
-            Imprimer Dossier Graphique (A4)
-          </button>
+            Imprimer Dossier Graphique (A4 / PDF)
+          </a>
         </div>
       </div>
 
@@ -345,12 +357,20 @@ export function AnalyticsChartsPage() {
               fontWeight: 600,
             }}
           >
-            <option value="CONSOLIDE">Réseau Consolidé (Toutes Agences)</option>
-            {agencesList.map((ag: any) => (
-              <option key={ag.id} value={String(ag.id)}>
-                {ag.nom} ({ag.ville})
+            {isSuperOrAdmin ? (
+              <>
+                <option value="CONSOLIDE">Réseau Consolidé (Toutes Agences)</option>
+                {agencesList.map((ag: any) => (
+                  <option key={ag.id} value={String(ag.id)}>
+                    {ag.nom} ({ag.ville})
+                  </option>
+                ))}
+              </>
+            ) : (
+              <option value={String(userAgenceId || 1)}>
+                {agencesList.find((ag: any) => ag.id === userAgenceId)?.nom || `Mon Agence #${userAgenceId || 1}`} (Accès réservé à votre agence)
               </option>
-            ))}
+            )}
           </select>
 
           {/* Sélecteur de Période */}
@@ -1891,7 +1911,7 @@ export function AnalyticsChartsPage() {
                   </h3>
                 </div>
                 <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
-                  Capacité cumulée de chargement en Tonnes et en Sacs par parc d'agence.
+                  Capacité cumulée de chargement en Tonnes et en Unités par parc d'agence.
                 </p>
               </div>
 
@@ -1902,7 +1922,7 @@ export function AnalyticsChartsPage() {
                   onClick={() =>
                     exporterTableauVersExcel(
                       'capacite_fret_par_agence',
-                      ['Agence', 'Total Engins', 'Disponibles', 'Capacité Tonnes', 'Capacité Sacs'],
+                      ['Agence', 'Total Engins', 'Disponibles', 'Capacité Tonnes', 'Capacité Unités'],
                       (execData.parcVehicules?.parcParAgence || []).map((p: any) => [
                         p.agenceNom,
                         p.total,
@@ -1935,7 +1955,7 @@ export function AnalyticsChartsPage() {
                   <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} />
                   <RechartsTooltip
                     contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.82rem' }}
-                    formatter={(val: any, name: any) => [`${val} ${name === 'capaciteTonnes' ? 'Tonnes' : 'sacs'}`, name === 'capaciteTonnes' ? 'Capacité Tonnes' : 'Capacité Sacs']}
+                    formatter={(val: any, name: any) => [`${val} ${name === 'capaciteTonnes' ? 'Tonnes' : 'unités'}`, name === 'capaciteTonnes' ? 'Capacité Tonnes' : 'Capacité Unités']}
                   />
                   <RechartsLegend wrapperStyle={{ fontSize: '0.78rem' }} />
                   <Bar
@@ -1948,7 +1968,7 @@ export function AnalyticsChartsPage() {
                   />
                   <Bar
                     dataKey="capaciteSacs"
-                    name="Capacité (Sacs)"
+                    name="Capacité (Unités)"
                     fill={PALETTE.cyan}
                     radius={[4, 4, 0, 0]}
                     isAnimationActive={true}
@@ -1964,11 +1984,11 @@ export function AnalyticsChartsPage() {
                 Lecture & Interprétation Décisionnelle :
               </div>
               <p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.45 }}>
-                La capacité totale d'enlèvement et de livraison du réseau s'élève à plus de {execData.parcVehicules?.capaciteTotaleTonnes || 0} Tonnes ({execData.parcVehicules?.capaciteTotaleSacs || 0} sacs), permettant d'honorer les commandes de gros sans affrètement extérieur.
+                La capacité totale d'enlèvement et de livraison du réseau s'élève à plus de {execData.parcVehicules?.capaciteTotaleTonnes || 0} Tonnes ({execData.parcVehicules?.capaciteTotaleSacs || 0} unités), permettant d'honorer les commandes de gros sans affrètement extérieur.
               </p>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border)', paddingTop: 6, fontSize: '0.78rem' }}>
                 <span>Capacité totale réseau : <strong>{execData.parcVehicules?.capaciteTotaleTonnes || 0} Tonnes</strong></span>
-                <span style={{ color: PALETTE.blue }}>Équivalent sacs : <strong>{execData.parcVehicules?.capaciteTotaleSacs || 0} sacs</strong></span>
+                <span style={{ color: PALETTE.blue }}>Équivalent unités : <strong>{execData.parcVehicules?.capaciteTotaleSacs || 0} unités</strong></span>
               </div>
             </div>
           </div>
@@ -2014,7 +2034,7 @@ export function AnalyticsChartsPage() {
                     exporterTableauVersExcel(
                       'production_par_produit_fini',
                       ['Désignation Produit Fini', 'Quantité Fabriquée', 'Unité'],
-                      (prodData.diagramme?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'unités/sacs'])
+                      (prodData.diagramme?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'unités'])
                     )
                   }
                   title="Exporter les volumes de production"
@@ -2075,7 +2095,7 @@ export function AnalyticsChartsPage() {
                     <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} />
                     <RechartsTooltip
                       contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.82rem' }}
-                      formatter={(val: any, _: any, item: any) => [`${val} ${item.payload.unite || 'unités/sacs'}`, 'Production']}
+                      formatter={(val: any, _: any, item: any) => [`${val} ${item.payload.unite || 'unités'}`, 'Production']}
                     />
                     <Bar
                       dataKey="valeur"

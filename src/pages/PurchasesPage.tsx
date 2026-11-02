@@ -27,12 +27,17 @@ export function PurchasesPage() {
   )
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
 
-  const [activeTab, setActiveTab] = useState<'commandes' | 'pont_bascule' | 'achats' | 'fournisseurs'>('commandes')
+  const [activeTab, setActiveTab] = useState<'commandes' | 'pont_bascule' | 'achats' | 'fournisseurs' | 'matieres'>('commandes')
   const [showNewAchatModal, setShowNewAchatModal] = useState(false)
   const [showEBModal, setShowEBModal] = useState(false)
   const [showNewFournisseurModal, setShowNewFournisseurModal] = useState(false)
   const [showNewCommandeModal, setShowNewCommandeModal] = useState(false)
   const [showNewReceptionModal, setShowNewReceptionModal] = useState(false)
+  const [showNewMatiereModal, setShowNewMatiereModal] = useState(false)
+  const [mpDesignation, setMpDesignation] = useState('')
+  const [mpCode, setMpCode] = useState('')
+  const [mpUnite, setMpUnite] = useState('Kg')
+  const [mpCoutStandard, setMpCoutStandard] = useState('')
   const [paymentAchat, setPaymentAchat] = useState<any | null>(null)
   const [paymentMontant, setPaymentMontant] = useState('')
   const [paymentCaisseId, setPaymentCaisseId] = useState(1)
@@ -103,6 +108,34 @@ export function PurchasesPage() {
     queryKey: ['articles'],
     queryFn: () => apiRequest<any[]>('/api/articles', { token }),
     enabled: Boolean(token),
+  })
+
+  const createMatiereMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/articles', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          designation: mpDesignation,
+          codeUnique: mpCode || undefined,
+          type: 'MATIERE_PREMIERE',
+          uniteMesure: mpUnite,
+          prixVenteStandard: Number(mpCoutStandard) || 0,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] })
+      setShowNewMatiereModal(false)
+      setMpDesignation('')
+      setMpCode('')
+      setMpCoutStandard('')
+      if (data?.id) {
+        setArticleId(data.id)
+      }
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Erreur lors de la création de la matière première')
+    },
   })
 
   const createCommandeMutation = useMutation({
@@ -280,6 +313,14 @@ export function PurchasesPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             className="secondary-action"
+            onClick={() => setShowNewMatiereModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Créer une nouvelle matière première ou intrant industriel (non destinée à la vente)"
+          >
+            <Package size={18} /> Nouvelle Matière Première
+          </button>
+          <button
+            className="secondary-action"
             onClick={() => setShowEBModal(true)}
             style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
             title="Faire une demande de fonds pour les achats de matières premières ou emballages"
@@ -320,6 +361,9 @@ export function PurchasesPage() {
         </button>
         <button className={clsx('tab-button', activeTab === 'fournisseurs' && 'active')} onClick={() => setActiveTab('fournisseurs')}>
           <UsersThree size={17} /> Portefeuille Fournisseurs ({fournisseursQuery.data?.length ?? 0})
+        </button>
+        <button className={clsx('tab-button', activeTab === 'matieres' && 'active')} onClick={() => setActiveTab('matieres')}>
+          <Package size={17} /> Matières Premières & Intrants ({(articlesQuery.data ?? []).filter((a: any) => a.type === 'MATIERE_PREMIERE').length})
         </button>
       </div>
 
@@ -593,6 +637,186 @@ export function PurchasesPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeTab === 'matieres' && (
+        <div className="table-wrap">
+          <div style={{ padding: '12px 16px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <strong style={{ fontSize: '0.95rem' }}>Nomenclature des Matières Premières & Intrants Industriels</strong>
+              <p style={{ margin: '2px 0 0', color: 'var(--muted)', fontSize: '0.82rem' }}>
+                Ces matières sont réservées à la réception fournisseur, au pesage pont-bascule et à la production usine. Elles sont exclues de la vente directe.
+              </p>
+            </div>
+            <button
+              className="primary-action"
+              style={{ padding: '6px 12px', fontSize: '0.82rem' }}
+              onClick={() => setShowNewMatiereModal(true)}
+            >
+              <Plus size={16} /> Ajouter une matière
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Code Article</th>
+                <th>Désignation Matière / Intrant</th>
+                <th>Unité de Mesure</th>
+                <th>Type d'Article</th>
+                <th>Coût Standard ($)</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(articlesQuery.data ?? [])
+                .filter((a: any) => a.type === 'MATIERE_PREMIERE')
+                .map((mat: any) => (
+                  <tr key={mat.id}>
+                    <td><code>{mat.codeUnique || `MP-${mat.id}`}</code></td>
+                    <td><strong>{mat.designation}</strong></td>
+                    <td><span className="badge badge-info">{mat.uniteMesure}</span></td>
+                    <td><span className="badge badge-warning">Matière Première Usine</span></td>
+                    <td>${Number(mat.prixVenteStandard || 0).toFixed(2)} USD</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="secondary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                          onClick={() => {
+                            setBcProduit(mat.designation)
+                            setShowNewCommandeModal(true)
+                          }}
+                          title="Émettre un bon de commande pour cette matière"
+                        >
+                          <Receipt size={14} /> Commander
+                        </button>
+                        <button
+                          className="secondary-action"
+                          style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                          onClick={() => {
+                            setArticleId(mat.id)
+                            setShowNewAchatModal(true)
+                          }}
+                          title="Faire une réception directe"
+                        >
+                          <Plus size={14} /> Réceptionner
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              {(articlesQuery.data ?? []).filter((a: any) => a.type === 'MATIERE_PREMIERE').length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--muted)' }}>
+                    Aucune matière première enregistrée. Cliquez sur "Ajouter une matière" pour en créer une.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* MODAL NOUVELLE MATIÈRE PREMIÈRE */}
+      {showNewMatiereModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 520 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Package size={22} style={{ color: 'var(--accent-strong)' }} />
+                Créer une Matière Première Industrielle
+              </h3>
+              <button className="icon-button" onClick={() => setShowNewMatiereModal(false)}><X size={18} /></button>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: 14 }}>
+              Les matières premières sont achetées auprès des fournisseurs pour alimenter la fabrication d'usine (farines, sucre, bouchons, préformes, cartons, etc.). Elles sont exclues de la caisse vente.
+            </p>
+
+            {/* Presets rapides de démonstration */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 6 }}>Modèles d'intrants courants :</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { nom: 'Farine de Blé Panifiable', code: 'MP-FAR-BLE', unite: 'Kg', cout: '0.65' },
+                  { nom: 'Sucre Blanc Cristallisé', code: 'MP-SUCRE-BLC', unite: 'Kg', cout: '0.85' },
+                  { nom: 'Bouchons Plastique 28mm', code: 'MP-BOUCH-28', unite: 'Pièce', cout: '0.02' },
+                  { nom: 'Préformes PET 500ml', code: 'MP-PREF-500', unite: 'Pièce', cout: '0.05' },
+                  { nom: 'Cartons Ondulés 24 Bouteilles', code: 'MP-CART-24', unite: 'Pièce', cout: '0.35' },
+                  { nom: 'Huile Végétale Raffinée', code: 'MP-HUILE-RAF', unite: 'Litre', cout: '1.40' },
+                ].map((preset, pIdx) => (
+                  <button
+                    key={pIdx}
+                    type="button"
+                    className="badge"
+                    style={{ cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: '0.78rem' }}
+                    onClick={() => {
+                      setMpDesignation(preset.nom)
+                      setMpCode(preset.code)
+                      setMpUnite(preset.unite)
+                      setMpCoutStandard(preset.cout)
+                    }}
+                  >
+                    + {preset.nom}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); createMatiereMutation.mutate(); }}>
+              <label>
+                Désignation de la matière première *
+                <input
+                  type="text"
+                  value={mpDesignation}
+                  onChange={(e) => setMpDesignation(e.target.value)}
+                  placeholder="ex: Farine de blé, Préformes PET, Sucre blanc..."
+                  required
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Code référence matière
+                  <input
+                    type="text"
+                    value={mpCode}
+                    onChange={(e) => setMpCode(e.target.value.toUpperCase())}
+                    placeholder="ex: MP-FAR-01"
+                  />
+                </label>
+                <label>
+                  Unité de mesure usine *
+                  <select value={mpUnite} onChange={(e) => setMpUnite(e.target.value)} required>
+                    <option value="Kg">Kg (Kilogramme)</option>
+                    <option value="Litre">Litre</option>
+                    <option value="Tonne">Tonne</option>
+                    <option value="Pièce">Pièce / Unité</option>
+                    <option value="Sac">Sac</option>
+                    <option value="Fût">Fût</option>
+                    <option value="Carton">Carton</option>
+                    <option value="Rouleau">Rouleau</option>
+                  </select>
+                </label>
+              </div>
+              <label style={{ marginTop: 12 }}>
+                Coût standard estimé d'approvisionnement ($ USD)
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={mpCoutStandard}
+                  onChange={(e) => setMpCoutStandard(e.target.value)}
+                  placeholder="ex: 0.42"
+                />
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewMatiereModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createMatiereMutation.isPending}>
+                  {createMatiereMutation.isPending ? 'Enregistrement...' : 'Créer la matière première'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

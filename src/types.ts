@@ -36,6 +36,17 @@ export type PermissionCode =
   | 'rh.gerer'
   | 'flotte.gerer'
   | 'maintenance.gerer'
+  | 'analytics.voir'
+  | 'achats.commandes'
+  | 'achats.pont_bascule'
+  | 'livraisons.gerer'
+  | 'production.recettes'
+  | 'banque.rapprochement'
+  | 'rh.bulletins'
+  | 'rh.avances'
+  | 'comptabilite.cloture'
+  | 'comptabilite.immo_gerer'
+  | 'backup.gerer'
 
 export type UserSession = {
   token: string

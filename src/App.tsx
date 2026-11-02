@@ -128,7 +128,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { to: '/dashboard', labelKey: 'dashboard', icon: Gauge, permission: 'dashboard.voir' },
-  { to: '/diagrammes', labelKey: 'analytics_charts', icon: ChartBar, permission: 'dashboard.voir' },
+  { to: '/diagrammes', labelKey: 'analytics_charts', icon: ChartBar, permission: 'analytics.voir' },
   { to: '/ventes', labelKey: 'sales', icon: Receipt, permission: 'ventes.voir' },
   { to: '/stock', labelKey: 'stock', icon: Package, permission: 'stocks.voir' },
   { to: '/achats', labelKey: 'purchases', icon: ShoppingCart, permission: 'achats.gerer' },
@@ -1927,8 +1927,13 @@ function SalesPage() {
     })
 
     if (match) {
+      if (match.article?.type === 'MATIERE_PREMIERE') {
+        setScanNotice(`Cet article (${match.article?.designation}) est une matière première réservée à la production et non destinée à la vente directe.`)
+        setTimeout(() => setScanNotice(null), 5000)
+        return
+      }
       addToCart(match)
-      setScanNotice(`✓ Produit scanné et ajouté au panier : ${match.article?.designation} (${match.numeroLot || 'Lot standard'})`)
+      setScanNotice(`✓ Produit fabriqué scanné et ajouté au panier : ${match.article?.designation} (${match.numeroLot || 'Lot standard'})`)
       setTimeout(() => setScanNotice(null), 4500)
     } else {
       // Si ce n'est pas un article du catalogue direct, offrir la possibilité de passer l'écriture comptable
@@ -1949,8 +1954,9 @@ function SalesPage() {
     setBarcodeInput('')
   }
 
-  // Filtrage du catalogue
+  // Filtrage du catalogue : Seuls les Produits Finis fabriqués sont destinés à la vente (exclut les Matières Premières)
   const catalog = (stockQuery.data ?? []).filter((stock) => {
+    if (stock.article?.type && stock.article.type !== 'PRODUIT_FINI') return false
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
     return (
@@ -2773,7 +2779,7 @@ function SalesPage() {
                 Grille Tarifaire de l'Agence (Fixation des Prix par le Chef)
               </h3>
               <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-                Fixez et ajustez les prix de vente au sac/unité pour votre agence locale. Ces prix sont appliqués immédiatement aux caisses POS et aux encaissements QR Code.
+                Fixez et ajustez les prix de vente par unité/conditionnement pour votre agence locale. Ces prix sont appliqués immédiatement aux caisses POS et aux encaissements QR Code.
               </p>
             </div>
           </div>
@@ -2989,7 +2995,7 @@ function SalesPage() {
               {blModeTransport === 'ENLEVEMENT_MAGASIN' && (
                 <div style={{ padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, fontSize: '0.82rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <CheckCircle size={15} color="var(--primary)" />
-                  <span>Le client retire directement ses sacs au magasin/dépôt. Aucun véhicule de transport n'est mobilisé.</span>
+                  <span>Le client retire directement ses marchandises au magasin/dépôt. Aucun véhicule de transport n'est mobilisé.</span>
                 </div>
               )}
 
@@ -3033,7 +3039,7 @@ function SalesPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label>
-                  Quantité de Sacs
+                  Quantité (Unités / Colis)
                   <input
                     required
                     type="number"
@@ -3529,7 +3535,7 @@ function SalesPage() {
                 {modeTransport === 'ENLEVEMENT_MAGASIN' && (
                   <div style={{ fontSize: '0.8rem', color: 'var(--muted)', background: 'var(--surface)', padding: 8, borderRadius: 6, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CheckCircle size={14} color="var(--primary)" />
-                    <span>Le client retire directement ses sacs au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.</span>
+                    <span>Le client retire directement ses marchandises au magasin / dépôt. Aucun camion de l'entreprise n'est immobilisé.</span>
                   </div>
                 )}
 
@@ -3564,7 +3570,7 @@ function SalesPage() {
                       onChange={(e) => setSelectedVehiculeId(e.target.value ? Number(e.target.value) : '')}
                       style={{ padding: '4px 8px', fontSize: '0.8rem', width: '100%' }}
                     >
-                      <option value="">Sélectionner un véhicule de la flotte minoterie...</option>
+                      <option value="">Sélectionner un véhicule de la flotte...</option>
                       {(flotteQuery.data ?? []).map((v: any) => (
                         <option key={v.id} value={v.id}>
                           {v.plaqueImmatriculation} - {v.marqueModele} ({v.chauffeurNom})
@@ -3764,7 +3770,7 @@ function StockPage() {
   const [newArtCode, setNewArtCode] = useState('')
   const [newArtDesignation, setNewArtDesignation] = useState('')
   const [newArtType, setNewArtType] = useState<'PRODUIT_FINI' | 'MATIERE_PREMIERE'>('PRODUIT_FINI')
-  const [newArtUnite, setNewArtUnite] = useState('Sac 25kg')
+  const [newArtUnite, setNewArtUnite] = useState('Unité')
   const [newArtPrix, setNewArtPrix] = useState('20.0')
   const [newArtAlerte, setNewArtAlerte] = useState(true)
 
@@ -3876,7 +3882,7 @@ function StockPage() {
             className="secondary-action"
             onClick={() => setShowStockEB(true)}
             style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
-            title="Faire une demande de fonds pour le matériel de stockage, sacs ou entretien dépôt"
+            title="Faire une demande de fonds pour le matériel de stockage, emballages ou entretien dépôt"
           >
             <Coins size={18} /> État de Besoin Stock & Dépôt
           </button>
@@ -4102,7 +4108,7 @@ function StockPage() {
                   <input
                     value={newArtUnite}
                     onChange={(e) => setNewArtUnite(e.target.value)}
-                    placeholder="ex: Sac 25kg, Sac 50kg, Tonne, Litre, Carton..."
+                    placeholder="ex: Unité, Pièce, Carton, Colis, Tonne, Litre..."
                     required
                   />
                 </label>
@@ -4165,6 +4171,16 @@ function ProductionPage() {
   const [newRecetteFiniId, setNewRecetteFiniId] = useState<number | ''>(7)
   const [newRecetteMatiereId, setNewRecetteMatiereId] = useState<number | ''>(9)
   const [newRecetteQte, setNewRecetteQte] = useState('0.032')
+  const [recetteLines, setRecetteLines] = useState<Array<{ articleMatiereId: number | ''; quantiteRequise: string }>>([
+    { articleMatiereId: 9, quantiteRequise: '0.032' },
+  ])
+
+  // Modal Nouveau Produit Fini
+  const [showNewProduitFiniModal, setShowNewProduitFiniModal] = useState(false)
+  const [pfDesignation, setPfDesignation] = useState('')
+  const [pfCode, setPfCode] = useState('')
+  const [pfUnite, setPfUnite] = useState('Carton')
+  const [pfPrixStandard, setPfPrixStandard] = useState('')
 
   const [clotureOrdre, setClotureOrdre] = useState<any | null>(null)
   const [quantiteReelle, setQuantiteReelle] = useState('')
@@ -4174,6 +4190,12 @@ function ProductionPage() {
   const [generatedLotInfo, setGeneratedLotInfo] = useState<{ ordre: any; numeroLot: string } | null>(null)
   const [bonProductionOrdre, setBonProductionOrdre] = useState<any | null>(null)
   const [showProdEB, setShowProdEB] = useState(false)
+
+  const { data: entrepriseInfo } = useQuery({
+    queryKey: ['entreprise'],
+    queryFn: () => apiRequest<any>('/api/entreprise', { token }),
+    enabled: Boolean(token),
+  })
 
   const { data: agencesList } = useQuery({
     queryKey: ['agences'],
@@ -4207,6 +4229,34 @@ function ProductionPage() {
     enabled: Boolean(token),
   })
 
+  const createProduitFiniMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/articles', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          designation: pfDesignation,
+          codeUnique: pfCode || undefined,
+          type: 'PRODUIT_FINI',
+          uniteMesure: pfUnite,
+          prixVenteStandard: Number(pfPrixStandard) || 0,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-agence'] })
+      queryClient.invalidateQueries({ queryKey: ['prix-agence'] })
+      setShowNewProduitFiniModal(false)
+      if (data?.id) {
+        setNewRecetteFiniId(data.id)
+        setArticleFiniId(data.id)
+      }
+      setPfDesignation('')
+      setPfCode('')
+      setPfPrixStandard('')
+    },
+  })
+
   const createOrdreMutation = useMutation({
     mutationFn: () =>
       apiRequest('/api/production/ordres', {
@@ -4226,19 +4276,39 @@ function ProductionPage() {
   })
 
   const createRecetteMutation = useMutation({
-    mutationFn: () =>
-      apiRequest('/api/production/recettes', {
+    mutationFn: () => {
+      const validLignes = recetteLines.filter((l) => l.articleMatiereId && Number(l.quantiteRequise) > 0)
+      return apiRequest('/api/production/recettes', {
         method: 'POST',
         token,
         body: JSON.stringify({
           articleFiniId: Number(newRecetteFiniId),
-          articleMatiereId: Number(newRecetteMatiereId),
-          quantiteRequise: Number(newRecetteQte),
+          lignes: validLignes.length > 0
+            ? validLignes.map((l) => ({
+                articleMatiereId: Number(l.articleMatiereId),
+                quantiteRequise: Number(l.quantiteRequise),
+              }))
+            : [{
+                articleMatiereId: Number(newRecetteMatiereId),
+                quantiteRequise: Number(newRecetteQte),
+              }],
         }),
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['production-recettes'] })
       setShowNewRecetteModal(false)
+    },
+  })
+
+  const deleteRecetteLineMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest(`/api/production/recettes/${id}`, {
+        method: 'DELETE',
+        token,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['production-recettes'] })
     },
   })
 
@@ -4279,6 +4349,14 @@ function ProductionPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             className="secondary-action"
+            onClick={() => setShowNewProduitFiniModal(true)}
+            style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
+            title="Créer un nouveau produit fini destiné à être fabriqué et vendu (ex: biscuits, eau carton, eau bidon)"
+          >
+            <Package size={17} /> Nouveau Produit Fini
+          </button>
+          <button
+            className="secondary-action"
             onClick={() => setShowProdEB(true)}
             style={{ borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)', fontWeight: 600 }}
             title="Faire une demande de fonds pour les intrants de fabrication, fournitures ou maintenance d atelier"
@@ -4286,7 +4364,7 @@ function ProductionPage() {
             <Coins size={17} /> État de Besoin Production
           </button>
           <button className="secondary-action" onClick={() => setShowNewRecetteModal(true)}>
-            <Plus size={17} /> Nouvelle Recette
+            <Plus size={17} /> Nouvelle Recette (BOM)
           </button>
           <button className="primary-action" onClick={() => setShowNewOrdreModal(true)}>
             <Plus size={18} /> Nouvel ordre de fabrication
@@ -4368,12 +4446,26 @@ function ProductionPage() {
       {activeTab === 'recettes' && (
         <div className="page-grid">
           <DataTable
-            columns={['Produit fini', 'Matière première requise', 'Quantité nécessaire par unité']}
+            columns={['Produit fini', 'Matière première requise', 'Quantité nécessaire par unité', 'Action']}
             loading={recettesLoading}
             rows={(recettesList ?? []).map((rec: any) => [
-              <strong key={'rec-art-' + rec.id}>{rec.articleFini?.designation}</strong>,
+              <strong key={'rec-art-' + rec.id}>{rec.articleFini?.designation} ({rec.articleFini?.uniteMesure ?? 'U'})</strong>,
               rec.articleMatiere?.designation,
-              `${rec.quantiteRequise} ${rec.articleMatiere?.uniteMesure ?? ''} / ${rec.articleFini?.uniteMesure ?? ''}`,
+              <span key={'qte-' + rec.id} className="badge badge-info" style={{ fontSize: '0.85rem' }}>
+                {rec.quantiteRequise} {rec.articleMatiere?.uniteMesure ?? ''} / unité produite
+              </span>,
+              <button
+                key={'del-' + rec.id}
+                className="icon-button"
+                onClick={() => {
+                  if (confirm('Voulez-vous retirer cette ligne de recette ?')) {
+                    deleteRecetteLineMutation.mutate(rec.id)
+                  }
+                }}
+                title="Supprimer cette formule"
+              >
+                <Trash size={15} />
+              </button>,
             ])}
             emptyText="Aucune recette enregistrée."
           />
@@ -4425,51 +4517,218 @@ function ProductionPage() {
         </div>
       )}
 
-      {/* MODAL NOUVELLE RECETTE TECHNIQUE */}
+      {/* MODAL NOUVELLE RECETTE TECHNIQUE (BOM MULTI-INGRÉDIENTS) */}
       {showNewRecetteModal && (
         <div className="modal-backdrop">
-          <div className="modal-card">
-            <h3>Ajouter une recette / formule de fabrication</h3>
-            <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              Définit le ratio de matière première requis par unité de produit fini.
+          <div className="modal-card" style={{ maxWidth: 560 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Books size={22} style={{ color: 'var(--accent-strong)' }} />
+                Formule de fabrication / Recette (BOM)
+              </h3>
+              <button className="icon-button" onClick={() => setShowNewRecetteModal(false)}><X size={18} /></button>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '4px 0 16px' }}>
+              Définit la nomenclature des matières premières requises pour produire 1 unité de produit fini. Lors de la fabrication, chaque matière sera déduite proportionnellement du stock.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createRecetteMutation.mutate(); }}>
-              <label>
-                Produit fini
-                <select value={newRecetteFiniId} onChange={(e) => setNewRecetteFiniId(Number(e.target.value))} required>
-                  {(articlesList ?? [])
-                    .filter((a: any) => a.type === 'PRODUIT_FINI')
-                    .map((a: any) => (
-                      <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
-                    ))}
-                </select>
-              </label>
-              <label style={{ marginTop: 12 }}>
-                Matière première requise
-                <select value={newRecetteMatiereId} onChange={(e) => setNewRecetteMatiereId(Number(e.target.value))} required>
-                  {(articlesList ?? [])
-                    .filter((a: any) => a.type === 'MATIERE_PREMIERE')
-                    .map((a: any) => (
-                      <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
-                    ))}
-                </select>
-              </label>
-              <label style={{ marginTop: 12 }}>
-                Quantité matière nécessaire par sac / unité produit
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0.0001"
-                  value={newRecetteQte}
-                  onChange={(e) => setNewRecetteQte(e.target.value)}
-                  placeholder="ex: 0.032 (32 kg par sac de 25kg)"
-                  required
-                />
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 8, marginBottom: 14 }}>
+                <label style={{ flex: 1, margin: 0 }}>
+                  Produit fini à composer *
+                  <select value={newRecetteFiniId} onChange={(e) => setNewRecetteFiniId(Number(e.target.value))} required>
+                    <option value="">-- Sélectionner le produit fini --</option>
+                    {(articlesList ?? [])
+                      .filter((a: any) => a.type === 'PRODUIT_FINI')
+                      .map((a: any) => (
+                        <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
+                      ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  style={{ padding: '7px 10px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                  onClick={() => setShowNewProduitFiniModal(true)}
+                  title="Créer un nouveau produit fini si absent de la liste"
+                >
+                  <Plus size={14} /> Nouveau Produit
+                </button>
+              </div>
+
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, background: 'var(--surface)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                    Matières premières requises par unité produite :
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    style={{ padding: '3px 8px', fontSize: '0.78rem' }}
+                    onClick={() => setRecetteLines([...recetteLines, { articleMatiereId: '', quantiteRequise: '1' }])}
+                  >
+                    <Plus size={13} /> Ajouter matière
+                  </button>
+                </div>
+
+                {recetteLines.map((line, idx) => {
+                  const matObj = (articlesList ?? []).find((a: any) => a.id === Number(line.articleMatiereId))
+                  return (
+                    <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                      <select
+                        value={line.articleMatiereId}
+                        onChange={(e) => {
+                          const val = e.target.value ? Number(e.target.value) : ''
+                          const updated = [...recetteLines]
+                          updated[idx].articleMatiereId = val
+                          setRecetteLines(updated)
+                        }}
+                        style={{ flex: 2 }}
+                        required
+                      >
+                        <option value="">-- Choisir la matière première --</option>
+                        {(articlesList ?? [])
+                          .filter((a: any) => a.type === 'MATIERE_PREMIERE')
+                          .map((a: any) => (
+                            <option key={a.id} value={a.id}>{a.designation} ({a.uniteMesure})</option>
+                          ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        min="0.0001"
+                        value={line.quantiteRequise}
+                        onChange={(e) => {
+                          const updated = [...recetteLines]
+                          updated[idx].quantiteRequise = e.target.value
+                          setRecetteLines(updated)
+                        }}
+                        placeholder="Qté requise"
+                        style={{ width: 100 }}
+                        required
+                      />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)', width: 55, whiteSpace: 'nowrap' }}>
+                        {matObj ? matObj.uniteMesure : 'unité'}
+                      </span>
+                      {recetteLines.length > 1 && (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => setRecetteLines(recetteLines.filter((_, i) => i !== idx))}
+                          title="Supprimer cette ligne"
+                        >
+                          <Trash size={15} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
                 <button type="button" className="secondary-action" onClick={() => setShowNewRecetteModal(false)}>Annuler</button>
                 <button type="submit" className="primary-action" disabled={createRecetteMutation.isPending}>
-                  {createRecetteMutation.isPending ? 'Enregistrement...' : 'Enregistrer la formule'}
+                  {createRecetteMutation.isPending ? 'Enregistrement...' : 'Enregistrer la recette (BOM)'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CRÉATION PRODUIT FINI */}
+      {showNewProduitFiniModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 520 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Package size={22} style={{ color: 'var(--accent-strong)' }} />
+                Nouveau Produit Fini Industriel
+              </h3>
+              <button className="icon-button" onClick={() => setShowNewProduitFiniModal(false)}><X size={18} /></button>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: 14 }}>
+              Les produits finis sont fabriqués dans l'atelier ou l'usine (ex: biscuit, eau carton, eau bidon, pain, savon) et sont les seuls autorisés à la vente directe aux clients.
+            </p>
+
+            {/* Presets rapides de démonstration */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 6 }}>Modèles industriels suggérés :</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { nom: 'Biscuits Vanille 500g', code: 'PF-BISC-500', unite: 'Paquet', prix: '1.20' },
+                  { nom: 'Eau Minérale Carton 24x500ml', code: 'PF-EAU-CARTON', unite: 'Carton', prix: '6.50' },
+                  { nom: 'Eau Purifiée Bidon 20L', code: 'PF-EAU-BIDON', unite: 'Bidon', prix: '2.00' },
+                  { nom: 'Farine Maïs Enrichie 25kg', code: 'PF-FAR-MAIS-25', unite: 'Sac', prix: '18.00' },
+                ].map((preset, pIdx) => (
+                  <button
+                    key={pIdx}
+                    type="button"
+                    className="badge"
+                    style={{ cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--surface)', fontSize: '0.78rem' }}
+                    onClick={() => {
+                      setPfDesignation(preset.nom)
+                      setPfCode(preset.code)
+                      setPfUnite(preset.unite)
+                      setPfPrixStandard(preset.prix)
+                    }}
+                  >
+                    + {preset.nom}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); createProduitFiniMutation.mutate(); }}>
+              <label>
+                Désignation du produit fini *
+                <input
+                  type="text"
+                  value={pfDesignation}
+                  onChange={(e) => setPfDesignation(e.target.value)}
+                  placeholder="ex: Biscuits Chocolat 500g, Eau minérale carton..."
+                  required
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                <label>
+                  Code unique / Référence
+                  <input
+                    type="text"
+                    value={pfCode}
+                    onChange={(e) => setPfCode(e.target.value.toUpperCase())}
+                    placeholder="ex: PF-BISCUIT"
+                  />
+                </label>
+                <label>
+                  Unité de mesure de vente *
+                  <select value={pfUnite} onChange={(e) => setPfUnite(e.target.value)} required>
+                    <option value="Carton">Carton</option>
+                    <option value="Bidon">Bidon</option>
+                    <option value="Paquet">Paquet</option>
+                    <option value="Bouteille">Bouteille</option>
+                    <option value="Pièce">Pièce</option>
+                    <option value="Sac">Sac</option>
+                    <option value="Fût">Fût</option>
+                    <option value="Kg">Kg</option>
+                    <option value="Litre">Litre</option>
+                  </select>
+                </label>
+              </div>
+              <label style={{ marginTop: 12 }}>
+                Prix de vente standard unitaire ($ USD)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={pfPrixStandard}
+                  onChange={(e) => setPfPrixStandard(e.target.value)}
+                  placeholder="ex: 6.50"
+                />
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                <button type="button" className="secondary-action" onClick={() => setShowNewProduitFiniModal(false)}>Annuler</button>
+                <button type="submit" className="primary-action" disabled={createProduitFiniMutation.isPending}>
+                  {createProduitFiniMutation.isPending ? 'Création...' : 'Créer le produit fini'}
                 </button>
               </div>
             </form>
@@ -4510,12 +4769,12 @@ function ProductionPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <QrCode size={24} style={{ color: 'var(--accent-strong)' }} />
-                Étiquette QR Code Certifiée (Sac / Carton / Bidon)
+                Étiquette QR Code Certifiée (Unité / Carton / Colis)
               </h3>
               <button className="icon-button" onClick={() => setGeneratedLotInfo(null)} aria-label="Fermer"><X size={18} /></button>
             </div>
 
-            {/* STICKER ADHÉSIF MINOTERIE MVG */}
+            {/* STICKER ADHÉSIF DE PRODUCTION */}
             <div
               id="printable-lot-sticker"
               style={{
@@ -4531,7 +4790,7 @@ function ProductionPage() {
             >
               <div style={{ borderBottom: '2px solid #0284c7', paddingBottom: 6, marginBottom: 8 }}>
                 <div style={{ fontSize: '13px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0284c7' }}>
-                  MINOTERIE DU VIRUNGA (MVG SARL)
+                  {entrepriseInfo?.nomSociete || 'UNITÉ DE PRODUCTION INDUSTRIELLE'}
                 </div>
                 <div style={{ fontSize: '9px', color: '#64748b' }}>
                   SYSTÈME DE TRAÇABILITÉ OFFICIEL • ATELIER DE PRODUCTION
@@ -4539,15 +4798,15 @@ function ProductionPage() {
               </div>
 
               <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>
-                {generatedLotInfo.ordre?.articleFini?.designation || 'Farine de Maïs Extra 25kg'}
+                {generatedLotInfo.ordre?.articleFini?.designation || 'Produit Fini Standard'}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', margin: '6px 0', padding: '4px 8px', background: '#f8fafc', borderRadius: 4, border: '1px solid #e2e8f0' }}>
-                <span>Code : <strong>{generatedLotInfo.ordre?.articleFini?.codeArticle || generatedLotInfo.ordre?.articleFini?.codeUnique || 'FAR-25KG'}</strong></span>
+                <span>Code : <strong>{generatedLotInfo.ordre?.articleFini?.codeArticle || generatedLotInfo.ordre?.articleFini?.codeUnique || 'PF-001'}</strong></span>
                 <span>Lot FEFO : <strong>{generatedLotInfo.numeroLot}</strong></span>
               </div>
 
-              {/* QR CODE OFFICIEL SANS PRIX AVEC LOGO MVG AU CENTRE */}
+              {/* QR CODE OFFICIEL SANS PRIX */}
               <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
                 <RealQrCode
                   value={JSON.stringify({
@@ -4555,20 +4814,20 @@ function ProductionPage() {
                     articleId: generatedLotInfo.ordre?.articleFiniId || generatedLotInfo.ordre?.articleFini?.id,
                     codeArticle: generatedLotInfo.ordre?.articleFini?.codeArticle || generatedLotInfo.ordre?.articleFini?.codeUnique || 'ART-LOT',
                     numeroLot: generatedLotInfo.numeroLot,
-                    designation: generatedLotInfo.ordre?.articleFini?.designation || 'Farine de Maïs Extra',
-                    conditionnement: 'Sac de 25 kg / Bidon / Carton',
+                    designation: generatedLotInfo.ordre?.articleFini?.designation || 'Produit Fini Standard',
+                    conditionnement: 'Unité / Colis / Conditionnement',
                     dateFabrication: (generatedLotInfo.ordre?.dateCloture || new Date().toISOString()).slice(0, 10),
                     dateExpiration: '2027-06-30',
                     codeUnique: generatedLotInfo.numeroLot,
                   })}
                   size={150}
-                  logoText="MVG"
+                  logoText="ECI"
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '10px', textAlign: 'left', background: '#f1f5f9', padding: '6px 8px', borderRadius: 4 }}>
                 <div>Quantité : <strong>{generatedLotInfo.ordre?.quantiteReelle || generatedLotInfo.ordre?.quantitePrevue || 50} unités</strong></div>
-                <div>Emballage : <strong>Sac / Bidon / Carton</strong></div>
+                <div>Conditionnement : <strong>Unité / Carton / Colis</strong></div>
                 <div>Date Prod : <strong>{(generatedLotInfo.ordre?.dateCloture || new Date().toISOString()).slice(0, 10)}</strong></div>
                 <div>Expiration : <strong>2027-06-30</strong></div>
               </div>
@@ -4589,9 +4848,9 @@ function ProductionPage() {
                       rel="noreferrer"
                       className="primary-action"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', fontSize: '0.84rem', background: '#0284c7' }}
-                      title={`Imprimer les ${qteProduite} étiquettes QR pour chaque carton/sac produit`}
+                      title={`Imprimer les ${qteProduite} étiquettes QR pour chaque unité/colis produit`}
                     >
-                      <Printer size={16} /> Imprimer les {qteProduite} Étiquettes (1 par sac/bidon)
+                      <Printer size={16} /> Imprimer les {qteProduite} Étiquettes (1 par unité/colis)
                     </a>
                   ) : <span />}
 
@@ -4630,7 +4889,7 @@ function ProductionPage() {
             <div style={{ fontSize: '0.88rem', display: 'grid', gap: 8 }}>
               <div><strong>Code Ordre :</strong> {bonProductionOrdre.codeOrdre}</div>
               <div><strong>Date de création :</strong> {new Date(bonProductionOrdre.dateCreation).toLocaleDateString()}</div>
-              <div><strong>Produit Fini :</strong> {bonProductionOrdre.articleFini?.designation || 'Farine / Produit Fini'}</div>
+              <div><strong>Produit Fini :</strong> {bonProductionOrdre.articleFini?.designation || 'Produit Fini Standard'}</div>
               <div><strong>Quantité Prévue :</strong> {bonProductionOrdre.quantitePrevue} unités</div>
               <div><strong>Quantité Réelle Produite :</strong> <strong>{bonProductionOrdre.quantiteReelle || bonProductionOrdre.quantitePrevue} unités</strong></div>
               <div><strong>Numéro de Lot Généré (FEFO) :</strong> <code>{bonProductionOrdre.lotCree || 'LOT-2609-01'}</code></div>
@@ -4644,7 +4903,7 @@ function ProductionPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--muted)', marginTop: 8 }}>
-                <span>Visa Responsable Minoterie</span>
+                <span>Visa Responsable Production</span>
                 <span>Visa Contrôle Qualité</span>
               </div>
             </div>
@@ -4658,7 +4917,7 @@ function ProductionPage() {
       <NewEtatBesoinModal
         isOpen={showProdEB}
         onClose={() => setShowProdEB(false)}
-        defaultService="Service Production & Minoterie"
+        defaultService="Service Production & Transformation"
         agenceId={typeof prodAgenceId === 'number' ? prodAgenceId : 1}
       />
     </section>
@@ -6442,6 +6701,221 @@ function AccountingPage() {
   const [compteParent, setCompteParent] = useState('')
   const [clotureNotice, setClotureNotice] = useState<string | null>(null)
 
+  // État Saisie & Complétion Manuelle Directe du Bilan
+  const [showEditBilanModal, setShowEditBilanModal] = useState(false)
+  const [bilanEditorTab, setBilanEditorTab] = useState<'ACTIF' | 'PASSIF'>('ACTIF')
+  const [bilanNotice, setBilanNotice] = useState<string | null>(null)
+  const [bilanFormData, setBilanFormData] = useState<any>({
+    actifImmobilise: { lignes: [] },
+    actifCirculant: { lignes: [] },
+    tresorerieActif: { lignes: [] },
+    capitauxPropres: { lignes: [] },
+    dettesFinancieres: { lignes: [] },
+    passifCirculant: { lignes: [] },
+    tresoreriePassif: { lignes: [] },
+  })
+
+  const saveBilanMutation = useMutation({
+    mutationFn: (payload: any) =>
+      apiRequest('/api/comptabilite/bilan', {
+        method: 'POST',
+        token,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['bilan'] })
+      setShowEditBilanModal(false)
+      setBilanNotice(data.message || 'Bilan officiel enregistré et validé avec succès !')
+      setTimeout(() => setBilanNotice(null), 6000)
+    },
+    onError: (err: any) => {
+      setBilanNotice(err.message || 'Erreur lors de l enregistrement du bilan')
+      setTimeout(() => setBilanNotice(null), 6000)
+    },
+  })
+
+  const resetBilanMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/comptabilite/bilan/reinitialiser', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          agenceId: selectedAgenceId,
+          annee,
+        }),
+      }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['bilan'] })
+      setBilanNotice(data.message || 'Bilan réinitialisé aux écritures automatiques du journal.')
+      setTimeout(() => setBilanNotice(null), 6000)
+    },
+    onError: (err: any) => {
+      setBilanNotice(err.message || 'Erreur lors de la réinitialisation du bilan')
+      setTimeout(() => setBilanNotice(null), 6000)
+    },
+  })
+
+  const openBilanEditor = () => {
+    const current = bilanQuery.data
+    const cloneLines = (lines: any[] | undefined, defaultLines: any[]) => {
+      if (lines && lines.length > 0) {
+        return lines.map((l: any) => ({
+          ref: l.ref || '',
+          libelle: l.libelle || '',
+          brut: Number(l.brut) || 0,
+          amort: Number(l.amort) || 0,
+          net: Number(l.net) || 0,
+        }))
+      }
+      return defaultLines
+    }
+
+    setBilanFormData({
+      actifImmobilise: {
+        lignes: cloneLines(current?.actifImmobilise?.lignes, [
+          { ref: 'AD', libelle: 'Immobilisations incorporelles & Logiciels', brut: 0, amort: 0, net: 0 },
+          { ref: 'AE', libelle: 'Terrains industriels & Concessions', brut: 0, amort: 0, net: 0 },
+          { ref: 'AF', libelle: 'Bâtiments industriels, Entrepôts & Silos', brut: 0, amort: 0, net: 0 },
+          { ref: 'AG', libelle: 'Installations techniques & Lignes de production', brut: 0, amort: 0, net: 0 },
+          { ref: 'AH', libelle: 'Matériel de transport (Flotte camions & camionnettes)', brut: 0, amort: 0, net: 0 },
+          { ref: 'AI', libelle: 'Matériel de bureau, Mobilier & Informatique', brut: 0, amort: 0, net: 0 },
+          { ref: 'AJ', libelle: 'Immobilisations financières & Cautions versées', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      actifCirculant: {
+        lignes: cloneLines(current?.actifCirculant?.lignes, [
+          { ref: 'BA', libelle: 'Matières premières & consommables (Grains, Intrants)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BB', libelle: 'Emballages & Matières de conditionnement (Sacs, Cartons)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BC', libelle: 'Produits finis manufacturés (Farine, Eau, Biscuits)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BG', libelle: 'Fournisseurs avances & acomptes versés', brut: 0, amort: 0, net: 0 },
+          { ref: 'BH', libelle: 'Clients - Créances sur ventes à terme (Compte 411)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BI', libelle: 'Personnel - Avances & acomptes sur salaire', brut: 0, amort: 0, net: 0 },
+          { ref: 'BJ', libelle: 'État & Collectivités (Crédits d impôts, TVA à récupérer)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BK', libelle: 'Autres créances d exploitation & Débiteurs divers', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      tresorerieActif: {
+        lignes: cloneLines(current?.tresorerieActif?.lignes, [
+          { ref: 'BQ', libelle: 'Comptes Banques Commerciales (USD / CDF)', brut: 0, amort: 0, net: 0 },
+          { ref: 'BR', libelle: 'Caisses Principales & Caisses Agences', brut: 0, amort: 0, net: 0 },
+          { ref: 'BS', libelle: 'Comptes Mobile Money & Trésorerie en route', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      capitauxPropres: {
+        lignes: cloneLines(current?.capitauxPropres?.lignes, [
+          { ref: 'CA', libelle: 'Capital social souscrit & libéré', brut: 0, amort: 0, net: 0 },
+          { ref: 'CB', libelle: 'Primes d émission & d apport', brut: 0, amort: 0, net: 0 },
+          { ref: 'CC', libelle: 'Écarts de réévaluation', brut: 0, amort: 0, net: 0 },
+          { ref: 'CD', libelle: 'Réserves légales & statutaires', brut: 0, amort: 0, net: 0 },
+          { ref: 'CH', libelle: 'Report à nouveau (Bénéfices/Pertes antérieures)', brut: 0, amort: 0, net: 0 },
+          { ref: 'DI', libelle: 'Résultat net de l exercice (Bénéfice ou Perte)', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      dettesFinancieres: {
+        lignes: cloneLines(current?.dettesFinancieres?.lignes, [
+          { ref: 'DA', libelle: 'Emprunts et dettes bancaires à moyen/long terme', brut: 0, amort: 0, net: 0 },
+          { ref: 'DB', libelle: 'Dettes de crédit-bail & contrats de location acquisition', brut: 0, amort: 0, net: 0 },
+          { ref: 'DC', libelle: 'Dépôts et cautionnements reçus', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      passifCirculant: {
+        lignes: cloneLines(current?.passifCirculant?.lignes, [
+          { ref: 'DH', libelle: 'Fournisseurs d exploitation & dettes rattachées', brut: 0, amort: 0, net: 0 },
+          { ref: 'DI2', libelle: 'Clients avances & acomptes reçus sur commandes', brut: 0, amort: 0, net: 0 },
+          { ref: 'DJ', libelle: 'Dettes fiscales & parafiscales (DGI, DGRAD, IPR, TVA)', brut: 0, amort: 0, net: 0 },
+          { ref: 'DK', libelle: 'Dettes sociales (CNSS, INPP, ONEM & Salaires dus)', brut: 0, amort: 0, net: 0 },
+          { ref: 'DL', libelle: 'Autres dettes d exploitation & charges à payer', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+      tresoreriePassif: {
+        lignes: cloneLines(current?.tresoreriePassif?.lignes, [
+          { ref: 'DP', libelle: 'Découverts bancaires d exploitation & crédits de trésorerie', brut: 0, amort: 0, net: 0 },
+        ]),
+      },
+    })
+    setBilanEditorTab('ACTIF')
+    setShowEditBilanModal(true)
+  }
+
+  const updateBilanLigne = (section: string, index: number, field: string, val: any) => {
+    setBilanFormData((prev: any) => {
+      const copy = JSON.parse(JSON.stringify(prev))
+      if (!copy[section] || !copy[section].lignes[index]) return prev
+      const ligne = copy[section].lignes[index]
+      if (field === 'ref' || field === 'libelle') {
+        ligne[field] = val
+      } else {
+        const numVal = Math.round((Number(val) || 0) * 100) / 100
+        ligne[field] = numVal
+        if (field === 'brut' || field === 'amort') {
+          ligne.net = Math.max(0, Math.round(((Number(ligne.brut) || 0) - (Number(ligne.amort) || 0)) * 100) / 100)
+        }
+      }
+      return copy
+    })
+  }
+
+  const addBilanLigne = (section: string, defaultRef: string = 'DIV', defaultLibelle: string = 'Nouvelle ligne comptable') => {
+    setBilanFormData((prev: any) => {
+      const copy = JSON.parse(JSON.stringify(prev))
+      if (!copy[section]) copy[section] = { lignes: [] }
+      copy[section].lignes.push({
+        ref: defaultRef,
+        libelle: defaultLibelle,
+        brut: 0,
+        amort: 0,
+        net: 0,
+      })
+      return copy
+    })
+  }
+
+  const removeBilanLigne = (section: string, index: number) => {
+    setBilanFormData((prev: any) => {
+      const copy = JSON.parse(JSON.stringify(prev))
+      if (!copy[section] || !copy[section].lignes) return prev
+      copy[section].lignes.splice(index, 1)
+      return copy
+    })
+  }
+
+  // Calculs d'équilibre en direct
+  const formTotalActifNet = Math.round(
+    ((bilanFormData?.actifImmobilise?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) +
+      (bilanFormData?.actifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) +
+      (bilanFormData?.tresorerieActif?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)) * 100
+  ) / 100
+
+  const formTotalPassifNet = Math.round(
+    ((bilanFormData?.capitauxPropres?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) +
+      (bilanFormData?.dettesFinancieres?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) +
+      (bilanFormData?.passifCirculant?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0) +
+      (bilanFormData?.tresoreriePassif?.lignes || []).reduce((s: number, l: any) => s + (Number(l.net) || 0), 0)) * 100
+  ) / 100
+
+  const formEcartEquilibre = Math.round((formTotalActifNet - formTotalPassifNet) * 100) / 100
+
+  const autoEquilibrateBilan = () => {
+    if (Math.abs(formEcartEquilibre) < 0.01) return
+    setBilanFormData((prev: any) => {
+      const copy = JSON.parse(JSON.stringify(prev))
+      if (!copy.capitauxPropres) copy.capitauxPropres = { lignes: [] }
+      const lignes = copy.capitauxPropres.lignes
+      let target = lignes.find((l: any) => l.ref === 'CH')
+      if (!target) target = lignes.find((l: any) => l.ref === 'CA')
+      if (target) {
+        target.net = Math.round(((Number(target.net) || 0) + formEcartEquilibre) * 100) / 100
+      } else {
+        lignes.push({
+          ref: 'CH',
+          libelle: 'Report à nouveau / Écart d équilibrage',
+          net: formEcartEquilibre,
+        })
+      }
+      return copy
+    })
+  }
+
   // Paramétrage des comptes automatiques
   const schemasQuery = useQuery({
     queryKey: ['parametrage-schemas'],
@@ -7110,8 +7584,28 @@ function AccountingPage() {
       {/* TAB : BILAN COMPTABLE NORMALISÉ SYSCOHADA (ACTIF & PASSIF) */}
       {activeTab === 'bilan' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {bilanNotice && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: bilanNotice.includes('succès') ? '#dcfce7' : '#fee2e2',
+                color: bilanNotice.includes('succès') ? '#16a34a' : '#b91c1c',
+                fontSize: '0.86rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                border: `1px solid ${bilanNotice.includes('succès') ? '#86efac' : '#fca5a5'}`,
+              }}
+            >
+              <CheckCircle size={18} weight="fill" />
+              <span>{bilanNotice}</span>
+            </div>
+          )}
+
+          <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
                 Exercice comptable :
                 <select value={annee} onChange={(e) => setAnnee(Number(e.target.value))}>
@@ -7120,18 +7614,76 @@ function AccountingPage() {
                   <option value={2027}>Exercice 2027</option>
                 </select>
               </label>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontSize: '0.82rem', fontWeight: 700 }}>
-                <CheckCircle size={16} weight="fill" /> Bilan Équilibré (Actif Net = Passif)
+
+              {bilanQuery.data?.estSaisiManuellement ? (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: '0.82rem', fontWeight: 700 }}>
+                  <PencilSimple size={16} weight="bold" /> Saisie Directe Manuelle Validée
+                  {bilanQuery.data.modifiePar && (
+                    <span style={{ fontWeight: 500, fontSize: '0.76rem', color: '#075985' }}>
+                      ({bilanQuery.data.modifiePar} - {bilanQuery.data.modifieLe ? new Date(bilanQuery.data.modifieLe).toLocaleDateString('fr-FR') : ''})
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: '#f1f5f9', color: '#475569', fontSize: '0.82rem', fontWeight: 600 }}>
+                  Calcul Automatique (Journal OHADA)
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  background: bilanQuery.data?.equilibre ? '#dcfce7' : '#fef3c7',
+                  color: bilanQuery.data?.equilibre ? '#16a34a' : '#d97706',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                }}
+              >
+                <CheckCircle size={16} weight="fill" />
+                {bilanQuery.data?.equilibre
+                  ? `Bilan Équilibré ($${Number(bilanQuery.data?.totalActif?.net || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD)`
+                  : 'Écart d\'équilibre détecté'}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              {bilanQuery.data?.estSaisiManuellement && (
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => {
+                    if (window.confirm('Voulez-vous réinitialiser le bilan et rétablir le calcul automatique à partir du journal comptable ?')) {
+                      resetBilanMutation.mutate()
+                    }
+                  }}
+                  disabled={resetBilanMutation.isPending}
+                  style={{ fontSize: '0.84rem', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px' }}
+                  title="Revenir aux montants calculés automatiquement par le journal des écritures"
+                >
+                  <ClockCounterClockwise size={16} /> Rétablir Calcul Automatique
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="primary-action"
+                onClick={openBilanEditor}
+                style={{ fontSize: '0.84rem', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#0284c7' }}
+                title="Compléter, ajouter des rubriques ou modifier les montants sans passer par le code"
+              >
+                <PencilSimple size={16} /> Compléter / Ajuster le Bilan
+              </button>
+
               <a
                 href={`/api/comptabilite/export/bilan?agenceId=${agenceId}&annee=${annee}`}
-                className="primary-action"
+                className="secondary-action"
                 target="_blank"
                 rel="noreferrer"
-                style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+                style={{ fontSize: '0.84rem', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '6px 12px' }}
               >
                 <Printer size={16} /> Imprimer Bilan Officiel (PDF)
               </a>
@@ -7571,7 +8123,7 @@ function AccountingPage() {
               <div style={{ fontSize: '1.5rem', fontWeight: 800, margin: '6px 0', color: '#16a34a' }}>
                 ${(clotureQuery.data?.totalProduitsUsd ?? 0).toFixed(2)} USD
               </div>
-              <small style={{ color: 'var(--muted)' }}>Ventes de farines de maïs/blé et sous-produits</small>
+              <small style={{ color: 'var(--muted)' }}>Ventes de produits finis et marchandises</small>
             </div>
 
             <div className="card" style={{ padding: 16, background: 'var(--panel-bg)', borderRadius: 8, border: '2px solid var(--accent)' }}>
@@ -7828,7 +8380,7 @@ function AccountingPage() {
                 <label style={{ fontSize: '0.84rem' }}>
                   <strong>Compte Produits des Ventes (Crédit)</strong>
                   <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
-                    Compte crédité lors des ventes au comptant et à crédit (ex: 701 - Ventes de farine)
+                    Compte crédité lors des ventes au comptant et à crédit (ex: 701 - Ventes de produits finis)
                   </span>
                   <input
                     value={schemasConfig?.compteVenteMarchandises || ''}
@@ -7897,7 +8449,7 @@ function AccountingPage() {
                 <label style={{ fontSize: '0.84rem' }}>
                   <strong>Compte Achats Matières Premières (Débit)</strong>
                   <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
-                    Achats de grains de maïs, sacs et intrants (ex: 601 - Achats de matières premières)
+                    Achats de matières premières, conditionnements et intrants (ex: 601 - Achats de matières premières)
                   </span>
                   <input
                     value={schemasConfig?.compteAchatsMatieres || ''}
@@ -7948,13 +8500,13 @@ function AccountingPage() {
             {/* 3. STOCKS & MEUNERIE */}
             <div className="card" style={{ padding: 20, background: 'var(--surface)', borderRadius: 12, border: '1px solid var(--border)' }}>
               <h4 style={{ margin: '0 0 14px', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-strong)' }}>
-                <Gear size={20} /> Stocks & Production Meunerie
+                <Gear size={20} /> Stocks & Transformation Industrielle
               </h4>
               <div style={{ display: 'grid', gap: 12 }}>
                 <label style={{ fontSize: '0.84rem' }}>
                   <strong>Compte Stocks Produits Finis (Débit inventaire)</strong>
                   <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--muted)', marginBottom: 4 }}>
-                    Actif circulant stocks de farine usine et dépôts (ex: 31 - Stocks de produits finis)
+                    Actif circulant stocks usine et dépôts (ex: 31 - Stocks de produits finis)
                   </span>
                   <input
                     value={schemasConfig?.compteStocksProduitsFinis || ''}
@@ -8725,7 +9277,7 @@ function AccountingPage() {
                   required
                   value={libelleManuel}
                   onChange={(e) => setLibelleManuel(e.target.value)}
-                  placeholder="ex: Dotation mensuelle amortissement moulin à maïs n°2"
+                  placeholder="ex: Dotation mensuelle amortissement machine industrielle n°2"
                 />
               </label>
 
@@ -8756,6 +9308,752 @@ function AccountingPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : COMPLÉTER & AJUSTER LE BILAN SYSCOHADA (DIRECTEMENT SANS CODE) */}
+      {showEditBilanModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowEditBilanModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 960,
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              background: 'var(--surface)',
+              borderRadius: 14,
+              padding: 24,
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            {/* Entête Modal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.25rem', color: 'var(--text)' }}>
+                  <PencilSimple size={22} color="var(--accent-strong)" />
+                  Compléter & Ajuster le Bilan SYSCOHADA (Exercice {annee})
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: 'var(--muted)' }}>
+                  Saisie directe et personnalisation des rubriques du Bilan normalisé sans passer par le code. Ajoutez des postes, ajustez les montants et équilibrez en un clic.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowEditBilanModal(false)}
+                title="Fermer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Barre de contrôle d'équilibre en temps réel */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: 12,
+                background: 'var(--surface-2)',
+                border: '1.5px solid var(--border)',
+                borderRadius: 10,
+                padding: '12px 16px',
+                marginBottom: 16,
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Total Actif Net (Emplois)
+                </span>
+                <strong style={{ display: 'block', fontSize: '1.15rem', color: '#0284c7', marginTop: 2 }}>
+                  ${formTotalActifNet.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                </strong>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Total Passif Net (Ressources)
+                </span>
+                <strong style={{ display: 'block', fontSize: '1.15rem', color: '#0f172a', marginTop: 2 }}>
+                  ${formTotalPassifNet.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD
+                </strong>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Écart d'Équilibre (Actif - Passif)
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <strong style={{ fontSize: '1.1rem', color: Math.abs(formEcartEquilibre) < 0.01 ? '#16a34a' : '#dc2626' }}>
+                    ${Math.abs(formEcartEquilibre).toFixed(2)} USD
+                  </strong>
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: Math.abs(formEcartEquilibre) < 0.01 ? '#dcfce7' : '#fee2e2',
+                      color: Math.abs(formEcartEquilibre) < 0.01 ? '#16a34a' : '#b91c1c',
+                    }}
+                  >
+                    {Math.abs(formEcartEquilibre) < 0.01 ? 'Équilibré' : 'Déséquilibre'}
+                  </span>
+                </div>
+              </div>
+
+              {Math.abs(formEcartEquilibre) >= 0.01 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="primary-action"
+                    onClick={autoEquilibrateBilan}
+                    style={{
+                      fontSize: '0.78rem',
+                      padding: '6px 12px',
+                      background: '#16a34a',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontWeight: 700,
+                    }}
+                    title="Ajuster automatiquement le poste Report à nouveau / Capital pour équilibrer Actif = Passif"
+                  >
+                    <CheckCircle size={15} weight="bold" /> Auto-Équilibrer le Bilan
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Sélecteur de Volet : Actif vs Passif */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button
+                type="button"
+                onClick={() => setBilanEditorTab('ACTIF')}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: bilanEditorTab === 'ACTIF' ? '#0284c7' : 'var(--surface-2)',
+                  color: bilanEditorTab === 'ACTIF' ? '#fff' : 'var(--text)',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Package size={18} /> ACTIF (EMPLOIS) — ${formTotalActifNet.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBilanEditorTab('PASSIF')}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: bilanEditorTab === 'PASSIF' ? '#0f172a' : 'var(--surface-2)',
+                  color: bilanEditorTab === 'PASSIF' ? '#fff' : 'var(--text)',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <ShieldCheck size={18} /> PASSIF (RESSOURCES) — ${formTotalPassifNet.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+              </button>
+            </div>
+
+            {/* CONTENU DE L'ONGLET ACTIF */}
+            {bilanEditorTab === 'ACTIF' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* Section I : Actif Immobilisé */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>
+                      I. ACTIF IMMOBILISÉ (CLASSE 2)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('actifImmobilise', 'IM', 'Nouvelle immobilisation')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de la rubrique</th>
+                          <th style={{ padding: '6px 8px', width: 130 }}>Montant Brut ($)</th>
+                          <th style={{ padding: '6px 8px', width: 130 }}>Amort./Dépréc. ($)</th>
+                          <th style={{ padding: '6px 8px', width: 120 }}>Valeur Nette ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.actifImmobilise?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-ai-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('actifImmobilise', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('actifImmobilise', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right' }}
+                                value={l.brut}
+                                onChange={(e) => updateBilanLigne('actifImmobilise', idx, 'brut', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right' }}
+                                value={l.amort}
+                                onChange={(e) => updateBilanLigne('actifImmobilise', idx, 'amort', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700, background: 'var(--surface-2)' }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('actifImmobilise', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('actifImmobilise', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section II : Actif Circulant */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>
+                      II. ACTIF CIRCULANT (CLASSES 3 & 4)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('actifCirculant', 'AC', 'Nouvelle créance / stock')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de la rubrique</th>
+                          <th style={{ padding: '6px 8px', width: 130 }}>Montant Brut ($)</th>
+                          <th style={{ padding: '6px 8px', width: 130 }}>Amort./Provisions ($)</th>
+                          <th style={{ padding: '6px 8px', width: 120 }}>Valeur Nette ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.actifCirculant?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-ac-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('actifCirculant', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('actifCirculant', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right' }}
+                                value={l.brut}
+                                onChange={(e) => updateBilanLigne('actifCirculant', idx, 'brut', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right' }}
+                                value={l.amort}
+                                onChange={(e) => updateBilanLigne('actifCirculant', idx, 'amort', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700, background: 'var(--surface-2)' }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('actifCirculant', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('actifCirculant', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section III : Trésorerie Actif */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>
+                      III. TRÉSORERIE - ACTIF (CLASSE 5)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('tresorerieActif', 'TR', 'Nouveau compte disponible')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de la rubrique</th>
+                          <th style={{ padding: '6px 8px', width: 140 }}>Solde Disponible Net ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.tresorerieActif?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-ta-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('tresorerieActif', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('tresorerieActif', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700 }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('tresorerieActif', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('tresorerieActif', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* CONTENU DE L'ONGLET PASSIF */}
+            {bilanEditorTab === 'PASSIF' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* Section I : Capitaux Propres */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
+                      I. CAPITAUX PROPRES & RESSOURCES STABLES (CLASSE 1)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('capitauxPropres', 'CP', 'Nouvelle rubrique capitaux')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de la ressource</th>
+                          <th style={{ padding: '6px 8px', width: 140 }}>Montant Net ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.capitauxPropres?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-cp-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('capitauxPropres', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('capitauxPropres', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700 }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('capitauxPropres', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('capitauxPropres', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section II : Dettes Financières */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
+                      II. DETTES FINANCIÈRES À LONG & MOYEN TERME (CLASSE 16)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('dettesFinancieres', 'DF', 'Nouvel emprunt bancaire')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de l'emprunt</th>
+                          <th style={{ padding: '6px 8px', width: 140 }}>Montant Net ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.dettesFinancieres?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-df-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('dettesFinancieres', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('dettesFinancieres', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700 }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('dettesFinancieres', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('dettesFinancieres', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section III : Passif Circulant */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
+                      III. PASSIF CIRCULANT (CLASSE 4)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('passifCirculant', 'PC', 'Nouvelle dette fournisseur ou fiscale')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé de la dette</th>
+                          <th style={{ padding: '6px 8px', width: 140 }}>Montant Net ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.passifCirculant?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-pc-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('passifCirculant', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('passifCirculant', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700 }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('passifCirculant', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('passifCirculant', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section IV : Trésorerie Passif */}
+                <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>
+                      IV. TRÉSORERIE - PASSIF (CLASSE 5)
+                    </strong>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => addBilanLigne('tresoreriePassif', 'TP', 'Découvert bancaire d exploitation')}
+                      style={{ fontSize: '0.78rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={14} /> Ajouter une ligne
+                    </button>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--surface-2)', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '6px 8px', width: 65 }}>Réf</th>
+                          <th style={{ padding: '6px 8px' }}>Libellé du découvert</th>
+                          <th style={{ padding: '6px 8px', width: 140 }}>Montant Net ($)</th>
+                          <th style={{ padding: '6px 8px', width: 40, textAlign: 'center' }}>Suppr.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(bilanFormData.tresoreriePassif?.lignes || []).map((l: any, idx: number) => (
+                          <tr key={'edit-tp-' + idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', fontWeight: 700 }}
+                                value={l.ref}
+                                onChange={(e) => updateBilanLigne('tresoreriePassif', idx, 'ref', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem' }}
+                                value={l.libelle}
+                                onChange={(e) => updateBilanLigne('tresoreriePassif', idx, 'libelle', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                style={{ width: '100%', padding: '4px 6px', fontSize: '0.82rem', textAlign: 'right', fontWeight: 700 }}
+                                value={l.net}
+                                onChange={(e) => updateBilanLigne('tresoreriePassif', idx, 'net', e.target.value)}
+                              />
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                onClick={() => removeBilanLigne('tresoreriePassif', idx)}
+                                title="Supprimer la ligne"
+                                style={{ color: '#dc2626' }}
+                              >
+                                <Trash size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Actions de validation */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowEditBilanModal(false)}
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                className="primary-action"
+                disabled={saveBilanMutation.isPending}
+                onClick={() => {
+                  saveBilanMutation.mutate({
+                    agenceId: selectedAgenceId,
+                    annee,
+                    bilan: bilanFormData,
+                  })
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 20px', fontWeight: 700 }}
+              >
+                <FloppyDisk size={18} />
+                {saveBilanMutation.isPending ? 'Enregistrement...' : 'Enregistrer et Valider le Bilan Officiel'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -9058,7 +10356,7 @@ function ReportingPage() {
                       </div>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Produits fabriqués :</span>
-                        <strong>{ag.sacsProduits} unités/sacs</strong>
+                        <strong>{ag.sacsProduits} unités</strong>
                       </div>
                       <div>
                         <span style={{ color: 'var(--muted)', display: 'block' }}>Attente visa :</span>
@@ -9249,9 +10547,9 @@ function ReportingPage() {
 
             <article className="metric-card">
               <TrendUp size={24} style={{ color: '#2563eb' }} />
-              <span>Marge Brute Meunerie</span>
+              <span>Marge Brute de Production</span>
               <strong style={{ fontSize: '1.35rem', color: '#16a34a' }}>
-                ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / sac
+                ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / unité
               </strong>
               <small style={{ color: 'var(--muted)' }}>
                 Taux de marge brute : <strong>{kpis?.tauxMargeMoyen ?? 34}%</strong>
@@ -9260,12 +10558,12 @@ function ReportingPage() {
 
             <article className="metric-card">
               <Package size={24} style={{ color: '#d97706' }} />
-              <span>Rendement Mouture Usine</span>
+              <span>Rendement Transformation</span>
               <strong style={{ fontSize: '1.35rem', color: '#d97706' }}>
                 {kpis?.rendementMeunerie ?? 78.4} %
               </strong>
               <small style={{ color: 'var(--muted)' }}>
-                Farine extraite / grains traités au moulin
+                Rendement matières transformées en produits finis
               </small>
             </article>
 
@@ -9390,6 +10688,7 @@ function AdminPage() {
   const queryClient = useQueryClient()
   const session = useAppStore((state) => state.session)
   const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
+  const isSuperAdmin = session?.role === 'SUPER_ADMIN'
   const [adminAgenceFilter, setAdminAgenceFilter] = useState<number | 'TOUTES'>(
     isSuperOrAdminSiege ? 'TOUTES' : (session?.agenceId || 1)
   )
@@ -10042,7 +11341,7 @@ function AdminPage() {
               ag.ville,
               ag.adresse,
               ag.estSiege ? (
-                <span key={ag.id + '-stat'} className="badge badge-success">Siège Principal / Minoterie</span>
+                <span key={ag.id + '-stat'} className="badge badge-success">Siège Principal / Site Central</span>
               ) : (
                 <span key={ag.id + '-stat'} className="badge">Succursale Commerciale / Dépôt</span>
               ),
@@ -10251,16 +11550,28 @@ function AdminPage() {
 
       {activeTab === 'utilisateurs' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.88rem' }}>
-              Affectation stricte des comptes aux agences selon la matrice de contrôle interne.
-            </p>
-            <button className="primary-action" onClick={() => setShowNewUserModal(true)}>
-              <UserPlus size={18} /> Créer un Utilisateur
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.88rem' }}>
+                Affectation stricte des comptes aux agences selon la matrice de contrôle interne.
+              </p>
+              {!isSuperAdmin && (
+                <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', background: '#eff6ff', color: '#1e40af', padding: '6px 12px', borderRadius: 6, border: '1px solid #bfdbfe' }}>
+                  <ShieldCheck size={16} />
+                  <span>
+                    <strong>Mode Consultation Agence :</strong> Seul le <strong>Super Administrateur</strong> est habilité à créer, déconnecter, réinitialiser ou modifier les comptes utilisateurs et statuts VIP. Vous disposez d'un droit de regard sur le personnel et les statuts de connexion de votre agence.
+                  </span>
+                </div>
+              )}
+            </div>
+            {isSuperAdmin && (
+              <button className="primary-action" onClick={() => setShowNewUserModal(true)}>
+                <UserPlus size={18} /> Créer un Utilisateur
+              </button>
+            )}
           </div>
           <DataTable
-            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', 'Actions']}
+            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', isSuperAdmin ? 'Actions Super Admin' : 'Habilitation']}
             loading={usersQuery.isLoading}
             rows={(usersQuery.data ?? [])
               .filter((u: any) => adminAgenceFilter === 'TOUTES' ? true : u.agenceId === adminAgenceFilter)
@@ -10309,86 +11620,93 @@ function AdminPage() {
                   <span>{u.appareilActifNom || u.appareilActifId || 'Aucun appareil lié'}</span>
                 </div>
               </div>,
-              <div key={u.id + '-actions'} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {/* BOUTON DÉCONNEXION DE L'UTILISATEUR PAR L'ADMINISTRATEUR */}
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                  onClick={() => deconnecterUserMutation.mutate(u.id)}
-                  title="Déconnecter immédiatement cet utilisateur et révoquer sa session active"
-                  disabled={deconnecterUserMutation.isPending}
-                >
-                  <SignOut size={14} /> Déconnecter
-                </button>
+              isSuperAdmin ? (
+                <div key={u.id + '-actions'} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {/* BOUTON DÉCONNEXION DE L'UTILISATEUR PAR L'ADMINISTRATEUR */}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    onClick={() => deconnecterUserMutation.mutate(u.id)}
+                    title="Déconnecter immédiatement cet utilisateur et révoquer sa session active"
+                    disabled={deconnecterUserMutation.isPending}
+                  >
+                    <SignOut size={14} /> Déconnecter
+                  </button>
 
-                {/* BOUTON DÉBLOQUER & RÉINITIALISER MOT DE PASSE (AVEC MDP TEMPORAIRE) */}
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '0.78rem',
-                    color: u.estBloque ? '#dc2626' : undefined,
-                    borderColor: u.estBloque ? '#fca5a5' : undefined,
-                    fontWeight: u.estBloque ? 700 : 500,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                  onClick={() => {
-                    setDebloquerTargetUser(u)
-                    setTempPasswordInput('TempPass' + Math.floor(1000 + Math.random() * 9000))
-                    setLibererAppareilCheck(true)
-                    setShowDebloquerModal(true)
-                  }}
-                  title="Débloquer le compte et lui fournir un mot de passe temporaire à changer au 1er login"
-                >
-                  <Key size={14} /> {u.estBloque ? 'Débloquer + MDP Temp' : 'Définir MDP Temp'}
-                </button>
+                  {/* BOUTON DÉBLOQUER & RÉINITIALISER MOT DE PASSE (AVEC MDP TEMPORAIRE) */}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.78rem',
+                      color: u.estBloque ? '#dc2626' : undefined,
+                      borderColor: u.estBloque ? '#fca5a5' : undefined,
+                      fontWeight: u.estBloque ? 700 : 500,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                    onClick={() => {
+                      setDebloquerTargetUser(u)
+                      setTempPasswordInput('TempPass' + Math.floor(1000 + Math.random() * 9000))
+                      setLibererAppareilCheck(true)
+                      setShowDebloquerModal(true)
+                    }}
+                    title="Débloquer le compte et lui fournir un mot de passe temporaire à changer au 1er login"
+                  >
+                    <Key size={14} /> {u.estBloque ? 'Débloquer + MDP Temp' : 'Définir MDP Temp'}
+                  </button>
 
-                {/* BOUTON VIP (MULTI-APPAREILS) */}
-                <button
-                  type="button"
-                  className="secondary-action"
-                  style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                  onClick={() => toggleVipMutation.mutate(u.id)}
-                  title={u.estVip ? 'Rétrograder en mono-appareil strict' : 'Déclarer VIP pour autoriser plusieurs appareils'}
-                >
-                  <Crown size={14} weight={u.estVip ? 'fill' : 'regular'} /> {u.estVip ? 'Retirer VIP' : 'Rendre VIP'}
-                </button>
+                  {/* BOUTON VIP (MULTI-APPAREILS) */}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    onClick={() => toggleVipMutation.mutate(u.id)}
+                    title={u.estVip ? 'Rétrograder en mono-appareil strict' : 'Déclarer VIP pour autoriser plusieurs appareils'}
+                  >
+                    <Crown size={14} weight={u.estVip ? 'fill' : 'regular'} /> {u.estVip ? 'Retirer VIP' : 'Rendre VIP'}
+                  </button>
 
-                <button
-                  className="secondary-action"
-                  style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                  onClick={() => {
-                    setEditingUserId(u.id)
-                    setEditUserName(u.nom)
-                    setEditUserEmail(u.email)
-                    setEditUserRole(u.role)
-                    setEditUserAgenceId(u.agenceId || 1)
-                    setEditUserActif(u.actif !== false)
-                    setShowEditUserModal(true)
-                  }}
-                  title="Modifier les informations de cet utilisateur"
-                >
-                  <PencilSimple size={14} /> Modifier
-                </button>
+                  <button
+                    className="secondary-action"
+                    style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                    onClick={() => {
+                      setEditingUserId(u.id)
+                      setEditUserName(u.nom)
+                      setEditUserEmail(u.email)
+                      setEditUserRole(u.role)
+                      setEditUserAgenceId(u.agenceId || 1)
+                      setEditUserActif(u.actif !== false)
+                      setShowEditUserModal(true)
+                    }}
+                    title="Modifier les informations de cet utilisateur"
+                  >
+                    <PencilSimple size={14} /> Modifier
+                  </button>
 
-                <button
-                  className={u.actif !== false ? 'secondary-action' : 'primary-action'}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: '0.78rem',
-                    color: u.actif !== false ? '#dc2626' : undefined,
-                    borderColor: u.actif !== false ? '#fca5a5' : undefined,
-                  }}
-                  onClick={() => toggleUserStatutMutation.mutate(u.id)}
-                  title={u.actif !== false ? 'Désactiver / suspendre le compte' : 'Réactiver le compte'}
-                >
-                  {u.actif !== false ? 'Suspendre' : 'Activer'}
-                </button>
-              </div>,
+                  <button
+                    className={u.actif !== false ? 'secondary-action' : 'primary-action'}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.78rem',
+                      color: u.actif !== false ? '#dc2626' : undefined,
+                      borderColor: u.actif !== false ? '#fca5a5' : undefined,
+                    }}
+                    onClick={() => toggleUserStatutMutation.mutate(u.id)}
+                    title={u.actif !== false ? 'Désactiver / suspendre le compte' : 'Réactiver le compte'}
+                  >
+                    {u.actif !== false ? 'Suspendre' : 'Activer'}
+                  </button>
+                </div>
+              ) : (
+                <div key={u.id + '-ro'} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--muted)', fontSize: '0.78rem', padding: '4px 8px', background: 'var(--surface-2)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <ShieldCheck size={14} />
+                  <span>Consultation Seule (Chef Agence)</span>
+                </div>
+              ),
             ])}
             emptyText="Aucun utilisateur enregistré."
           />
@@ -10475,7 +11793,7 @@ function AdminPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.88rem' }}>
-              Familles de produits, matières premières de minoterie et prestations de services.
+              Familles de produits, matières premières industrielles et prestations de services.
             </p>
             <button className="primary-action" onClick={() => setShowNewCategoryModal(true)}>
               <Plus size={18} /> Ajouter une Catégorie
@@ -10922,7 +12240,7 @@ function AdminPage() {
 
                     {/* SIMULATION CONTENU DOCUMENT DEVANT LE FILIGRANE */}
                     <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', pointerEvents: 'none' }}>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>Farine de Maïs Extra • 50 Sacs x $24.50</div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>Produit Fini Standard • 50 Unités x $24.50</div>
                       <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 2 }}>Total à payer : $1,225.00 USD (Payé au comptoir)</div>
                       <div style={{ fontSize: '0.62rem', color: '#059669', fontWeight: 600, marginTop: 4 }}>
                         ✓ Filigrane visible et non intrusif lors de l'impression
@@ -11040,7 +12358,7 @@ function AdminPage() {
         <div className="page-grid">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h3 style={{ margin: 0 }}>Flotte de Camions & Logistique Minoterie</h3>
+              <h3 style={{ margin: 0 }}>Flotte de Véhicules & Logistique</h3>
               <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
                 Suivi des véhicules de transport, chauffeurs attitrés et affectation sur les bordereaux de livraison.
               </p>
@@ -11051,14 +12369,14 @@ function AdminPage() {
           </div>
 
           <DataTable
-            columns={['Plaque', 'Modèle & Marque', 'Capacité (T / Sacs)', 'Chauffeur Attitré', 'Agence', 'Statut', 'Actions']}
+            columns={['Plaque', 'Modèle & Marque', 'Capacité (T / Unités)', 'Chauffeur Attitré', 'Agence', 'Statut', 'Actions']}
             loading={flotteQuery.isLoading}
             rows={(flotteQuery.data ?? [])
               .filter((v: any) => adminAgenceFilter === 'TOUTES' ? true : v.agenceId === adminAgenceFilter)
               .map((v: any) => [
               <strong key={'plk-' + v.id}>{v.plaqueImmatriculation}</strong>,
               v.marqueModele,
-              `${v.capaciteTonnes} T (${v.capaciteSacs} sacs)`,
+              `${v.capaciteTonnes} T (${v.capaciteSacs} unités)`,
               <span key={'chf-' + v.id}>{v.chauffeurNom} {v.chauffeurTelephone ? <small style={{ color: 'var(--muted)' }}>({v.chauffeurTelephone})</small> : ''}</span>,
               v.agence?.nom ?? `Agence #${v.agenceId}`,
               <span key={'st-' + v.id} className={clsx('badge', v.statut === 'DISPONIBLE' ? 'badge-success' : v.statut === 'EN_COURSE' ? 'badge-warning' : 'badge-danger')}>
@@ -11254,7 +12572,7 @@ function AdminPage() {
                 <input
                   value={newAgenceNom}
                   onChange={(e) => setNewAgenceNom(e.target.value)}
-                  placeholder="ex: Succursale Butembo ou Dépôt Minoterie Bukavu"
+                  placeholder="ex: Succursale Butembo ou Dépôt Régional Bukavu"
                   required
                 />
               </label>
@@ -11286,7 +12604,7 @@ function AdminPage() {
                     onChange={(e) => setNewAgenceEstSiege(e.target.checked)}
                     style={{ width: 18, height: 18 }}
                   />
-                  <span>Définir comme Siège Principal / Site Minoterie Centrale</span>
+                  <span>Définir comme Siège Principal / Site Central</span>
                 </label>
               </div>
 
@@ -11347,7 +12665,7 @@ function AdminPage() {
                     onChange={(e) => setEditAgenceEstSiege(e.target.checked)}
                     style={{ width: 18, height: 18 }}
                   />
-                  <span>Siège Principal / Minoterie Centrale</span>
+                  <span>Siège Principal / Site Central</span>
                 </label>
               </div>
 
@@ -11493,7 +12811,7 @@ function AdminPage() {
               </label>
               <label style={{ marginTop: 12 }}>
                 Description
-                <input value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} placeholder="ex: Sacs de conditionnement kraft et polypropylène" />
+                <input value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} placeholder="ex: Emballages et conditionnements industriels" />
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
                 <button type="button" className="secondary-action" onClick={() => setShowNewCategoryModal(false)}>Annuler</button>
@@ -11512,7 +12830,7 @@ function AdminPage() {
           <div className="modal-card">
             <h3>Ajouter un camion à la flotte</h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', margin: '4px 0 16px' }}>
-              Véhicule de livraison et logistique inter-agences pour les cargaisons de farine.
+              Véhicule de livraison et logistique inter-agences pour les cargaisons et marchandises.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); createVehiculeMutation.mutate(); }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -11531,7 +12849,7 @@ function AdminPage() {
                   <input type="number" value={newVehiculeTonnes} onChange={(e) => setNewVehiculeTonnes(e.target.value)} required />
                 </label>
                 <label>
-                  Capacité en Sacs (25kg)
+                  Capacité en Unités / Colis
                   <input type="number" value={newVehiculeSacs} onChange={(e) => setNewVehiculeSacs(e.target.value)} required />
                 </label>
               </div>
