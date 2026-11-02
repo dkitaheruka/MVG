@@ -8,6 +8,7 @@ import {
   Calculator,
   CaretRight,
   ChartLineUp,
+  ChartPie,
   ClipboardText,
   CurrencyCircleDollar,
   Desktop,
@@ -86,6 +87,7 @@ import { StockTransfersPage } from './pages/StockTransfersPage'
 import { PayrollPage } from './pages/PayrollPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { AnalyticsChartsPage } from './pages/AnalyticsChartsPage'
+import { CageTftPage } from './pages/CageTftPage'
 import {
   listOfflineOperations,
   saveOfflineOperation,
@@ -129,6 +131,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { to: '/dashboard', labelKey: 'dashboard', icon: Gauge, permission: 'dashboard.voir' },
   { to: '/diagrammes', labelKey: 'analytics_charts', icon: ChartBar, permission: 'analytics.voir' },
+  { to: '/controle-gestion', labelKey: 'cage', icon: ChartPie, permission: 'cage.voir' },
   { to: '/ventes', labelKey: 'sales', icon: Receipt, permission: 'ventes.voir' },
   { to: '/stock', labelKey: 'stock', icon: Package, permission: 'stocks.voir' },
   { to: '/achats', labelKey: 'purchases', icon: ShoppingCart, permission: 'achats.gerer' },
@@ -475,8 +478,15 @@ function AppShell() {
   const printProposal = useAppStore((state) => state.printProposal)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const can = useAppStore((state) => state.can)
+  const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
 
-  const visibleNav = navItems.filter((item) => can(item.permission))
+  const visibleNav = navItems.filter((item) => {
+    // Les menus Diagrammes et Contrôle de Gestion (CAGE & TFT) sont strictement réservés au Super Admin et Admin du Siège
+    if (item.to === '/diagrammes' || item.to === '/controle-gestion') {
+      return isSuperOrAdminSiege && can(item.permission)
+    }
+    return can(item.permission)
+  })
   const currentTitle = visibleNav.find((item) => location.pathname.startsWith(item.to))?.labelKey ?? 'dashboard'
 
   const selectedAgenceId = useAppStore((state) => state.selectedAgenceId)
@@ -680,6 +690,7 @@ function AppShell() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/diagrammes" element={<AnalyticsChartsPage />} />
+            <Route path="/controle-gestion" element={<CageTftPage />} />
             <Route path="/ventes" element={<SalesPage />} />
             <Route path="/stock" element={<StockPage />} />
             <Route path="/achats" element={<PurchasesPage />} />
@@ -8777,15 +8788,15 @@ function AccountingPage() {
             <DataTable
               columns={['Compte 411xxx', 'Client & Contact', 'Solde Dette Actuelle', 'Plafond Crédit', 'Utilisation', 'Factures Crédit', 'Règlements', 'Actions']}
               rows={(comptesAuxiliairesQuery.data ?? []).map((c: any) => [
-                <div>
+                <div key={`compte-${c.id || c.compteComptable}`}>
                   <code style={{ fontSize: '0.95rem', fontWeight: 900, color: 'var(--accent-strong)' }}>{c.compteComptable}</code>
                   <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--muted)' }}>Parent : 411 (Collectif)</span>
                 </div>,
-                <div>
+                <div key={`nom-${c.id || c.compteComptable}`}>
                   <strong>{c.nom}</strong>
                   <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{c.telephone || 'Sans tél'} | {c.adresse || 'Goma'}</div>
                 </div>,
-                <div>
+                <div key={`solde-${c.id || c.compteComptable}`}>
                   <strong style={{ fontSize: '1rem', color: c.soldeDette > 0 ? '#b91c1c' : '#16a34a' }}>
                     ${Number(c.soldeDette || 0).toFixed(2)} USD
                   </strong>
@@ -8793,8 +8804,8 @@ function AccountingPage() {
                     {c.soldeDetteCdf?.toLocaleString()} CDF
                   </div>
                 </div>,
-                <span>${Number(c.limiteCredit || 0).toFixed(2)} USD</span>,
-                <div style={{ width: 90 }}>
+                <span key={`limite-${c.id || c.compteComptable}`}>${Number(c.limiteCredit || 0).toFixed(2)} USD</span>,
+                <div key={`bar-${c.id || c.compteComptable}`} style={{ width: 90 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 2 }}>
                     <span>{c.tauxUtilisationCredit}%</span>
                     {c.bloque && <span style={{ color: '#b91c1c', fontWeight: 800 }}>DÉPASSÉ</span>}
@@ -8809,7 +8820,7 @@ function AccountingPage() {
                     />
                   </div>
                 </div>,
-                <div>
+                <div key={`credit-${c.id || c.compteComptable}`}>
                   <span style={{ fontWeight: 700 }}>${Number(c.totalCreditValide || 0).toFixed(2)}</span>
                   {c.nbVentesAttenteChef > 0 && (
                     <span className="badge badge-warning" style={{ display: 'block', marginTop: 2, fontSize: '0.68rem' }}>
@@ -8817,8 +8828,8 @@ function AccountingPage() {
                     </span>
                   )}
                 </div>,
-                <strong style={{ color: '#16a34a' }}>${Number(c.totalReglements || 0).toFixed(2)}</strong>,
-                <div style={{ display: 'flex', gap: 6 }}>
+                <strong key={`regl-${c.id || c.compteComptable}`} style={{ color: '#16a34a' }}>${Number(c.totalReglements || 0).toFixed(2)}</strong>,
+                <div key={`actions-${c.id || c.compteComptable}`} style={{ display: 'flex', gap: 6 }}>
                   <button
                     className="primary-action"
                     style={{ padding: '5px 10px', fontSize: '0.78rem' }}
@@ -8881,14 +8892,14 @@ function AccountingPage() {
 
                 <DataTable
                   columns={['Date', 'Pièce Réf.', 'Libellé de l\'Opération', 'Statut', 'Débit (+)', 'Crédit (-)', 'Solde Progressif']}
-                  rows={(clientGrandLivreQuery.data?.mouvements ?? []).map((m: any) => [
-                    <span style={{ fontSize: '0.8rem' }}>{new Date(m.date).toLocaleDateString('fr-FR')}</span>,
-                    <code style={{ fontSize: '0.78rem' }}>{m.reference}</code>,
-                    <span style={{ fontSize: '0.82rem' }}>{m.libelle}</span>,
-                    <span className="badge" style={{ fontSize: '0.7rem' }}>{m.statut}</span>,
-                    <span style={{ fontWeight: 700, color: m.debit > 0 ? '#b91c1c' : 'var(--muted)' }}>{m.debit > 0 ? `$${m.debit.toFixed(2)}` : '-'}</span>,
-                    <span style={{ fontWeight: 700, color: m.credit > 0 ? '#16a34a' : 'var(--muted)' }}>{m.credit > 0 ? `$${m.credit.toFixed(2)}` : '-'}</span>,
-                    <strong style={{ fontSize: '0.85rem' }}>${Number(m.soldeCumule || 0).toFixed(2)}</strong>,
+                  rows={(clientGrandLivreQuery.data?.mouvements ?? []).map((m: any, idx: number) => [
+                    <span key={`date-${idx}`} style={{ fontSize: '0.8rem' }}>{new Date(m.date).toLocaleDateString('fr-FR')}</span>,
+                    <code key={`ref-${idx}`} style={{ fontSize: '0.78rem' }}>{m.reference}</code>,
+                    <span key={`lib-${idx}`} style={{ fontSize: '0.82rem' }}>{m.libelle}</span>,
+                    <span key={`st-${idx}`} className="badge" style={{ fontSize: '0.7rem' }}>{m.statut}</span>,
+                    <span key={`deb-${idx}`} style={{ fontWeight: 700, color: m.debit > 0 ? '#b91c1c' : 'var(--muted)' }}>{m.debit > 0 ? `$${m.debit.toFixed(2)}` : '-'}</span>,
+                    <span key={`cred-${idx}`} style={{ fontWeight: 700, color: m.credit > 0 ? '#16a34a' : 'var(--muted)' }}>{m.credit > 0 ? `$${m.credit.toFixed(2)}` : '-'}</span>,
+                    <strong key={`solde-${idx}`} style={{ fontSize: '0.85rem' }}>${Number(m.soldeCumule || 0).toFixed(2)}</strong>,
                   ])}
                   emptyText="Aucun mouvement trouvé dans ce compte auxiliaire."
                 />
@@ -11336,7 +11347,7 @@ function AdminPage() {
             columns={['Code / ID', 'Nom de l agence', 'Ville', 'Adresse physique', 'Statut / Vocation', 'Actions']}
             loading={agencesQuery.isLoading}
             rows={(agencesQuery.data ?? []).map((ag: any) => [
-              <strong>AG-{ag.id}</strong>,
+              <strong key={`ag-${ag.id}`}>AG-{ag.id}</strong>,
               ag.nom,
               ag.ville,
               ag.adresse,
@@ -11737,9 +11748,9 @@ function AdminPage() {
             rows={(appareilsQuery.data ?? [])
               .filter((ap: any) => adminAgenceFilter === 'TOUTES' ? true : ap.agenceId === adminAgenceFilter)
               .map((ap: any) => [
-              <strong>{ap.nom}</strong>,
-              <code style={{ fontSize: '0.78rem' }}>{ap.deviceId}</code>,
-              <span className="badge">{ap.type}</span>,
+              <strong key={`ap-nom-${ap.id}`}>{ap.nom}</strong>,
+              <code key={`ap-dev-${ap.id}`} style={{ fontSize: '0.78rem' }}>{ap.deviceId}</code>,
+              <span key={`ap-type-${ap.id}`} className="badge">{ap.type}</span>,
               ap.agence?.nom ?? `Agence #${ap.agenceId}`,
               ap.userNom || (ap.user?.nom ?? 'Non assigné'),
               <span
@@ -11803,7 +11814,7 @@ function AdminPage() {
             columns={['Code / ID', 'Nom de la catégorie', 'Description technique']}
             loading={categoriesQuery.isLoading}
             rows={(categoriesQuery.data ?? []).map((c: any) => [
-              <strong>CAT-{c.id}</strong>,
+              <strong key={`cat-${c.id}`}>CAT-{c.id}</strong>,
               c.nom,
               c.description || '-',
             ])}
@@ -11825,14 +11836,15 @@ function AdminPage() {
               .map((t: any) => [
               t.dateDebut ? new Date(t.dateDebut).toLocaleDateString() : '-',
               t.agence?.nom ?? 'Agence locale',
-              <strong>1 USD = {t.taux} CDF</strong>,
+              <strong key="taux">1 USD = {t.taux} CDF</strong>,
               t.proposePar ?? 'Chef d agence',
-              <span className={clsx('badge', t.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}>
+              <span key="statut" className={clsx('badge', t.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}>
                 {t.statut === 'VALIDE' ? 'Validé par le siège' : 'Proposition en attente'}
               </span>,
-              t.actif ? <span className="badge badge-success">Actif en caisse</span> : <span className="badge">Inactif</span>,
+              t.actif ? <span key="actif" className="badge badge-success">Actif en caisse</span> : <span key="inactif" className="badge">Inactif</span>,
               t.statut === 'PROPOSE' ? (
                 <button
+                  key="approuver"
                   className="primary-action"
                   style={{ padding: '4px 10px', fontSize: '0.82rem' }}
                   onClick={() => validerTauxMutation.mutate(t.id)}
@@ -11840,7 +11852,7 @@ function AdminPage() {
                   Approuver ce taux
                 </button>
               ) : (
-                <span>Validé</span>
+                <span key="valide">Validé</span>
               ),
             ])}
             emptyText="Aucun historique de taux."
@@ -11861,13 +11873,14 @@ function AdminPage() {
               .map((p: any) => [
               p.article?.designation ?? `Article #${p.articleId}`,
               p.agence?.nom ?? 'Agence locale',
-              <strong>{p.prix} {p.devise}</strong>,
+              <strong key="prix">{p.prix} {p.devise}</strong>,
               p.proposePar ?? 'Chef d agence',
-              <span className={clsx('badge', p.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}>
+              <span key="statut" className={clsx('badge', p.statut === 'VALIDE' ? 'badge-success' : 'badge-warning')}>
                 {p.statut === 'VALIDE' ? 'Validé' : 'Proposé'}
               </span>,
               p.statut === 'PROPOSE' ? (
                 <button
+                  key="valider"
                   className="primary-action"
                   style={{ padding: '4px 10px', fontSize: '0.82rem' }}
                   onClick={() => validerPrixMutation.mutate(p.id)}
@@ -11875,7 +11888,7 @@ function AdminPage() {
                   Valider tarif
                 </button>
               ) : (
-                <span>En vigueur</span>
+                <span key="en-vigueur">En vigueur</span>
               ),
             ])}
             emptyText="Aucun tarif d agence enregistré."
@@ -12418,8 +12431,8 @@ function AdminPage() {
           loading={auditQuery.isLoading}
           rows={(auditQuery.data ?? []).map((a: any) => [
             new Date(a.dateHeure).toLocaleTimeString() + ' ' + new Date(a.dateHeure).toLocaleDateString(),
-            <strong>{a.utilisateur}</strong>,
-            <code>{a.action}</code>,
+            <strong key="user">{a.utilisateur}</strong>,
+            <code key="act">{a.action}</code>,
             a.details,
           ])}
           emptyText="Aucun événement d audit consigné."

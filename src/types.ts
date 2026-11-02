@@ -47,6 +47,7 @@ export type PermissionCode =
   | 'comptabilite.cloture'
   | 'comptabilite.immo_gerer'
   | 'backup.gerer'
+  | 'cage.voir'
 
 export type UserSession = {
   token: string
@@ -510,4 +511,133 @@ export type BulletinPaie = {
   comptableSeniorNom?: string
   dateGeneration: string
   datePaiement?: string
+}
+
+export type TftLigne = {
+  ref: string
+  libelle: string
+  montant: number
+  note?: string
+}
+
+export type TftRapport = {
+  exerciceAnnee: number
+  dateArrete: string
+  devise: 'USD'
+  fluxExploitation: {
+    caf: number
+    ebe: number
+    variationBfr: number
+    variationStocks: number
+    variationCreances: number
+    variationDettesExploit: number
+    totalFluxExploitation: number
+    lignes: TftLigne[]
+  }
+  fluxInvestissement: {
+    acquisitionsImmo: number
+    cessionsImmo: number
+    totalFluxInvestissement: number
+    lignes: TftLigne[]
+  }
+  fluxFinancement: {
+    apportsCapital: number
+    empruntsSouscrits: number
+    remboursementsEmprunts: number
+    dividendesVerses: number
+    totalFluxFinancement: number
+    lignes: TftLigne[]
+  }
+  tresorerie: {
+    variationNette: number
+    tresorerieOuverture: number
+    tresorerieCloture: number
+    detailCaissesPhysiquesUsd: number
+    detailCaissesPhysiquesCdfEnUsd: number
+    detailBanquesUsd: number
+    reconciliationOk: boolean
+  }
+}
+
+export type CoutRevientProduit = {
+  articleId: number
+  codeUnique: string
+  designation: string
+  uniteMesure: string
+  prixVenteMoyen: number
+  quantiteProduite: number
+  coutMatierePremiere: number
+  coutMainOeuvreDirecte: number
+  coutIndirectUsine: number
+  coutRevientUnitaire: number
+  margeBruteUnitaire: number
+  margeBrutePourcent: number
+  margeNetteUnitaire: number
+  margeNettePourcent: number
+  statutRentabilite: 'EXCELLENT' | 'RENTABLE' | 'A_SURVEILLER' | 'DEFICITAIRE'
+}
+
+export type ResultatAnalytiqueAgence = {
+  agenceId: number
+  agenceNom: string
+  estSiege: boolean
+  chiffreAffaires: number
+  coutVentesEtProduction: number
+  margeBrute: number
+  chargesDirectesPersonnel: number
+  chargesDirectesLogistique: number
+  chargesDirectesLocales: number
+  margeSurCoutsDirects: number
+  quotePartFraisSiege: number
+  resultatAnalytiqueNet: number
+  tauxRentabilite: number
+}
+
+export type PointMortRapport = {
+  chiffreAffairesTotal: number
+  chargesVariablesTotal: number
+  chargesFixesTotal: number
+  margeCoutsVariables: number
+  tauxMargeCoutsVariables: number
+  seuilRentabiliteValeur: number
+  seuilRentabiliteVolumeSacs: number
+  pointMortJours: number
+  pointMortDate: string
+  margeSecuriteValeur: number
+  indiceSecuritePourcent: number
+  levierOperationnel: number
+}
+
+export type RendementUsineRapport = {
+  periode: string
+  tonnageGrainsAcheteBrut: number
+  refactionsHumiditeImpuretesTonnes: number
+  tonnageNetUsinable: number
+  tonnageFarineExtraite: number
+  tauxExtractionFarine: number
+  tonnageSousProduitsSon: number
+  tauxExtractionSon: number
+  pertesEtFreintesTonnes: number
+  tauxFreinteReel: number
+  normeFreinteTolerable: number
+  ecartFreinteFinancierUsd: number
+  valorisationSonUsd: number
+}
+
+export type CoutFlotteRapport = {
+  vehiculeId: number
+  immatriculation: string
+  marqueModele: string
+  chauffeur: string
+  capaciteTonnes: number
+  rotationsTotal: number
+  tonnesTransportees: number
+  sacsDistribues: number
+  kilometresEstimes: number
+  coutCarburantUsd: number
+  coutMaintenanceUsd: number
+  coutTotalFlotteUsd: number
+  coutParKilometre: number
+  coutParTonne: number
+  coutParSac: number
 }

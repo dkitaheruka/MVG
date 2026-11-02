@@ -3432,4 +3432,532 @@ export function renderDossierDiagrammesHtml(
 </html>`
 }
 
+export function renderTftHtml(tft: any, annee: number, agenceNom: string, entreprise?: any): string {
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'TABLEAU DES FLUX DE TRÉSORERIE (T.F.T.)',
+    docReference: `SYSCOHADA RÉVISÉ - EXERCICE ${annee}`,
+  })
+
+  const formatUsd = (val: number) => {
+    const num = Number(val || 0)
+    const sign = num < 0 ? '-' : ''
+    return `${sign}$${Math.abs(num).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>TFT SYSCOHADA ${annee} - ${escapeHtml(agenceNom)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 15mm 15mm 15mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 20px; line-height: 1.4; }
+    ${COMMON_SCROLLBAR_CSS}
+    .tft-table { width: 100%; border-collapse: collapse; margin: 12px 0 18px 0; font-size: 10.5px; }
+    .tft-table th, .tft-table td { border: 1px solid #cbd5e1; padding: 6px 10px; }
+    .tft-table th { background: #0f172a; color: #fff; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 0.03em; }
+    .tft-table tr.category-head { background: #f1f5f9; font-weight: 800; color: #0f172a; }
+    .tft-table tr.total-row { background: #e2e8f0; font-weight: 800; }
+    .tft-table tr.grand-total { background: #0284c7; color: #fff; font-weight: 900; font-size: 11.5px; }
+    .tft-table tr.grand-total td { border-color: #0369a1; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+    .kpi-card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; background: #f8fafc; text-align: center; }
+    .kpi-title { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
+    .kpi-value { font-size: 14px; font-weight: 800; color: #0f172a; }
+    .signatures-block { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 28px; page-break-inside: avoid; }
+    .sig-card { border: 1px dashed #94a3b8; border-radius: 6px; padding: 12px; height: 95px; display: flex; flex-direction: column; justify-content: space-between; text-align: center; }
+    .sig-role { font-weight: 800; font-size: 10.5px; color: #0f172a; text-transform: uppercase; }
+    .sig-hint { font-size: 8.5px; color: #94a3b8; }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0 !important; }
+      .doc-watermark { position: fixed !important; }
+    }
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Tableau des Flux de Trésorerie (TFT) ${annee}`)}
+  ${watermarkHtml}
+  ${headerHtml}
+
+  <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;">
+    <div>
+      <span style="font-weight: 800; font-size: 12px; color: #0f172a;">Cadre Normatif : SYSCOHADA Révisé</span>
+      <span style="color: #64748b; margin-left: 8px;">(Méthode Indirecte d'analyse des flux de liquidités)</span>
+    </div>
+    <div style="font-size: 10.5px; color: #334155;">
+      Devise de présentation : <strong>USD (Dollar Américain)</strong> • Période : <strong>Exercice ${annee}</strong>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-title">Flux Exploitation Net</div>
+      <div class="kpi-value" style="color: ${Number(tft.fluxExploitation?.totalFluxExploitation || 0) >= 0 ? '#16a34a' : '#dc2626'};">
+        ${formatUsd(tft.fluxExploitation?.totalFluxExploitation || 0)}
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Flux Investissement</div>
+      <div class="kpi-value" style="color: #0284c7;">
+        ${formatUsd(tft.fluxInvestissement?.totalFluxInvestissement || 0)}
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Flux Financement</div>
+      <div class="kpi-value" style="color: #7c3aed;">
+        ${formatUsd(tft.fluxFinancement?.totalFluxFinancement || 0)}
+      </div>
+    </div>
+    <div class="kpi-card" style="background: #eff6ff; border-color: #bfdbfe;">
+      <div class="kpi-title" style="color: #1e40af;">Trésorerie Finale Clôture</div>
+      <div class="kpi-value" style="color: #1e3a8a;">
+        ${formatUsd(tft.tresorerie?.tresorerieCloture || 0)}
+      </div>
+    </div>
+  </div>
+
+  <table class="tft-table">
+    <thead>
+      <tr>
+        <th style="width: 80px; text-align: center;">Réf.</th>
+        <th>Rubriques SYSCOHADA du Tableau des Flux de Trésorerie</th>
+        <th style="width: 140px; text-align: right;">Montant USD ($)</th>
+        <th style="width: 180px;">Note Analytique</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- SECTION I : FLUX D'EXPLOITATION -->
+      <tr class="category-head">
+        <td style="text-align: center;">ZA</td>
+        <td colspan="3">I. FLUX DE TRÉSORERIE PROVENANT DES ACTIVITÉS OPÉRATIONNELLES (EXPLOITATION)</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FA</td>
+        <td>Capacité d'Autofinancement Globale (C.A.F.G.)</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.fluxExploitation?.caf || 0)}</td>
+        <td style="color: #64748b;">Résultat net + Dotations amortissements</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FB</td>
+        <td>- / + Variation du Besoin en Fonds de Roulement (BFR) d'exploitation</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.fluxExploitation?.variationBfr || 0)}</td>
+        <td style="color: #64748b;">Variation stocks, clients 411, dettes 401</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; color: #64748b;">•</td>
+        <td style="padding-left: 24px; color: #475569;">dont Variation nette des stocks industriels & matières</td>
+        <td style="text-align: right; color: #475569;">${formatUsd(tft.fluxExploitation?.variationStocks || 0)}</td>
+        <td style="color: #64748b;">Stocks céréales, farines & emballages</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; color: #64748b;">•</td>
+        <td style="padding-left: 24px; color: #475569;">dont Variation des créances clients & comptes rattachés (411)</td>
+        <td style="text-align: right; color: #475569;">${formatUsd(tft.fluxExploitation?.variationCreances || 0)}</td>
+        <td style="color: #64748b;">Encaissements crédits & retards</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; color: #64748b;">•</td>
+        <td style="padding-left: 24px; color: #475569;">dont Variation des dettes fournisseurs d'exploitation (401)</td>
+        <td style="text-align: right; color: #475569;">${formatUsd(tft.fluxExploitation?.variationDettesExploit || 0)}</td>
+        <td style="color: #64748b;">Achats grains pont-bascule</td>
+      </tr>
+      <tr class="total-row">
+        <td style="text-align: center; font-weight: 800;">ZB</td>
+        <td><strong>FLUX DE TRÉSORERIE NET PROVENANT DES ACTIVITÉS OPÉRATIONNELLES (A)</strong></td>
+        <td style="text-align: right; font-weight: 900; color: #0f172a;">${formatUsd(tft.fluxExploitation?.totalFluxExploitation || 0)}</td>
+        <td style="font-weight: 700; color: #16a34a;">Excédent Trésorerie Opérationnelle</td>
+      </tr>
+
+      <!-- SECTION II : FLUX D'INVESTISSEMENT -->
+      <tr class="category-head">
+        <td style="text-align: center;">ZC</td>
+        <td colspan="3">II. FLUX DE TRÉSORERIE PROVENANT DES OPÉRATIONS D'INVESTISSEMENT</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FC</td>
+        <td>Décaissements liés aux acquisitions d'immobilisations corporelles & incorporelles</td>
+        <td style="text-align: right; font-weight: 700; color: #dc2626;">${formatUsd(tft.fluxInvestissement?.acquisitionsImmo || 0)}</td>
+        <td style="color: #64748b;">Broyeurs meunerie, camions, groupe élec</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FD</td>
+        <td>Encaissements liés aux cessions d'éléments d'actif immobilisé</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.fluxInvestissement?.cessionsImmo || 0)}</td>
+        <td style="color: #64748b;">Cessions véhicules amortis / matériel usine</td>
+      </tr>
+      <tr class="total-row">
+        <td style="text-align: center; font-weight: 800;">ZD</td>
+        <td><strong>FLUX DE TRÉSORERIE NET DES ACTIVITÉS D'INVESTISSEMENT (B)</strong></td>
+        <td style="text-align: right; font-weight: 900; color: #0f172a;">${formatUsd(tft.fluxInvestissement?.totalFluxInvestissement || 0)}</td>
+        <td style="font-weight: 700; color: #0284c7;">Modernisation outil industriel</td>
+      </tr>
+
+      <!-- SECTION III : FLUX DE FINANCEMENT -->
+      <tr class="category-head">
+        <td style="text-align: center;">ZE</td>
+        <td colspan="3">III. FLUX DE TRÉSORERIE PROVENANT DU FINANCEMENT DES ACTIVITÉS</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FE</td>
+        <td>Augmentations de capital / Apports des associés</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.fluxFinancement?.apportsCapital || 0)}</td>
+        <td style="color: #64748b;">Renforcement capitaux propres</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FF</td>
+        <td>Souscription d'emprunts et dettes financières à moyen/long terme</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.fluxFinancement?.empruntsSouscrits || 0)}</td>
+        <td style="color: #64748b;">Lignes de crédit bancaires d'équipement</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FG</td>
+        <td>Remboursements des emprunts bancaires & dettes financières</td>
+        <td style="text-align: right; font-weight: 700; color: #dc2626;">${formatUsd(tft.fluxFinancement?.remboursementsEmprunts || 0)}</td>
+        <td style="color: #64748b;">Amortissement financier du capital emprunté</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">FH</td>
+        <td>Dividendes versés aux actionnaires</td>
+        <td style="text-align: right; font-weight: 700; color: #dc2626;">${formatUsd(tft.fluxFinancement?.dividendesVerses || 0)}</td>
+        <td style="color: #64748b;">Distribution décidée en AGO</td>
+      </tr>
+      <tr class="total-row">
+        <td style="text-align: center; font-weight: 800;">ZF</td>
+        <td><strong>FLUX DE TRÉSORERIE NET DU FINANCEMENT (C)</strong></td>
+        <td style="text-align: right; font-weight: 900; color: #0f172a;">${formatUsd(tft.fluxFinancement?.totalFluxFinancement || 0)}</td>
+        <td style="font-weight: 700; color: #7c3aed;">Politique de financement</td>
+      </tr>
+
+      <!-- SYNTHÈSE ET RÉCONCILIATION DE TRÉSORERIE -->
+      <tr class="category-head">
+        <td style="text-align: center;">ZG</td>
+        <td colspan="3">IV. VARIATION NETTE ET RAPPROCHEMENT DES DISPONIBILITÉS</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">ZH</td>
+        <td><strong>VARIATION NETTE DE TRÉSORERIE DE LA PÉRIODE (A + B + C)</strong></td>
+        <td style="text-align: right; font-weight: 800; color: ${Number(tft.tresorerie?.variationNette || 0) >= 0 ? '#16a34a' : '#dc2626'};">
+          ${formatUsd(tft.tresorerie?.variationNette || 0)}
+        </td>
+        <td style="font-weight: 700;">Variation nette constatée</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">ZI</td>
+        <td>Trésorerie nette au début de l'exercice (Ouverture au 01/01)</td>
+        <td style="text-align: right; font-weight: 700;">${formatUsd(tft.tresorerie?.tresorerieOuverture || 0)}</td>
+        <td style="color: #64748b;">Solde initial caisses & banques</td>
+      </tr>
+      <tr class="grand-total">
+        <td style="text-align: center;">ZJ</td>
+        <td><strong>TRÉSORERIE NETTE DE CLÔTURE AU 31/12 (OUVERTURE + VARIATION NETTE)</strong></td>
+        <td style="text-align: right;">${formatUsd(tft.tresorerie?.tresorerieCloture || 0)}</td>
+        <td>SOLDE DISPONIBLE VÉRIFIÉ</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- CONTRÔLE DE RÉCONCILIATION PHYSIQUE -->
+  <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 12px 16px; margin: 16px 0;">
+    <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase; margin-bottom: 8px;">
+      Vérification & Rapprochement avec les Caisses Physiques et Banques Locales
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; font-size: 10.5px;">
+      <div style="background: #fff; padding: 8px 12px; border-radius: 4px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; display: block; font-size: 9px; text-transform: uppercase;">1. Caisses Physiques USD (Cpt 571)</span>
+        <strong style="font-size: 13px; color: #0f172a;">${formatUsd(tft.tresorerie?.detailCaissesPhysiquesUsd || 0)}</strong>
+      </div>
+      <div style="background: #fff; padding: 8px 12px; border-radius: 4px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; display: block; font-size: 9px; text-transform: uppercase;">2. Caisses Physiques CDF (Cpt 572 en $)</span>
+        <strong style="font-size: 13px; color: #0f172a;">${formatUsd(tft.tresorerie?.detailCaissesPhysiquesCdfEnUsd || 0)}</strong>
+      </div>
+      <div style="background: #fff; padding: 8px 12px; border-radius: 4px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; display: block; font-size: 9px; text-transform: uppercase;">3. Banques Locales (Rawbank / TMB Cpt 521)</span>
+        <strong style="font-size: 13px; color: #0f172a;">${formatUsd(tft.tresorerie?.detailBanquesUsd || 0)}</strong>
+      </div>
+    </div>
+    <div style="margin-top: 10px; font-size: 10px; color: #047857; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+      <span>Certificat de conformité : Le solde final de trésorerie réconcilié ($${formatUsd(tft.tresorerie?.tresorerieCloture || 0)}) concorde rigoureusement avec les inventaires physiques de caisse et les états de rapprochement bancaires de l'entreprise.</span>
+    </div>
+  </div>
+
+  <!-- BLOC DE SIGNATURES MULTI-NIVEAUX OFFICIEL -->
+  <div class="signatures-block">
+    <div class="sig-card">
+      <div class="sig-role">Le Contrôleur de Gestion</div>
+      <div class="sig-hint">Établi et contrôlé selon la norme SYSCOHADA</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">Le Chef Comptable Principal</div>
+      <div class="sig-hint">Rapproché avec les journaux de trésorerie</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">La Direction Générale (Siège)</div>
+      <div class="sig-hint">Approuvé & visé pour la gouvernance exécutive</div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+export function renderCageHtml(cage: any, annee: number, agenceNom: string, entreprise?: any): string {
+  const { headerHtml, watermarkHtml } = renderCorporateHeaderAndWatermark({
+    entreprise,
+    agence: { nom: agenceNom },
+    docTitle: 'COMPTABILITÉ ANALYTIQUE DE GESTION (CAGE)',
+    docReference: `CONTRÔLE DE GESTION & PERFORMANCES - EXERCICE ${annee}`,
+  })
+
+  const formatUsd = (val: number) => {
+    const num = Number(val || 0)
+    const sign = num < 0 ? '-' : ''
+    return `${sign}$${Math.abs(num).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>CAGE & Contrôle de Gestion ${annee} - ${escapeHtml(agenceNom)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm 12mm 12mm 12mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10px; color: #0f172a; margin: 0; padding: 18px; line-height: 1.35; }
+    ${COMMON_SCROLLBAR_CSS}
+    .section-banner { background: #0f172a; color: #fff; padding: 6px 12px; font-size: 11px; font-weight: 800; text-transform: uppercase; border-radius: 4px; margin: 14px 0 8px 0; display: flex; justify-content: space-between; align-items: center; }
+    .table-cage { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 9.5px; }
+    .table-cage th, .table-cage td { border: 1px solid #cbd5e1; padding: 5px 8px; }
+    .table-cage th { background: #f1f5f9; color: #0f172a; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    .table-cage tr.total-row { background: #e2e8f0; font-weight: 800; }
+    .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0; }
+    .kpi-box { border: 1px solid #cbd5e1; border-radius: 5px; padding: 8px; background: #f8fafc; text-align: center; }
+    .kpi-box-title { font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 3px; }
+    .kpi-box-val { font-size: 13px; font-weight: 800; color: #0f172a; }
+    .signatures-block { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 22px; page-break-inside: avoid; }
+    .sig-card { border: 1px dashed #94a3b8; border-radius: 5px; padding: 10px; height: 85px; display: flex; flex-direction: column; justify-content: space-between; text-align: center; }
+    .sig-role { font-weight: 800; font-size: 10px; color: #0f172a; text-transform: uppercase; }
+    .sig-hint { font-size: 8px; color: #94a3b8; }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0 !important; }
+      .doc-watermark { position: fixed !important; }
+    }
+  </style>
+</head>
+<body>
+  ${renderStickyToolbar(`Rapport Analytique CAGE ${annee}`)}
+  ${watermarkHtml}
+  ${headerHtml}
+
+  <!-- SECTION 1 : SEUIL DE RENTABILITÉ & POINT MORT -->
+  <div class="section-banner">
+    <span>1. Seuil de Rentabilité & Point Mort d'Exploitation</span>
+    <span style="font-size: 9.5px; font-weight: 600; text-transform: none; color: #93c5fd;">Méthode du Direct Costing & Marge sur Coûts Variables</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi-box">
+      <div class="kpi-box-title">Chiffre d'Affaires Réalisé</div>
+      <div class="kpi-box-val">${formatUsd(cage.pointMort?.chiffreAffairesTotal || 0)}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-box-title">Charges Variables Totales</div>
+      <div class="kpi-box-val" style="color: #dc2626;">${formatUsd(cage.pointMort?.chargesVariablesTotal || 0)}</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-box-title">Marge s/ Coûts Variables</div>
+      <div class="kpi-box-val" style="color: #16a34a;">${formatUsd(cage.pointMort?.margeCoutsVariables || 0)} (${cage.pointMort?.tauxMargeCoutsVariables || 0}%)</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-box-title">Charges Fixes Totales</div>
+      <div class="kpi-box-val" style="color: #475569;">${formatUsd(cage.pointMort?.chargesFixesTotal || 0)}</div>
+    </div>
+    <div class="kpi-box" style="background: #ecfdf5; border-color: #a7f3d0;">
+      <div class="kpi-box-title" style="color: #047857;">Seuil Rentabilité ($)</div>
+      <div class="kpi-box-val" style="color: #065f46;">${formatUsd(cage.pointMort?.seuilRentabiliteValeur || 0)}</div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 14px; margin-bottom: 12px; font-size: 9.5px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 12px;">
+    <div>Point Mort Atteint : <strong>${cage.pointMort?.pointMortJours || 0} jours</strong> (Date théorique : <strong>${escapeHtml(cage.pointMort?.pointMortDate || 'Non atteint')}</strong>)</div>
+    <div>• Marge de Sécurité : <strong>${formatUsd(cage.pointMort?.margeSecuriteValeur || 0)}</strong></div>
+    <div>• Indice de Sécurité : <strong>${cage.pointMort?.indiceSecuritePourcent || 0}%</strong></div>
+    <div>• Seuil en Volume Physique : <strong>${Number(cage.pointMort?.seuilRentabiliteVolumeSacs || 0).toLocaleString('fr-FR')} unités / sacs</strong></div>
+  </div>
+
+  <!-- SECTION 2 : FICHES COÛTS DE REVIENT DE FABRICATION (CRF) -->
+  <div class="section-banner">
+    <span>2. Fiches de Coût de Revient de Fabrication (CRF) & Marges par Produit Fini</span>
+    <span style="font-size: 9.5px; font-weight: 600; text-transform: none; color: #93c5fd;">Décomposition analytique unitaire</span>
+  </div>
+
+  <table class="table-cage">
+    <thead>
+      <tr>
+        <th>Code / Réf</th>
+        <th>Désignation du Produit</th>
+        <th style="text-align: right;">Qté Fabriquée</th>
+        <th style="text-align: right;">Matière 1ère ($)</th>
+        <th style="text-align: right;">M.O. Directe ($)</th>
+        <th style="text-align: right;">Charges Usine ($)</th>
+        <th style="text-align: right; background: #e2e8f0;">Coût Revient Unitaire</th>
+        <th style="text-align: right;">Prix Vente Moyen</th>
+        <th style="text-align: right;">Marge Brute ($)</th>
+        <th style="text-align: right;">Marge Nette ($)</th>
+        <th style="text-align: center;">Rentabilité</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(cage.coutsRevient || []).map((c: any) => `
+        <tr>
+          <td><strong>${escapeHtml(c.codeUnique)}</strong></td>
+          <td>${escapeHtml(c.designation)}</td>
+          <td style="text-align: right;">${Number(c.quantiteProduite || 0).toLocaleString('fr-FR')} ${escapeHtml(c.uniteMesure || '')}</td>
+          <td style="text-align: right;">${formatUsd(c.coutMatierePremiere || 0)}</td>
+          <td style="text-align: right;">${formatUsd(c.coutMainOeuvreDirecte || 0)}</td>
+          <td style="text-align: right;">${formatUsd(c.coutIndirectUsine || 0)}</td>
+          <td style="text-align: right; font-weight: 800; background: #f8fafc; color: #0284c7;">${formatUsd(c.coutRevientUnitaire || 0)}</td>
+          <td style="text-align: right; font-weight: 700;">${formatUsd(c.prixVenteMoyen || 0)}</td>
+          <td style="text-align: right; font-weight: 700; color: #16a34a;">${formatUsd(c.margeBruteUnitaire || 0)} (${c.margeBrutePourcent || 0}%)</td>
+          <td style="text-align: right; font-weight: 800; color: ${Number(c.margeNetteUnitaire || 0) >= 0 ? '#16a34a' : '#dc2626'};">${formatUsd(c.margeNetteUnitaire || 0)} (${c.margeNettePourcent || 0}%)</td>
+          <td style="text-align: center;">
+            <span style="padding: 2px 5px; border-radius: 3px; font-weight: 700; font-size: 8px; background: ${c.statutRentabilite === 'EXCELLENT' ? '#dcfce7; color: #15803d' : c.statutRentabilite === 'RENTABLE' ? '#e0f2fe; color: #0369a1' : '#fee2e2; color: #b91c1c'};">
+              ${c.statutRentabilite}
+            </span>
+          </td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 3 : COMPTE DE RÉSULTAT ANALYTIQUE PAR CENTRE DE PROFIT (AGENCES) -->
+  <div class="section-banner">
+    <span>3. Compte de Résultat Analytique par Agence (Centres de Profit / Responsabilité)</span>
+    <span style="font-size: 9.5px; font-weight: 600; text-transform: none; color: #93c5fd;">Ventilation des marges et contribution au Siège</span>
+  </div>
+
+  <table class="table-cage">
+    <thead>
+      <tr>
+        <th>Centre de Profit / Agence</th>
+        <th style="text-align: right;">Chiffre d'Affaires</th>
+        <th style="text-align: right;">Coût Ventes & Prod.</th>
+        <th style="text-align: right;">Marge Brute Agence</th>
+        <th style="text-align: right;">Charges Personnel Local</th>
+        <th style="text-align: right;">Charges Logistique Locale</th>
+        <th style="text-align: right;">Marge s/ Coûts Directs</th>
+        <th style="text-align: right;">Frais Siège Alloués</th>
+        <th style="text-align: right; background: #e2e8f0;">Résultat Analytique Net</th>
+        <th style="text-align: right;">Taux de Rentabilité</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(cage.resultatAnalytique || []).map((r: any) => `
+        <tr>
+          <td><strong>${escapeHtml(r.agenceNom)} ${r.estSiege ? '(Siège Central)' : ''}</strong></td>
+          <td style="text-align: right; font-weight: 700;">${formatUsd(r.chiffreAffaires || 0)}</td>
+          <td style="text-align: right; color: #dc2626;">${formatUsd(r.coutVentesEtProduction || 0)}</td>
+          <td style="text-align: right; font-weight: 700; color: #16a34a;">${formatUsd(r.margeBrute || 0)}</td>
+          <td style="text-align: right;">${formatUsd(r.chargesDirectesPersonnel || 0)}</td>
+          <td style="text-align: right;">${formatUsd(r.chargesDirectesLogistique || 0)}</td>
+          <td style="text-align: right; font-weight: 700; color: #0284c7;">${formatUsd(r.margeSurCoutsDirects || 0)}</td>
+          <td style="text-align: right; color: #64748b;">${formatUsd(r.quotePartFraisSiege || 0)}</td>
+          <td style="text-align: right; font-weight: 900; background: #f8fafc; color: ${Number(r.resultatAnalytiqueNet || 0) >= 0 ? '#16a34a' : '#dc2626'};">${formatUsd(r.resultatAnalytiqueNet || 0)}</td>
+          <td style="text-align: right; font-weight: 700;">${r.tauxRentabilite || 0}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <!-- SECTION 4 : RENDEMENT MATIÈRE USINE & COÛT DE LA FLOTTE -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px;">
+    <!-- Rendements Usine -->
+    <div>
+      <div class="section-banner" style="margin-top: 0;">
+        <span>4. Rendement Usine & Freintes</span>
+      </div>
+      <table class="table-cage">
+        <tbody>
+          <tr>
+            <td>Tonnage brut grains acheté au pont-bascule</td>
+            <td style="text-align: right; font-weight: 700;">${Number(cage.rendementUsine?.tonnageGrainsAcheteBrut || 0).toLocaleString('fr-FR')} Tonnes</td>
+          </tr>
+          <tr>
+            <td>Réfactions appliquées (Humidité > 13% + Impuretés)</td>
+            <td style="text-align: right; color: #dc2626;">- ${Number(cage.rendementUsine?.refactionsHumiditeImpuretesTonnes || 0).toLocaleString('fr-FR')} Tonnes</td>
+          </tr>
+          <tr style="background: #f1f5f9; font-weight: 700;">
+            <td>Poids net mis en fabrication usine</td>
+            <td style="text-align: right; color: #0284c7;">${Number(cage.rendementUsine?.tonnageNetUsinable || 0).toLocaleString('fr-FR')} Tonnes</td>
+          </tr>
+          <tr>
+            <td>Farine standard extraite (Taux d'extraction : ${cage.rendementUsine?.tauxExtractionFarine || 0}%)</td>
+            <td style="text-align: right; font-weight: 800; color: #16a34a;">${Number(cage.rendementUsine?.tonnageFarineExtraite || 0).toLocaleString('fr-FR')} Tonnes</td>
+          </tr>
+          <tr>
+            <td>Sous-produits valorisés / Son (Taux : ${cage.rendementUsine?.tauxExtractionSon || 0}%)</td>
+            <td style="text-align: right; font-weight: 700;">${Number(cage.rendementUsine?.tonnageSousProduitsSon || 0).toLocaleString('fr-FR')} Tonnes (${formatUsd(cage.rendementUsine?.valorisationSonUsd || 0)})</td>
+          </tr>
+          <tr>
+            <td>Freinte constatée vs Norme tolérable (${cage.rendementUsine?.normeFreinteTolerable || 2.0}%)</td>
+            <td style="text-align: right; font-weight: 700; color: ${Number(cage.rendementUsine?.tauxFreinteReel || 0) <= 2.5 ? '#16a34a' : '#dc2626'};">
+              ${cage.rendementUsine?.tauxFreinteReel || 0}% (${Number(cage.rendementUsine?.pertesEtFreintesTonnes || 0).toFixed(2)} T)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Coûts Flotte & Fret -->
+    <div>
+      <div class="section-banner" style="margin-top: 0;">
+        <span>5. Prix de Revient Kilométrique de la Flotte</span>
+      </div>
+      <table class="table-cage">
+        <thead>
+          <tr>
+            <th>Véhicule / Plaque</th>
+            <th style="text-align: right;">T. Déplacées</th>
+            <th style="text-align: right;">Km Est.</th>
+            <th style="text-align: right;">Coût Total</th>
+            <th style="text-align: right;">$/Km</th>
+            <th style="text-align: right;">$/Tonne</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(cage.coutsFlotte || []).map((f: any) => `
+            <tr>
+              <td><strong>${escapeHtml(f.immatriculation)}</strong> (${escapeHtml(f.marqueModele)})</td>
+              <td style="text-align: right;">${f.tonnesTransportees} T</td>
+              <td style="text-align: right;">${Number(f.kilometresEstimes || 0).toLocaleString('fr-FR')} km</td>
+              <td style="text-align: right; font-weight: 700;">${formatUsd(f.coutTotalFlotteUsd || 0)}</td>
+              <td style="text-align: right; font-weight: 800; color: #0284c7;">$${Number(f.coutParKilometre || 0).toFixed(2)}</td>
+              <td style="text-align: right; font-weight: 800; color: #16a34a;">$${Number(f.coutParTonne || 0).toFixed(2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BLOC DE SIGNATURES OFFICIEL -->
+  <div class="signatures-block">
+    <div class="sig-card">
+      <div class="sig-role">Le Contrôleur de Gestion (CAGE)</div>
+      <div class="sig-hint">Analyses de rentabilité & direct costing conformes</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">Le Directeur d'Usine & Exploitation</div>
+      <div class="sig-hint">Validation des consommations matières & rendements</div>
+    </div>
+    <div class="sig-card">
+      <div class="sig-role">La Direction Générale (Siège)</div>
+      <div class="sig-hint">Décisions d'arbitrage stratégique & prix de vente</div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 

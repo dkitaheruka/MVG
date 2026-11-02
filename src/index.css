@@ -8,6 +8,7 @@
   --accent: #0f766e;
   --accent-strong: #0b5f59;
   --accent-soft: #dff4f1;
+  --accent-contrast: #ffffff;
   --danger: #b42318;
   --warning: #b7791f;
   --success: #237a42;
@@ -38,6 +39,7 @@
   --accent: #28b7a8;
   --accent-strong: #52d4c8;
   --accent-soft: #173a37;
+  --accent-contrast: #101417;
   --danger: #ff8a80;
   --warning: #f5c56b;
   --success: #72d993;
