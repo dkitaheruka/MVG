@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import jwt from 'jsonwebtoken'
-import type { DbEcritureComptable, DbArticle, DbParametresFiscauxSociaux, DbPointageAgent } from './db'
+import type { DbEcritureComptable, DbArticle, DbParametresFiscauxSociaux, DbPointageAgent } from './db.ts'
 import {
   agences,
   users,
@@ -40,7 +40,7 @@ import {
   equipementsParc,
   appareils,
   pointagesAgents,
-} from './seed'
+} from './seed.ts'
 import {
   renderFactureHtml,
   renderBonLivraisonHtml,
@@ -64,7 +64,7 @@ import {
   renderTftHtml,
   renderCageHtml,
   generateMvgQrSvg,
-} from './documents'
+} from './documents.ts'
 
 const router = Router()
 const JWT_SECRET = 'matabishi_secure_token_secret_mvg_2026'

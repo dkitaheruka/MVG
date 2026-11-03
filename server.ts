@@ -1,8 +1,7 @@
 import express from 'express'
 import cors from 'cors'
-import { createServer as createViteServer } from 'vite'
 import path from 'path'
-import apiRouter from './server/routes'
+import apiRouter from './server/routes.ts'
 
 async function startServer() {
   const app = express()
@@ -32,7 +31,8 @@ async function startServer() {
   })
 
   if (!isProduction) {
-    // Vite middleware for dev mode
+    // Vite middleware for dev mode (dynamic import so vite is not required in production)
+    const { createServer: createViteServer } = await import('vite')
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -42,7 +42,7 @@ async function startServer() {
     // Serve production build
     const distPath = path.resolve(process.cwd(), 'dist')
     app.use(express.static(distPath))
-    app.get('*', (_req, res) => {
+    app.use((_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'))
     })
   }

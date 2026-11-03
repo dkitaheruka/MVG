@@ -44,10 +44,18 @@ import {
   Eye,
   FilePdf,
   CaretDown,
+  Camera,
+  Copy,
+  DownloadSimple,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest, downloadUrl } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
+import {
+  telechargerDiagrammeImagePng,
+  imprimerImageDiagrammeTelQuel,
+  copierDiagrammePressePapier,
+} from '../lib/chartExport'
 
 type ChartViewType = 'BAR' | 'LINE' | 'AREA' | 'PIE'
 type ActiveTabType = 'TOUT' | 'VENTES' | 'DEPENSES' | 'TRESORERIE' | 'PRESENCES' | 'FLOTTE' | 'PRODUCTION'
@@ -94,6 +102,172 @@ function exporterTableauVersExcel(nomFichier: string, enTetes: string[], lignes:
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+// Barre d'actions complète pour chaque diagramme graphique (Image PNG, Impression directe, Excel, Copie)
+interface DiagrammeActionsProps {
+  containerId: string
+  titre: string
+  nomFichier: string
+  onExportExcel: () => void
+  onPrintDossier: () => void
+  nomAgence?: string
+  typeVue?: ChartViewType
+  setTypeVue?: (t: ChartViewType) => void
+  typesDisponibles?: { type: ChartViewType; label: string }[]
+  onNotify?: (msg: string) => void
+}
+
+function DiagrammeActions({
+  containerId,
+  titre,
+  nomFichier,
+  onExportExcel,
+  onPrintDossier,
+  nomAgence,
+  typeVue,
+  setTypeVue,
+  typesDisponibles,
+  onNotify,
+}: DiagrammeActionsProps) {
+  const [loading, setLoading] = useState(false)
+
+  const handleExportPng = async () => {
+    const el = document.getElementById(containerId)
+    if (!el) return
+    try {
+      setLoading(true)
+      onNotify?.(`Génération de l'image PNG pour "${titre}"...`)
+      await telechargerDiagrammeImagePng(el, { titre, nomFichier, nomAgence })
+      onNotify?.(`Image PNG téléchargée : ${nomFichier}.png`)
+    } catch (err: any) {
+      console.error(err)
+      onNotify?.(err.message || 'Erreur lors de la capture de l\'image')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePrintImage = async () => {
+    const el = document.getElementById(containerId)
+    if (!el) return
+    try {
+      setLoading(true)
+      onNotify?.(`Préparation de l'impression du diagramme...`)
+      await imprimerImageDiagrammeTelQuel(el, { titre, nomFichier, nomAgence })
+    } catch (err: any) {
+      console.error(err)
+      onNotify?.(err.message || 'Erreur lors de l\'impression du graphique')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCopyImage = async () => {
+    const el = document.getElementById(containerId)
+    if (!el) return
+    try {
+      setLoading(true)
+      const ok = await copierDiagrammePressePapier(el, { titre, nomFichier, nomAgence })
+      if (ok) {
+        onNotify?.('Image copiée dans le presse-papier ! (Collez avec Ctrl+V)')
+      } else {
+        await telechargerDiagrammeImagePng(el, { titre, nomFichier, nomAgence })
+        onNotify?.('Image PNG téléchargée avec succès !')
+      }
+    } catch (err: any) {
+      console.error(err)
+      onNotify?.('Erreur lors de la copie de l\'image')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      {/* 1. Télécharger Image PNG */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={handleExportPng}
+        disabled={loading}
+        title="Télécharger l'image PNG de ce graphique en haute définition (tel quel)"
+        style={{ color: '#0284c7' }}
+      >
+        <Camera size={16} weight="bold" />
+      </button>
+
+      {/* 2. Imprimer l'image telle quelle */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={handlePrintImage}
+        disabled={loading}
+        title="Imprimer directement l'image de ce graphique tel quel (A4 Paysage / PDF)"
+        style={{ color: '#0f172a' }}
+      >
+        <Printer size={16} weight="bold" />
+      </button>
+
+      {/* 3. Copier image dans le presse-papier */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={handleCopyImage}
+        disabled={loading}
+        title="Copier l'image du diagramme dans le presse-papier (pour coller dans Word / WhatsApp / PPT)"
+      >
+        <Copy size={16} />
+      </button>
+
+      {/* 4. Exporter les données Excel */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={onExportExcel}
+        title="Exporter les données brutes de ce graphique en format Excel (.csv)"
+        style={{ color: '#10b981' }}
+      >
+        <FileXls size={16} />
+      </button>
+
+      {/* 5. Ouvrir document certifié A4 */}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={onPrintDossier}
+        title="Ouvrir le rapport officiel A4 avec diagramme vectoriel et tableau certifié"
+        style={{ color: '#6366f1' }}
+      >
+        <FilePdf size={16} />
+      </button>
+
+      {/* 6. Commutateur de types de vue (si disponible) */}
+      {typesDisponibles && setTypeVue && typeVue && (
+        <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6, marginLeft: 4 }}>
+          {typesDisponibles.map((td) => (
+            <button
+              key={td.type}
+              type="button"
+              onClick={() => setTypeVue(td.type)}
+              style={{
+                padding: '3px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: 4,
+                background: typeVue === td.type ? 'var(--surface)' : 'transparent',
+                color: typeVue === td.type ? 'var(--accent-strong)' : 'var(--muted)',
+                cursor: 'pointer',
+              }}
+            >
+              {td.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function AnalyticsChartsPage() {
@@ -163,6 +337,17 @@ export function AnalyticsChartsPage() {
   const execData = executiveQuery.data
   const agencesList = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
   const prodData = productionQuery.data
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const afficherToast = (msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 3500)
+  }
+
+  const nomAgenceActive =
+    selectedAgence === 'CONSOLIDE'
+      ? 'Réseau Consolidé Multi-Agences'
+      : (agencesList.find((a: any) => String(a.id) === selectedAgence)?.nom || `Agence #${selectedAgence}`)
 
   // Fonction pour imprimer le dossier ou le diagramme ciblé via le document serveur A4 certifié
   const declencherImpression = (cible?: string) => {
@@ -305,18 +490,29 @@ export function AnalyticsChartsPage() {
             Exporter Tout (Excel)
           </button>
 
-          <a
+          <button
+            type="button"
             className="primary-action"
+            onClick={() => window.print()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+            title="Imprimer directement tous les diagrammes graphiques tels qu'affichés à l'écran (avec barres, secteurs et couleurs exactes)"
+          >
+            <Printer size={18} />
+            Imprimer les Graphiques (Visuels)
+          </button>
+
+          <a
+            className="secondary-action"
             href={downloadUrl(
               `/api/analytics/diagrammes/document?agenceId=${encodeURIComponent(selectedAgence)}&periode=${encodeURIComponent(selectedPeriode)}`
             )}
             target="_blank"
             rel="noreferrer"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, textDecoration: 'none' }}
-            title="Ouvrir le dossier officiel imprimable au format A4 avec en-têtes officiels, filigrane et bouton d'impression"
+            title="Ouvrir le dossier officiel imprimable au format A4 avec en-têtes officiels, filigrane et diagrammes vectoriels"
           >
-            <Printer size={18} />
-            Imprimer Dossier Graphique (A4 / PDF)
+            <FilePdf size={18} style={{ color: '#6366f1' }} />
+            Dossier Officiel A4 (PDF)
           </a>
         </div>
       </div>
@@ -576,6 +772,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 1.1 : VENTES PAR AGENCE */}
           <div
+            id="chart-card-ventes-agences"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -602,73 +799,36 @@ export function AnalyticsChartsPage() {
               </div>
 
               {/* Actions d'export & d'impression pour ce diagramme */}
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'ventes_par_agence',
-                      ['Agence', 'Ville', 'Ventes USD', 'Ventes CDF', 'Total Consolidé USD', 'Comptant USD', 'Crédit USD', 'Transactions'],
-                      (execData.ventesJournalieres?.parAgence || []).map((v: any) => [
-                        v.agenceNom,
-                        v.ville,
-                        v.ventesUsd,
-                        v.ventesCdf,
-                        v.totalConsolideUsd,
-                        v.comptantUsd,
-                        v.creditUsd,
-                        v.nombreTransactions,
-                      ])
-                    )
-                  }
-                  title="Exporter les données de ce graphique en Excel (.csv)"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('ventes_agences')}
-                  title="Imprimer ce diagramme spécifique"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypeVentes('BAR')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeVentes === 'BAR' ? 'var(--surface)' : 'transparent',
-                      color: typeVentes === 'BAR' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Barres
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeVentes('PIE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeVentes === 'PIE' ? 'var(--surface)' : 'transparent',
-                      color: typeVentes === 'PIE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Secteurs
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-ventes-agences"
+                titre="Situation des Ventes par Agence"
+                nomFichier="ventes_par_agence"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'ventes_par_agence',
+                    ['Agence', 'Ville', 'Ventes USD', 'Ventes CDF', 'Total Consolidé USD', 'Comptant USD', 'Crédit USD', 'Transactions'],
+                    (execData.ventesJournalieres?.parAgence || []).map((v: any) => [
+                      v.agenceNom,
+                      v.ville,
+                      v.ventesUsd,
+                      v.ventesCdf,
+                      v.totalConsolideUsd,
+                      v.comptantUsd,
+                      v.creditUsd,
+                      v.nombreTransactions,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('ventes_agences')}
+                typeVue={typeVentes}
+                setTypeVue={setTypeVentes}
+                typesDisponibles={[
+                  { type: 'BAR', label: 'Barres' },
+                  { type: 'PIE', label: 'Secteurs' },
+                ]}
+              />
             </div>
 
             {/* Rendu interactif du graphique avec animation */}
@@ -747,6 +907,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 1.2 : ÉVOLUTION INTRA-JOURNALIÈRE DES FLUX */}
           <div
+            id="chart-card-evolution-ventes"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -771,64 +932,27 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'evolution_flux_intra_jour',
-                      ['Heure', 'Ventes Cumulées USD', 'Dépenses Cumulées USD'],
-                      (execData.courbeIntraJour || []).map((c: any) => [c.heure, c.ventesCumulUsd, c.depensesCumulUsd])
-                    )
-                  }
-                  title="Exporter les données de ce graphique en Excel"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('flux_intra_jour')}
-                  title="Imprimer ce diagramme spécifique"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypeEvolution('AREA')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeEvolution === 'AREA' ? 'var(--surface)' : 'transparent',
-                      color: typeEvolution === 'AREA' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Aires
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeEvolution('LINE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeEvolution === 'LINE' ? 'var(--surface)' : 'transparent',
-                      color: typeEvolution === 'LINE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Lignes
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-evolution-ventes"
+                titre="Rythme Intra-Journalier des Flux (08h - 18h)"
+                nomFichier="evolution_flux_intra_jour"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'evolution_flux_intra_jour',
+                    ['Heure', 'Ventes Cumulées USD', 'Dépenses Cumulées USD'],
+                    (execData.courbeIntraJour || []).map((c: any) => [c.heure, c.ventesCumulUsd, c.depensesCumulUsd])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('flux_intra_jour')}
+                typeVue={typeEvolution}
+                setTypeVue={setTypeEvolution}
+                typesDisponibles={[
+                  { type: 'AREA', label: 'Aires' },
+                  { type: 'LINE', label: 'Lignes' },
+                ]}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -937,6 +1061,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 2.1 : RÉPARTITION ANALYTIQUE DES CHARGES */}
           <div
+            id="chart-card-depenses-categories"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -961,68 +1086,31 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'structure_depenses_analytiques',
-                      ['Poste de Dépense', 'Montant USD', 'Pourcentage du Budget'],
-                      (execData.depensesJournalieres?.depensesCategories || []).map((c: any) => [
-                        c.categorie,
-                        c.montantUsd,
-                        `${c.pourcentage}%`,
-                      ])
-                    )
-                  }
-                  title="Exporter les dépenses vers Excel"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('depenses_analytiques')}
-                  title="Imprimer ce diagramme spécifique"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypeDepenses('PIE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeDepenses === 'PIE' ? 'var(--surface)' : 'transparent',
-                      color: typeDepenses === 'PIE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Secteurs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeDepenses('BAR')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeDepenses === 'BAR' ? 'var(--surface)' : 'transparent',
-                      color: typeDepenses === 'BAR' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Barres
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-depenses-categories"
+                titre="Structure Analytique des Dépenses"
+                nomFichier="structure_depenses_analytiques"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'structure_depenses_analytiques',
+                    ['Poste de Dépense', 'Montant USD', 'Pourcentage du Budget'],
+                    (execData.depensesJournalieres?.depensesCategories || []).map((c: any) => [
+                      c.categorie,
+                      c.montantUsd,
+                      `${c.pourcentage}%`,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('depenses_analytiques')}
+                typeVue={typeDepenses}
+                setTypeVue={setTypeDepenses}
+                typesDisponibles={[
+                  { type: 'PIE', label: 'Secteurs' },
+                  { type: 'BAR', label: 'Barres' },
+                ]}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1090,6 +1178,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 2.2 : COMPARATIF VENTES VS DÉPENSES PAR AGENCE */}
           <div
+            id="chart-card-benchmark-agences"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1114,35 +1203,26 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'benchmark_ventes_depenses',
-                      ['Agence', 'Ventes USD', 'Dépenses USD', 'Marge Nette USD'],
-                      (execData.comparatifVentesDepenses || []).map((b: any) => [
-                        b.agenceNom,
-                        b.ventesUsd,
-                        b.depensesUsd,
-                        b.margeNetteUsd,
-                      ])
-                    )
-                  }
-                  title="Exporter ce comparatif en Excel"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('benchmark_agences')}
-                  title="Imprimer ce diagramme spécifique"
-                >
-                  <Printer size={16} />
-                </button>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-benchmark-agences"
+                titre="Benchmark : Ventes vs Dépenses par Agence"
+                nomFichier="benchmark_ventes_depenses"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'benchmark_ventes_depenses',
+                    ['Agence', 'Ventes USD', 'Dépenses USD', 'Marge Nette USD'],
+                    (execData.comparatifVentesDepenses || []).map((b: any) => [
+                      b.agenceNom,
+                      b.ventesUsd,
+                      b.depensesUsd,
+                      b.margeNetteUsd,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('benchmark_agences')}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1208,6 +1288,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 3.1 : DISPONIBILITÉS EN CAISSE & BANQUES */}
           <div
+            id="chart-card-tresorerie-agences"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1232,69 +1313,32 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'tresorerie_par_agence',
-                      ['Agence', 'Caisses USD Équivalent', 'Banques USD', 'Total USD Disponible'],
-                      (execData.tresorerie?.comparatifTresorerie || []).map((t: any) => [
-                        t.agenceNom,
-                        t.caissesUsd,
-                        t.banquesUsd,
-                        t.totalUsd,
-                      ])
-                    )
-                  }
-                  title="Exporter la trésorerie en Excel"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('tresorerie_agences')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypeTresorerie('BAR')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeTresorerie === 'BAR' ? 'var(--surface)' : 'transparent',
-                      color: typeTresorerie === 'BAR' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Barres
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeTresorerie('PIE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeTresorerie === 'PIE' ? 'var(--surface)' : 'transparent',
-                      color: typeTresorerie === 'PIE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Secteurs
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-tresorerie-agences"
+                titre="Situation de la Trésorerie par Agence"
+                nomFichier="tresorerie_par_agence"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'tresorerie_par_agence',
+                    ['Agence', 'Caisses USD Équivalent', 'Banques USD', 'Total USD Disponible'],
+                    (execData.tresorerie?.comparatifTresorerie || []).map((t: any) => [
+                      t.agenceNom,
+                      t.caissesUsd,
+                      t.banquesUsd,
+                      t.totalUsd,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('tresorerie_agences')}
+                typeVue={typeTresorerie}
+                setTypeVue={setTypeTresorerie}
+                typesDisponibles={[
+                  { type: 'BAR', label: 'Barres' },
+                  { type: 'PIE', label: 'Secteurs' },
+                ]}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1371,6 +1415,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 3.2 : DÉCOMPOSITION MULTI-DEVISES (USD VS CDF) */}
           <div
+            id="chart-card-devises-caisse"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1395,33 +1440,24 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'composition_devises_caisse',
-                      ['Devise', 'Montant Nominal', 'Équivalent USD', 'Part du Total'],
-                      [
-                        ['Dollars Américains (USD)', `$${(execData.tresorerie?.totalCaisseUsd || 0).toLocaleString()}`, execData.tresorerie?.totalCaisseUsd || 0, '68%'],
-                        ['Francs Congolais (CDF)', `${(execData.tresorerie?.totalCaisseCdf || 0).toLocaleString()} FC`, Math.round((execData.tresorerie?.totalCaisseCdf || 0) / 2850), '32%'],
-                      ]
-                    )
-                  }
-                  title="Exporter la composition monétaire"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('devises_caisse')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-devises-caisse"
+                titre="Composition Bimonétaire (USD vs Francs Congolais)"
+                nomFichier="composition_devises_caisse"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'composition_devises_caisse',
+                    ['Devise', 'Montant Nominal', 'Équivalent USD', 'Part du Total'],
+                    [
+                      ['Dollars Américains (USD)', `$${(execData.tresorerie?.totalCaisseUsd || 0).toLocaleString()}`, execData.tresorerie?.totalCaisseUsd || 0, '68%'],
+                      ['Francs Congolais (CDF)', `${(execData.tresorerie?.totalCaisseCdf || 0).toLocaleString()} FC`, Math.round((execData.tresorerie?.totalCaisseCdf || 0) / 2850), '32%'],
+                    ]
+                  )
+                }
+                onPrintDossier={() => declencherImpression('devises_caisse')}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1479,6 +1515,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 4.1 : STATUTS DE PRÉSENCE (SCAN EMPREINTE) */}
           <div
+            id="chart-card-presences-repartition"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1503,68 +1540,31 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'distribution_presences_biometriques',
-                      ['Statut de Présence', 'Effectif Constaté', 'Pourcentage'],
-                      (execData.presences?.distributionPresences || []).map((d: any) => [
-                        d.name,
-                        d.value,
-                        `${Math.round((d.value / (execData.presences?.targetAgents?.length || 10)) * 100)}%`,
-                      ])
-                    )
-                  }
-                  title="Exporter le relevé des présences"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('presences_repartition')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypePresences('PIE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typePresences === 'PIE' ? 'var(--surface)' : 'transparent',
-                      color: typePresences === 'PIE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Donut
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypePresences('BAR')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typePresences === 'BAR' ? 'var(--surface)' : 'transparent',
-                      color: typePresences === 'BAR' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Barres
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-presences-repartition"
+                titre="Répartition des Présences (Scan Biométrique)"
+                nomFichier="distribution_presences_biometriques"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'distribution_presences_biometriques',
+                    ['Statut de Présence', 'Effectif Constaté', 'Pourcentage'],
+                    (execData.presences?.distributionPresences || []).map((d: any) => [
+                      d.name,
+                      d.value,
+                      `${Math.round((d.value / (execData.presences?.targetAgents?.length || 10)) * 100)}%`,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('presences_repartition')}
+                typeVue={typePresences}
+                setTypeVue={setTypePresences}
+                typesDisponibles={[
+                  { type: 'PIE', label: 'Donut' },
+                  { type: 'BAR', label: 'Barres' },
+                ]}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1633,6 +1633,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 4.2 : TAUX DE PRÉSENCE COMPARATIF PAR AGENCE */}
           <div
+            id="chart-card-taux-assiduite"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1657,38 +1658,29 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'taux_assiduite_par_agence',
-                      ['Agence', 'Effectif Total', 'Présents', 'Retards', 'Missions', 'Absents', 'Taux de Présence'],
-                      (execData.presences?.presencesParAgence || []).map((p: any) => [
-                        p.agenceNom,
-                        p.effectifTotal,
-                        p.presents,
-                        p.retards,
-                        p.missions,
-                        p.absents,
-                        `${p.tauxPresence}%`,
-                      ])
-                    )
-                  }
-                  title="Exporter les taux d'assiduité"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('taux_assiduite')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-taux-assiduite"
+                titre="Taux d'Assiduité par Succursale (%)"
+                nomFichier="taux_assiduite_par_agence"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'taux_assiduite_par_agence',
+                    ['Agence', 'Effectif Total', 'Présents', 'Retards', 'Missions', 'Absents', 'Taux de Présence'],
+                    (execData.presences?.presencesParAgence || []).map((p: any) => [
+                      p.agenceNom,
+                      p.effectifTotal,
+                      p.presents,
+                      p.retards,
+                      p.missions,
+                      p.absents,
+                      `${p.tauxPresence}%`,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('taux_assiduite')}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1738,6 +1730,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 5.1 : STATUT DU PARC ROULANT */}
           <div
+            id="chart-card-flotte-disponibilite"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1762,68 +1755,31 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'disponibilite_parc_vehicules',
-                      ['Statut Flotte', 'Nombre d Engins', 'Pourcentage'],
-                      (execData.parcVehicules?.distributionVehicules || []).map((d: any) => [
-                        d.name,
-                        d.value,
-                        `${Math.round((d.value / (execData.parcVehicules?.totalVehicules || 1)) * 100)}%`,
-                      ])
-                    )
-                  }
-                  title="Exporter le parc de véhicules en Excel"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('flotte_disponibilite')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => setTypeFlotte('PIE')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeFlotte === 'PIE' ? 'var(--surface)' : 'transparent',
-                      color: typeFlotte === 'PIE' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Donut
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTypeFlotte('BAR')}
-                    style={{
-                      padding: '3px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      border: 'none',
-                      borderRadius: 4,
-                      background: typeFlotte === 'BAR' ? 'var(--surface)' : 'transparent',
-                      color: typeFlotte === 'BAR' ? 'var(--accent-strong)' : 'var(--muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Barres
-                  </button>
-                </div>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-flotte-disponibilite"
+                titre="Disponibilité Opérationnelle de la Flotte"
+                nomFichier="disponibilite_parc_vehicules"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'disponibilite_parc_vehicules',
+                    ['Statut Flotte', 'Nombre d Engins', 'Pourcentage'],
+                    (execData.parcVehicules?.distributionVehicules || []).map((d: any) => [
+                      d.name,
+                      d.value,
+                      `${Math.round((d.value / (execData.parcVehicules?.totalVehicules || 1)) * 100)}%`,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('flotte_disponibilite')}
+                typeVue={typeFlotte}
+                setTypeVue={setTypeFlotte}
+                typesDisponibles={[
+                  { type: 'PIE', label: 'Donut' },
+                  { type: 'BAR', label: 'Barres' },
+                ]}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -1891,6 +1847,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 5.2 : CAPACITÉ DE TRANSPORT DE FRET PAR AGENCE */}
           <div
+            id="chart-card-capacite-fret"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -1915,36 +1872,27 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'capacite_fret_par_agence',
-                      ['Agence', 'Total Engins', 'Disponibles', 'Capacité Tonnes', 'Capacité Unités'],
-                      (execData.parcVehicules?.parcParAgence || []).map((p: any) => [
-                        p.agenceNom,
-                        p.total,
-                        p.disponibles,
-                        p.capaciteTonnes,
-                        p.capaciteSacs,
-                      ])
-                    )
-                  }
-                  title="Exporter les capacités de fret"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('capacite_fret')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-capacite-fret"
+                titre="Capacité d'Emport Fret par Succursale"
+                nomFichier="capacite_emport_fret_agences"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'capacite_fret_par_agence',
+                    ['Agence', 'Total Engins', 'Disponibles', 'Capacité Tonnes', 'Capacité Unités'],
+                    (execData.parcVehicules?.parcParAgence || []).map((p: any) => [
+                      p.agenceNom,
+                      p.total,
+                      p.disponibles,
+                      p.capaciteTonnes,
+                      p.capaciteSacs,
+                    ])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('capacite_fret')}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -2002,6 +1950,7 @@ export function AnalyticsChartsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: 18 }}>
           {/* DIAGRAMME 6.1 : RÉPARTITION PAR PRODUIT FABRIQUÉ */}
           <div
+            id="chart-card-production-produits"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -2026,30 +1975,8 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'production_par_produit_fini',
-                      ['Désignation Produit Fini', 'Quantité Fabriquée', 'Unité'],
-                      (prodData.diagramme?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'unités'])
-                    )
-                  }
-                  title="Exporter les volumes de production"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('production_produits')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6 }}>
+              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', background: 'var(--surface-2)', padding: 2, borderRadius: 6, marginRight: 4 }}>
                   <button
                     type="button"
                     onClick={() => setTypeProduction('BAR')}
@@ -2083,6 +2010,21 @@ export function AnalyticsChartsPage() {
                     Secteurs
                   </button>
                 </div>
+                <DiagrammeActions
+                  containerId="chart-card-production-produits"
+                  titre="Volumes Produits par Catégorie de Produit Fini"
+                  nomFichier="production_produits_finis"
+                  nomAgence={nomAgenceActive}
+                  onNotify={afficherToast}
+                  onExportExcel={() =>
+                    exporterTableauVersExcel(
+                      'production_par_produit_fini',
+                      ['Désignation Produit Fini', 'Quantité Fabriquée', 'Unité'],
+                      (prodData.diagramme?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'unités'])
+                    )
+                  }
+                  onPrintDossier={() => declencherImpression('production_produits')}
+                />
               </div>
             </div>
 
@@ -2151,6 +2093,7 @@ export function AnalyticsChartsPage() {
 
           {/* DIAGRAMME 6.2 : STATUT DES ORDRES DE TRAVAIL (OF) */}
           <div
+            id="chart-card-statut-ordres-prod"
             className="card chart-card"
             style={{
               background: 'var(--surface)',
@@ -2175,30 +2118,21 @@ export function AnalyticsChartsPage() {
                 </p>
               </div>
 
-              <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() =>
-                    exporterTableauVersExcel(
-                      'statuts_ordres_fabrication',
-                      ['Statut OF', 'Nombre d Ordres', 'Unité'],
-                      (prodData.diagramme?.vuesSecondaires?.[0]?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'ordres'])
-                    )
-                  }
-                  title="Exporter le carnet d'ordres"
-                >
-                  <FileXls size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => declencherImpression('statut_ordres_prod')}
-                  title="Imprimer ce diagramme"
-                >
-                  <Printer size={16} />
-                </button>
-              </div>
+              <DiagrammeActions
+                containerId="chart-card-statut-ordres-prod"
+                titre="Statut du Carnet d'Ordres de Fabrication"
+                nomFichier="statut_carnet_ordres_fabrication"
+                nomAgence={nomAgenceActive}
+                onNotify={afficherToast}
+                onExportExcel={() =>
+                  exporterTableauVersExcel(
+                    'statuts_ordres_fabrication',
+                    ['Statut OF', 'Nombre d Ordres', 'Unité'],
+                    (prodData.diagramme?.vuesSecondaires?.[0]?.series || []).map((s: any) => [s.label, s.valeur, s.unite || 'ordres'])
+                  )
+                }
+                onPrintDossier={() => declencherImpression('statut_ordres_prod')}
+              />
             </div>
 
             <div style={{ height: 260, width: '100%' }}>
@@ -2272,6 +2206,32 @@ export function AnalyticsChartsPage() {
           </div>
         </div>
       </div>
+
+      {/* Notification Toast de confirmation pour téléchargement / copie / impression */}
+      {toastMessage && (
+        <div
+          className="no-print"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            background: 'var(--text)',
+            color: 'var(--surface)',
+            padding: '10px 18px',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
     </div>
   )
 }

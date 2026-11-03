@@ -3126,6 +3126,296 @@ function escapeHtml(str: any): string {
     .replace(/'/g, '&#39;')
 }
 
+function renderSvgBarChartVentes(agences: any[]): string {
+  if (!agences || agences.length === 0) return ''
+  const maxVal = Math.max(...agences.map((a) => Number(a.totalConsolideUsd) || 0), 1000)
+  const chartW = 750
+  const chartH = 145
+  const padLeft = 45
+  const padRight = 20
+  const padTop = 22
+  const padBottom = 26
+  const usableW = chartW - padLeft - padRight
+  const usableH = chartH - padTop - padBottom
+
+  const barGroupW = usableW / agences.length
+  const singleBarW = Math.min(22, Math.max(10, (barGroupW - 16) / 3))
+
+  let barsSvg = ''
+  agences.forEach((ag, idx) => {
+    const groupX = padLeft + idx * barGroupW + (barGroupW - singleBarW * 3 - 6) / 2
+    const totalVal = Number(ag.totalConsolideUsd) || 0
+    const comptantVal = Number(ag.comptantUsd) || 0
+    const creditVal = Number(ag.creditUsd) || 0
+
+    const hTotal = Math.max(4, (totalVal / maxVal) * usableH)
+    const hComptant = Math.max(3, (comptantVal / maxVal) * usableH)
+    const hCredit = Math.max(3, (creditVal / maxVal) * usableH)
+
+    const yTotal = padTop + (usableH - hTotal)
+    const yComptant = padTop + (usableH - hComptant)
+    const yCredit = padTop + (usableH - hCredit)
+
+    barsSvg += `
+      <g>
+        <rect x="${groupX}" y="${yTotal}" width="${singleBarW}" height="${hTotal}" fill="#10b981" rx="2" />
+        <text x="${groupX + singleBarW / 2}" y="${yTotal - 4}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#10b981">$${Math.round(totalVal / 1000)}k</text>
+
+        <rect x="${groupX + singleBarW + 2}" y="${yComptant}" width="${singleBarW}" height="${hComptant}" fill="#0284c7" rx="2" />
+        <rect x="${groupX + (singleBarW + 2) * 2}" y="${yCredit}" width="${singleBarW}" height="${hCredit}" fill="#ea580c" rx="2" />
+
+        <text x="${groupX + singleBarW * 1.5}" y="${chartH - 8}" text-anchor="middle" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(ag.agenceNom?.slice(0, 15) || '')}</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Volume des Ventes par Agence</span>
+        <div style="display: flex; gap: 12px; font-size: 8.5px; font-weight: 600;">
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #10b981; border-radius: 2px;"></span> Total Consolidé</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #0284c7; border-radius: 2px;"></span> Comptant (Cash)</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #ea580c; border-radius: 2px;"></span> Crédit Client</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; max-height: 145px; display: block;">
+        <line x1="${padLeft}" y1="${padTop}" x2="${chartW - padRight}" y2="${padTop}" stroke="#e2e8f0" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${padTop + usableH / 2}" x2="${chartW - padRight}" y2="${padTop + usableH / 2}" stroke="#e2e8f0" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${chartH - padBottom}" x2="${chartW - padRight}" y2="${chartH - padBottom}" stroke="#cbd5e1" stroke-width="1.5"/>
+        ${barsSvg}
+      </svg>
+    </div>
+  `
+}
+
+function renderSvgBarChartDepenses(categories: any[], totalDepenses: number): string {
+  if (!categories || categories.length === 0) return ''
+  const chartW = 750
+  const rowH = 22
+  const chartH = Math.max(70, categories.length * rowH + 20)
+  const padLeft = 160
+  const padRight = 80
+  const usableW = chartW - padLeft - padRight
+  const maxMontant = Math.max(...categories.map((c) => Number(c.montantUsd) || 0), 100)
+
+  let rowsSvg = ''
+  categories.forEach((cat, idx) => {
+    const y = 10 + idx * rowH
+    const montant = Number(cat.montantUsd) || 0
+    const barW = Math.max(4, (montant / maxMontant) * usableW)
+    const pct = cat.pourcentage || Math.round((montant / (totalDepenses || 1)) * 100)
+
+    rowsSvg += `
+      <g>
+        <text x="${padLeft - 10}" y="${y + 11}" text-anchor="end" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(cat.categorie?.slice(0, 26) || '')}</text>
+        <rect x="${padLeft}" y="${y}" width="${usableW}" height="14" fill="#f1f5f9" rx="3" />
+        <rect x="${padLeft}" y="${y}" width="${barW}" height="14" fill="#dc2626" rx="3" />
+        <text x="${padLeft + barW + 8}" y="${y + 11}" font-size="8.5" font-weight="700" fill="#dc2626">$${montant.toLocaleString('fr-FR')} (${pct}%)</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Répartition Analytique des Dépenses</span>
+        <span style="font-size: 8.5px; font-weight: 700; color: #dc2626;">Total Charges : $${totalDepenses.toLocaleString('fr-FR')} USD</span>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; display: block;">
+        ${rowsSvg}
+      </svg>
+    </div>
+  `
+}
+
+function renderSvgBarChartTresorerie(tresorerieAgences: any[]): string {
+  if (!tresorerieAgences || tresorerieAgences.length === 0) return ''
+  const maxVal = Math.max(...tresorerieAgences.map((t) => Number(t.totalUsdEquiv) || 0), 1000)
+  const chartW = 750
+  const chartH = 145
+  const padLeft = 45
+  const padRight = 20
+  const padTop = 22
+  const padBottom = 26
+  const usableW = chartW - padLeft - padRight
+  const usableH = chartH - padTop - padBottom
+
+  const barGroupW = usableW / tresorerieAgences.length
+  const singleBarW = Math.min(26, Math.max(12, (barGroupW - 16) / 2))
+
+  let barsSvg = ''
+  tresorerieAgences.forEach((t, idx) => {
+    const groupX = padLeft + idx * barGroupW + (barGroupW - singleBarW * 2 - 4) / 2
+    const caisseEq = Number(t.caisseUsd || 0) + (Number(t.caisseCdf || 0) / 2850)
+    const banqueUsd = Number(t.banqueUsd || 0)
+
+    const hCaisse = Math.max(4, (caisseEq / maxVal) * usableH)
+    const hBanque = Math.max(4, (banqueUsd / maxVal) * usableH)
+
+    const yCaisse = padTop + (usableH - hCaisse)
+    const yBanque = padTop + (usableH - hBanque)
+
+    barsSvg += `
+      <g>
+        <rect x="${groupX}" y="${yCaisse}" width="${singleBarW}" height="${hCaisse}" fill="#0284c7" rx="2" />
+        <text x="${groupX + singleBarW / 2}" y="${yCaisse - 4}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#0284c7">$${Math.round(caisseEq / 1000)}k</text>
+
+        <rect x="${groupX + singleBarW + 3}" y="${yBanque}" width="${singleBarW}" height="${hBanque}" fill="#6366f1" rx="2" />
+        <text x="${groupX + singleBarW + 3 + singleBarW / 2}" y="${yBanque - 4}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#6366f1">$${Math.round(banqueUsd / 1000)}k</text>
+
+        <text x="${groupX + singleBarW + 1}" y="${chartH - 8}" text-anchor="middle" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(t.agenceNom?.slice(0, 15) || '')}</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Caisse Physique vs Comptes Bancaires</span>
+        <div style="display: flex; gap: 12px; font-size: 8.5px; font-weight: 600;">
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #0284c7; border-radius: 2px;"></span> Caisse (USD Eq)</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #6366f1; border-radius: 2px;"></span> Comptes Bancaires</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; max-height: 145px; display: block;">
+        <line x1="${padLeft}" y1="${padTop}" x2="${chartW - padRight}" y2="${padTop}" stroke="#e2e8f0" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${padTop + usableH / 2}" x2="${chartW - padRight}" y2="${padTop + usableH / 2}" stroke="#e2e8f0" stroke-dasharray="3 3"/>
+        <line x1="${padLeft}" y1="${chartH - padBottom}" x2="${chartW - padRight}" y2="${chartH - padBottom}" stroke="#cbd5e1" stroke-width="1.5"/>
+        ${barsSvg}
+      </svg>
+    </div>
+  `
+}
+
+function renderSvgBarChartPresences(presencesAgences: any[]): string {
+  if (!presencesAgences || presencesAgences.length === 0) return ''
+  const chartW = 750
+  const rowH = 24
+  const chartH = Math.max(70, presencesAgences.length * rowH + 20)
+  const padLeft = 140
+  const padRight = 80
+  const usableW = chartW - padLeft - padRight
+
+  let rowsSvg = ''
+  presencesAgences.forEach((p, idx) => {
+    const y = 10 + idx * rowH
+    const total = Math.max(1, p.effectifTotal || 1)
+    const presW = (p.presents / total) * usableW
+    const retW = (p.retards / total) * usableW
+    const absW = (p.absents / total) * usableW
+
+    rowsSvg += `
+      <g>
+        <text x="${padLeft - 10}" y="${y + 12}" text-anchor="end" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(p.agenceNom?.slice(0, 22) || '')}</text>
+        <rect x="${padLeft}" y="${y}" width="${presW}" height="14" fill="#16a34a" rx="2" />
+        <rect x="${padLeft + presW}" y="${y}" width="${retW}" height="14" fill="#f59e0b" />
+        <rect x="${padLeft + presW + retW}" y="${y}" width="${absW}" height="14" fill="#ef4444" rx="2" />
+        <text x="${padLeft + usableW + 8}" y="${y + 12}" font-size="8.5" font-weight="700" fill="#0284c7">${p.tauxPresence}%</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Assiduité & Pointages Biométriques</span>
+        <div style="display: flex; gap: 12px; font-size: 8.5px; font-weight: 600;">
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #16a34a; border-radius: 2px;"></span> Présents</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #f59e0b; border-radius: 2px;"></span> Retards</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #ef4444; border-radius: 2px;"></span> Absents</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; display: block;">
+        ${rowsSvg}
+      </svg>
+    </div>
+  `
+}
+
+function renderSvgBarChartFlotte(parcAgences: any[]): string {
+  if (!parcAgences || parcAgences.length === 0) return ''
+  const chartW = 750
+  const rowH = 24
+  const chartH = Math.max(70, parcAgences.length * rowH + 20)
+  const padLeft = 140
+  const padRight = 80
+  const usableW = chartW - padLeft - padRight
+
+  let rowsSvg = ''
+  parcAgences.forEach((f, idx) => {
+    const y = 10 + idx * rowH
+    const total = Math.max(1, f.total || 1)
+    const dispoW = (f.disponibles / total) * usableW
+    const courseW = (f.enCourse / total) * usableW
+    const maintW = (f.enMaintenance / total) * usableW
+
+    rowsSvg += `
+      <g>
+        <text x="${padLeft - 10}" y="${y + 12}" text-anchor="end" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(f.agenceNom?.slice(0, 22) || '')}</text>
+        <rect x="${padLeft}" y="${y}" width="${dispoW}" height="14" fill="#16a34a" rx="2" />
+        <rect x="${padLeft + dispoW}" y="${y}" width="${courseW}" height="14" fill="#0284c7" />
+        <rect x="${padLeft + dispoW + courseW}" y="${y}" width="${maintW}" height="14" fill="#dc2626" rx="2" />
+        <text x="${padLeft + usableW + 8}" y="${y + 12}" font-size="8.5" font-weight="700" fill="#334155">${f.disponibles}/${f.total} dispo</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Statut Opérationnel de la Flotte</span>
+        <div style="display: flex; gap: 12px; font-size: 8.5px; font-weight: 600;">
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #16a34a; border-radius: 2px;"></span> Disponibles</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #0284c7; border-radius: 2px;"></span> En Course / Convoi</span>
+          <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 9px; height: 9px; background: #dc2626; border-radius: 2px;"></span> En Maintenance</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; display: block;">
+        ${rowsSvg}
+      </svg>
+    </div>
+  `
+}
+
+function renderSvgBarChartProduction(series: any[]): string {
+  if (!series || series.length === 0) return ''
+  const maxVal = Math.max(...series.map((s) => Number(s.valeur) || 0), 10)
+  const chartW = 750
+  const rowH = 22
+  const chartH = Math.max(65, series.length * rowH + 20)
+  const padLeft = 160
+  const padRight = 80
+  const usableW = chartW - padLeft - padRight
+
+  let rowsSvg = ''
+  series.forEach((s, idx) => {
+    const y = 10 + idx * rowH
+    const val = Number(s.valeur) || 0
+    const barW = Math.max(4, (val / maxVal) * usableW)
+
+    rowsSvg += `
+      <g>
+        <text x="${padLeft - 10}" y="${y + 11}" text-anchor="end" font-size="8.5" font-weight="600" fill="#334155">${escapeHtml(s.label?.slice(0, 26) || '')}</text>
+        <rect x="${padLeft}" y="${y}" width="${usableW}" height="13" fill="#f1f5f9" rx="3" />
+        <rect x="${padLeft}" y="${y}" width="${barW}" height="13" fill="#0284c7" rx="3" />
+        <text x="${padLeft + barW + 8}" y="${y + 11}" font-size="8.5" font-weight="700" fill="#0284c7">${val.toLocaleString('fr-FR')} ${escapeHtml(s.unite || '')}</text>
+      </g>
+    `
+  })
+
+  return `
+    <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; page-break-inside: avoid;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 9.5px;">
+        <span style="font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Diagramme Visuel : Volume de Transformation Usine</span>
+      </div>
+      <svg viewBox="0 0 ${chartW} ${chartH}" style="width: 100%; height: auto; display: block;">
+        ${rowsSvg}
+      </svg>
+    </div>
+  `
+}
+
 export function renderDossierDiagrammesHtml(
   data: any,
   productionData: any,
@@ -3153,12 +3443,13 @@ export function renderDossierDiagrammesHtml(
   <meta charset="utf-8"/>
   <title>Dossier Diagrammes & Analyses - ${escapeHtml(agenceNom)}</title>
   <style>
-    @page { size: A4 landscape; margin: 12mm; }
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 11px; color: #0f172a; margin: 0; padding: 16px; background: #fff; }
     .print-bar { position: sticky; top: 0; z-index: 1000; background: #0f172a; color: #fff; padding: 10px 18px; margin: -16px -16px 16px -16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
     .print-btn { background: #0284c7; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; }
-    .grid-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
-    .kpi-box { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; background: #f8fafc; }
+    .grid-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+    .kpi-box { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; background: #f8fafc; }
     .kpi-title { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
     .kpi-val { font-size: 17px; font-weight: 900; color: #0f172a; }
     .kpi-sub { font-size: 9px; color: #475569; margin-top: 2px; }
@@ -3186,7 +3477,10 @@ export function renderDossierDiagrammesHtml(
       <strong>Dossier Graphique Décisionnel — ${escapeHtml(agenceNom)}</strong>
       <span style="font-size: 11px; opacity: 0.8; margin-left: 10px;">Période : ${escapeHtml(periodeLabel)}</span>
     </div>
-    <button class="print-btn" onclick="window.print()">Imprimer en A4 Paysage (PDF)</button>
+    <div style="display: flex; gap: 8px;">
+      <button class="print-btn" onclick="window.print()">🖨️ Imprimer en A4 Paysage (PDF)</button>
+      <button class="print-btn" style="background: #475569;" onclick="window.close()">Fermer</button>
+    </div>
   </div>
 
   ${watermarkHtml}
@@ -3225,6 +3519,8 @@ export function renderDossierDiagrammesHtml(
       <div class="kpi-sub">Factures & reçus validés</div>
     </div>
   </div>
+
+  ${renderSvgBarChartVentes(exec.ventesJournalieres?.parAgence || [])}
 
   <table class="table-data">
     <thead>
@@ -3266,6 +3562,8 @@ export function renderDossierDiagrammesHtml(
     <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Charges : $${Number(exec.depensesJournalieres?.totalDepensesUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
   </div>
 
+  ${renderSvgBarChartDepenses(exec.depensesJournalieres?.depensesCategories || [], Number(exec.depensesJournalieres?.totalDepensesUsd || 0))}
+
   <table class="table-data">
     <thead>
       <tr>
@@ -3298,6 +3596,8 @@ export function renderDossierDiagrammesHtml(
     <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Trésorerie : $${Number(exec.tresorerie?.totalTresorerieUsd || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} USD</span>
   </div>
 
+  ${renderSvgBarChartTresorerie(exec.tresorerie?.tresorerieParAgence || [])}
+
   <table class="table-data">
     <thead>
       <tr>
@@ -3329,6 +3629,8 @@ export function renderDossierDiagrammesHtml(
     <span style="font-size: 10px; font-weight: 600; color: #64748b;">Taux Moyen : ${exec.presences?.tauxPresence || 0}%</span>
   </div>
 
+  ${renderSvgBarChartPresences(exec.presences?.presencesParAgence || [])}
+
   <table class="table-data">
     <thead>
       <tr>
@@ -3359,6 +3661,8 @@ export function renderDossierDiagrammesHtml(
     <span>5. Disponibilité de la Flotte de Transport & Capacité de Fret</span>
     <span style="font-size: 10px; font-weight: 600; color: #64748b;">Total Véhicules : ${exec.parcVehicules?.total || 0}</span>
   </div>
+
+  ${renderSvgBarChartFlotte(exec.parcVehicules?.parcParAgence || [])}
 
   <table class="table-data">
     <thead>
@@ -3393,6 +3697,9 @@ export function renderDossierDiagrammesHtml(
       <span>6. Production Industrielle & Transformation Usine</span>
       <span style="font-size: 10px; font-weight: 600; color: #64748b;">Rendement Usine</span>
     </div>
+
+    ${renderSvgBarChartProduction(prod.diagramme.series)}
+
     <table class="table-data">
       <thead>
         <tr>

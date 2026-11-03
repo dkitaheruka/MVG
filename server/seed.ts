@@ -33,7 +33,7 @@ import type {
   DbAppareil,
   DbParametresFiscauxSociaux,
   DbPointageAgent,
-} from './db'
+} from './db.ts'
 
 export const agences: DbAgence[] = [
   { id: 1, nom: 'Siège Social Goma', ville: 'Goma', adresse: 'Avenue du 20 Mai, Quartier Les Volcans', estSiege: true },
