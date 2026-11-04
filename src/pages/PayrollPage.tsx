@@ -28,11 +28,13 @@ import {
   Buildings,
   Lightning,
   MagnifyingGlass,
+  ArrowsOut,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
 import { NewEtatBesoinModal } from '../components/NewEtatBesoinModal'
+import { BornePointagePermanent } from '../components/BornePointagePermanent'
 
 export function PayrollPage() {
   const queryClient = useQueryClient()
@@ -1362,12 +1364,21 @@ export function PayrollPage() {
               </button>
               <button
                 type="button"
-                className="secondary-action"
+                className="primary-action"
                 onClick={() => setShowScanBiometriqueModal(true)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', borderColor: 'var(--accent-strong)', color: 'var(--accent-strong)' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+                  boxShadow: '0 2px 8px rgba(6, 182, 212, 0.35)',
+                }}
+                title="Lancer la borne de pointage permanent (scan continu sans sélection manuelle requise)"
               >
-                <Fingerprint size={16} />
-                Scanner Empreinte
+                <Fingerprint size={18} weight="bold" />
+                Borne Scan Permanent (Kiosque)
               </button>
               <button
                 type="button"
@@ -1387,6 +1398,59 @@ export function PayrollPage() {
                 Régulariser Présence
               </button>
             </div>
+          </div>
+
+          {/* BANDEAU BORNE EN ÉCOUTE PERMANENTE SANS SÉLECTION */}
+          <div
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderLeft: '4px solid #06b6d4',
+              borderRadius: 8,
+              padding: '11px 16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: '#10b981',
+                  boxShadow: '0 0 10px #10b981',
+                  display: 'inline-block',
+                }}
+              />
+              <div>
+                <strong style={{ fontSize: '0.88rem', color: 'var(--text)' }}>
+                  Pointage Autonome en Écoute Continue Actif
+                </strong>
+                <p style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                  Chaque agent présente simplement son empreinte, badge RFID ou QR code. L'identification et le sens (Arrivée / Départ) sont 100% automatiques sans opérateur.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => setShowScanBiometriqueModal(true)}
+              style={{
+                fontSize: '0.8rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+              }}
+            >
+              <ArrowsOut size={16} />
+              Ouvrir la Borne Plein Écran
+            </button>
           </div>
 
           {/* INDICATEURS CLÉS (KPIS) POUR LA DATE SÉLECTIONNÉE */}
@@ -2961,214 +3025,12 @@ export function PayrollPage() {
         </div>
       )}
 
-      {/* MODAL TERMINAL BIOMÉTRIQUE DE POINTAGE (ENTRÉE & SORTIE) */}
-      {showScanBiometriqueModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 520 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Fingerprint size={26} weight="bold" style={{ color: '#06b6d4' }} />
-                <div>
-                  <h3 style={{ margin: 0, color: 'var(--text)', fontSize: '1.15rem' }}>
-                    Terminal Biométrique de Pointage
-                  </h3>
-                  <small style={{ color: 'var(--muted)' }}>
-                    Émargement électronique certifié (Entrée / Sortie)
-                  </small>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => {
-                  setShowScanBiometriqueModal(false)
-                  setDernierScanResult(null)
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Sélecteur de type de scan : AUTO vs ENTRÉE vs SORTIE */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                Type d'Émargement Biométrique :
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, background: 'var(--surface-2)', padding: 4, borderRadius: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setScanBiometriqueType('AUTO')}
-                  style={{
-                    padding: '8px 6px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    background: scanBiometriqueType === 'AUTO' ? 'var(--surface)' : 'transparent',
-                    color: scanBiometriqueType === 'AUTO' ? 'var(--accent-strong)' : 'var(--muted)',
-                    cursor: 'pointer',
-                    boxShadow: scanBiometriqueType === 'AUTO' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                  }}
-                >
-                  Détection Auto
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScanBiometriqueType('ENTREE')}
-                  style={{
-                    padding: '8px 6px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    background: scanBiometriqueType === 'ENTREE' ? '#dcfce7' : 'transparent',
-                    color: scanBiometriqueType === 'ENTREE' ? '#16a34a' : 'var(--muted)',
-                    cursor: 'pointer',
-                    boxShadow: scanBiometriqueType === 'ENTREE' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                  }}
-                >
-                  Arrivée (Entrée)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScanBiometriqueType('SORTIE')}
-                  style={{
-                    padding: '8px 6px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: 'none',
-                    background: scanBiometriqueType === 'SORTIE' ? '#fee2e2' : 'transparent',
-                    color: scanBiometriqueType === 'SORTIE' ? '#dc2626' : 'var(--muted)',
-                    cursor: 'pointer',
-                    boxShadow: scanBiometriqueType === 'SORTIE' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                  }}
-                >
-                  Départ (Sortie)
-                </button>
-              </div>
-            </div>
-
-            {/* Sélecteur de collaborateur */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                Collaborateur qui pose son empreinte :
-              </label>
-              <select
-                value={biometriqueScanAgentId}
-                onChange={(e) => {
-                  setBiometriqueScanAgentId(e.target.value ? Number(e.target.value) : '')
-                  setDernierScanResult(null)
-                }}
-                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '0.88rem' }}
-              >
-                <option value="">-- Choisir un collaborateur --</option>
-                {(agentsQuery.data || []).map((ag: any) => (
-                  <option key={ag.id} value={ag.id}>
-                    {ag.matricule} - {ag.nom} ({ag.poste}) {ag.biometrieEnregistree ? '✓ [Biométrie Enrôlée]' : '⚠ [Non enrôlé]'}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Zone visuelle de scan optique */}
-            <div
-              style={{
-                background: dernierScanResult ? 'rgba(16, 185, 129, 0.08)' : 'var(--surface-2)',
-                border: `2px dashed ${dernierScanResult ? '#10b981' : scanBiometriqueMutation.isPending ? '#06b6d4' : 'var(--border)'}`,
-                borderRadius: 12,
-                padding: '20px 16px',
-                textAlign: 'center',
-                marginBottom: 16,
-              }}
-            >
-              <div
-                style={{
-                  width: 76,
-                  height: 76,
-                  borderRadius: '50%',
-                  background: 'var(--surface)',
-                  border: `2px solid ${dernierScanResult ? '#10b981' : scanBiometriqueMutation.isPending ? '#06b6d4' : '#06b6d4'}`,
-                  margin: '0 auto 10px',
-                  display: 'grid',
-                  placeItems: 'center',
-                  boxShadow: scanBiometriqueMutation.isPending ? '0 0 16px rgba(6, 182, 212, 0.4)' : 'none',
-                }}
-              >
-                {dernierScanResult ? (
-                  <CheckCircle size={40} weight="fill" style={{ color: '#10b981' }} />
-                ) : (
-                  <Fingerprint size={40} style={{ color: '#06b6d4' }} />
-                )}
-              </div>
-
-              {dernierScanResult ? (
-                <div>
-                  <strong style={{ color: '#10b981', display: 'block', fontSize: '0.98rem' }}>
-                    {dernierScanResult.message}
-                  </strong>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 4 }}>
-                    Agent : <strong>{dernierScanResult.agent?.nom}</strong> ({dernierScanResult.agent?.matricule})
-                    <br />
-                    Concordance minutie : <strong>{dernierScanResult.pointage?.empreinteMatchScore || 98}%</strong>
-                    {dernierScanResult.pointage?.heureArrivee && (
-                      <span> • Arrivée : {dernierScanResult.pointage.heureArrivee}</span>
-                    )}
-                    {dernierScanResult.pointage?.heureDepart && (
-                      <span> • Sortie : {dernierScanResult.pointage.heureDepart}</span>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <strong style={{ fontSize: '0.92rem', display: 'block', color: 'var(--text)' }}>
-                    Capteur Biométrique Prêt
-                  </strong>
-                  <small style={{ color: 'var(--muted)' }}>
-                    Posez le doigt sur le lecteur optique pour émarger en temps réel.
-                  </small>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() => {
-                  setShowScanBiometriqueModal(false)
-                  setDernierScanResult(null)
-                }}
-              >
-                Fermer
-              </button>
-              <button
-                type="button"
-                className="primary-action"
-                disabled={!biometriqueScanAgentId || scanBiometriqueMutation.isPending}
-                onClick={() => {
-                  if (biometriqueScanAgentId) {
-                    scanBiometriqueMutation.mutate({
-                      agentId: Number(biometriqueScanAgentId),
-                      typeScan: scanBiometriqueType,
-                    })
-                  }
-                }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-              >
-                <Fingerprint size={16} />
-                {scanBiometriqueMutation.isPending
-                  ? 'Vérification biométrique...'
-                  : scanBiometriqueType === 'ENTREE'
-                  ? 'Scanner Empreinte d Arrivée'
-                  : scanBiometriqueType === 'SORTIE'
-                  ? 'Scanner Empreinte de Sortie'
-                  : 'Scanner Empreinte'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* BORNE DE POINTAGE PERMANENT & SCAN EN CONTINU (AUTONOME SANS SÉLECTION MANUELLE) */}
+      <BornePointagePermanent
+        isOpen={showScanBiometriqueModal}
+        onClose={() => setShowScanBiometriqueModal(false)}
+        defaultAgenceId={agenceId}
+      />
 
       {/* DEMANDE DE FONDS / ÉTAT DE BESOIN RH & PAIE */}
       <NewEtatBesoinModal

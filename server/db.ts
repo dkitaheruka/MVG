@@ -323,6 +323,8 @@ export interface DbAgent {
   dateEnrolementBiometrique?: string
   doigtEnrole?: string
   qualiteEmpreinte?: number
+  badgeRfid?: string
+  codeQr?: string
 }
 
 export interface DbAvanceSalaire {

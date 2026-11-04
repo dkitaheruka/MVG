@@ -42,9 +42,11 @@ import {
   Globe,
   Printer,
   FilePdf,
+  ArrowsOut,
 } from '@phosphor-icons/react'
 import { apiRequest } from '../lib/api'
 import { useAppStore } from '../stores/appStore'
+import { BornePointagePermanent } from './BornePointagePermanent'
 
 const COLOR_PALETTE = {
   emerald: '#10b981',
@@ -67,6 +69,8 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
 
   // État local du module de pointage par empreinte digitale
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('')
+  const [showKioskModal, setShowKioskModal] = useState(false)
+  const [quickIdentifiant, setQuickIdentifiant] = useState('')
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{
     success: boolean
@@ -89,16 +93,17 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
     refetchInterval: 30000, // Rafraîchissement automatique toutes les 30s
   })
 
-  // Mutation pour la simulation de scan biométrique d'empreinte digitale
+  // Mutation pour la simulation de scan biométrique d'empreinte digitale autonome
   const scanMutation = useMutation({
-    mutationFn: (agentId: number) => {
+    mutationFn: (payload: { agentId?: number; identifiant?: string; modePointage?: string }) => {
       return apiRequest<any>('/api/rh/pointages/scan-empreinte', {
         method: 'POST',
         token,
         body: JSON.stringify({
-          agentId,
-          modePointage: 'EMPREINTE_DIGITALE',
+          ...payload,
+          modePointage: payload.modePointage || 'EMPREINTE_DIGITALE',
           terminalId: 'BIO-SCAN-OPTIQUE-01',
+          typeScan: 'AUTO',
         }),
       })
     },
@@ -109,31 +114,40 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
         score: res.pointage?.empreinteMatchScore,
         heure: res.pointage?.heureArrivee || res.pointage?.heureDepart,
         statut: res.pointage?.statut,
-        agentNom: res.pointage?.agentNom,
+        agentNom: res.pointage?.agentNom || res.agent?.nom,
       })
       setIsScanning(false)
+      setQuickIdentifiant('')
       // Rafraîchir immédiatement les données du dashboard et des pointages
       queryClient.invalidateQueries({ queryKey: ['dashboard-direction-executive'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-service-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['kiosk-pointages'] })
     },
     onError: (err: any) => {
       setScanResult({
         success: false,
-        message: err.message || 'Échec du scan biométrique. Veuillez réessayer.',
+        message: err.message || 'Échec de l identification biométrique. Veuillez réessayer.',
       })
       setIsScanning(false)
     },
   })
 
-  const handleTriggerFingerprintScan = () => {
-    if (!selectedAgentId) return
+  const handleTriggerFingerprintScan = (idOrIdentifiant?: number | string) => {
     setIsScanning(true)
     setScanResult(null)
+    const target = idOrIdentifiant || selectedAgentId || quickIdentifiant
 
-    // Simulation d'analyse optique (1 seconde de scan réaliste)
+    // Simulation d'analyse optique (700ms de scan réaliste)
     setTimeout(() => {
-      scanMutation.mutate(Number(selectedAgentId))
-    }, 1100)
+      if (typeof target === 'number') {
+        scanMutation.mutate({ agentId: target })
+      } else if (target) {
+        scanMutation.mutate({ identifiant: String(target) })
+      } else {
+        const first = presences?.agentsDisponibles?.[0]
+        if (first) scanMutation.mutate({ agentId: first.id })
+      }
+    }, 700)
   }
 
   const ventes = data?.ventesJournalieres
@@ -620,44 +634,111 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
             }}
           >
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
                 <strong style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Fingerprint size={18} style={{ color: '#06b6d4' }} />
-                  Borne Biométrique d Empreinte Digitale
+                  Borne Biométrique en Scan Continu
                 </strong>
-                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#10b981', background: '#10b98118', padding: '2px 8px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                  Capteur Actif
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#10b981', background: '#10b98118', padding: '2px 8px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                    Écoute Active
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowKioskModal(true)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                    title="Ouvrir la borne de pointage autonome en mode plein écran"
+                  >
+                    <ArrowsOut size={13} />
+                    Kiosque
+                  </button>
+                </div>
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--muted)', margin: 0 }}>
-                Sélectionnez un agent pour simuler le scan immédiat de son empreinte digitale sur le terminal d agence.
+                Pointage instantané sans sélection préalable : posez le doigt, présentez un badge RFID ou scannez le QR code.
               </p>
 
-              <div style={{ marginTop: 14 }}>
-                <label style={{ fontSize: '0.78rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                  Sélectionner un collaborateur :
-                </label>
-                <select
-                  value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
+              {/* CHAMP RAPIDE DE DOUCHETTE OU BADGE RFID */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (quickIdentifiant.trim()) {
+                    handleTriggerFingerprintScan(quickIdentifiant.trim())
+                  }
+                }}
+                style={{ display: 'flex', gap: 6, marginTop: 12 }}
+              >
+                <input
+                  type="text"
+                  value={quickIdentifiant}
+                  onChange={(e) => setQuickIdentifiant(e.target.value)}
+                  placeholder="Scanner badge RFID, QR ou matricule..."
                   style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 8,
+                    flex: 1,
+                    padding: '7px 10px',
+                    borderRadius: 6,
                     border: '1px solid var(--border)',
                     background: 'var(--surface)',
                     color: 'var(--text)',
-                    fontSize: '0.82rem',
+                    fontSize: '0.78rem',
                   }}
+                />
+                <button
+                  type="submit"
+                  disabled={!quickIdentifiant.trim() || isScanning}
+                  className="secondary-action"
+                  style={{ padding: '6px 12px', fontSize: '0.76rem', fontWeight: 700 }}
                 >
-                  <option value="">-- Choisir un agent du registre --</option>
-                  {(presences?.agentsDisponibles || []).map((ag: any) => (
-                    <option key={ag.id} value={ag.id}>
-                      {ag.matricule} - {ag.nom} ({ag.poste} • {ag.agenceNom}) {ag.dejaPointe ? '[Pointé]' : '[En attente]'}
-                    </option>
+                  Valider
+                </button>
+              </form>
+
+              {/* TOUCHES DIRECTES 1-CLIC DES AGENTS */}
+              <div style={{ marginTop: 12 }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                  Touches Rapides 1-Clic Collaborateurs :
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 110, overflowY: 'auto' }}>
+                  {(presences?.agentsDisponibles || []).slice(0, 8).map((ag: any) => (
+                    <button
+                      key={ag.id}
+                      type="button"
+                      onClick={() => handleTriggerFingerprintScan(ag.id)}
+                      disabled={isScanning}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border)',
+                        background: ag.dejaPointe ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface)',
+                        color: ag.dejaPointe ? '#10b981' : 'var(--text)',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: isScanning ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                      }}
+                      title={`Émarger immédiatement pour ${ag.nom}`}
+                    >
+                      <Fingerprint size={13} style={{ color: ag.dejaPointe ? '#10b981' : '#06b6d4' }} />
+                      <span>{ag.nom.split(' ')[0]}</span>
+                      <small style={{ fontSize: '0.64rem', opacity: 0.8 }}>({ag.matricule})</small>
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
 
               {/* RÉSULTAT DU SCAN BIOMÉTRIQUE */}
@@ -674,24 +755,25 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: scanResult.success ? '#10b981' : '#ef4444' }}>
                     {scanResult.success ? <CheckCircle size={18} /> : <Warning size={18} />}
-                    {scanResult.success ? 'Empreinte Digitale Conforme' : 'Erreur de Lecture'}
+                    {scanResult.success ? (scanResult.statut === 'RETARD' ? 'Arrivée (Retard Constaté)' : 'Émargement Conforme') : 'Erreur de Lecture'}
                   </div>
-                  <p style={{ margin: '4px 0 0', color: 'var(--text)' }}>{scanResult.message}</p>
+                  <p style={{ margin: '4px 0 0', color: 'var(--text)', fontWeight: 600 }}>{scanResult.agentNom}</p>
+                  <p style={{ margin: '2px 0 0', color: 'var(--muted)', fontSize: '0.75rem' }}>{scanResult.message}</p>
                   {scanResult.score && (
                     <div style={{ marginTop: 6, display: 'flex', gap: 12, fontSize: '0.72rem', color: 'var(--muted)' }}>
-                      <span>Score correspondance : <strong>{scanResult.score}%</strong></span>
-                      <span>Heure enregistrée : <strong>{scanResult.heure}</strong></span>
+                      <span>Score : <strong>{scanResult.score}%</strong></span>
+                      <span>Heure : <strong>{scanResult.heure}</strong></span>
                     </div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* BOUTON D'ACTION SCAN AVEC ANIMATION */}
+            {/* BOUTON D'ACTION SCAN RAPIDE 1-TOUCH */}
             <button
               type="button"
-              onClick={handleTriggerFingerprintScan}
-              disabled={!selectedAgentId || isScanning}
+              onClick={() => handleTriggerFingerprintScan()}
+              disabled={isScanning}
               className="primary-action"
               style={{
                 width: '100%',
@@ -703,14 +785,13 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                cursor: selectedAgentId && !isScanning ? 'pointer' : 'not-allowed',
-                opacity: selectedAgentId ? 1 : 0.6,
+                cursor: isScanning ? 'not-allowed' : 'pointer',
                 background: isScanning ? 'var(--accent-soft)' : undefined,
                 color: isScanning ? 'var(--accent-strong)' : undefined,
               }}
             >
               <Fingerprint size={20} className={isScanning ? 'pulse' : ''} />
-              <span>{isScanning ? 'Scan biométrique en cours...' : 'Scanner l Empreinte Digitale'}</span>
+              <span>{isScanning ? 'Analyse biométrique en cours...' : 'Poser le Doigt sur le Capteur (1-Touch)'}</span>
             </button>
           </div>
 
@@ -1041,6 +1122,13 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* BORNE DE POINTAGE PERMANENT PLEIN ÉCRAN */}
+      <BornePointagePermanent
+        isOpen={showKioskModal}
+        onClose={() => setShowKioskModal(false)}
+        defaultAgenceId={selectedAgenceId !== 'CONSOLIDE' ? selectedAgenceId : undefined}
+      />
     </div>
   )
 }

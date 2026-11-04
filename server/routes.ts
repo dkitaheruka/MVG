@@ -1425,22 +1425,71 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   const currentUser = getUserFromToken(req)
   if (!currentUser) return res.status(401).json({ message: 'Non autorisé' })
 
-  const { agentId, empreinteHash, modePointage, empreinteMatchScore, terminalId, temperature, observations, typeScan } = req.body
-  
+  const {
+    agentId,
+    identifiant,
+    matricule,
+    badgeRfid,
+    codeQr,
+    empreinteHash,
+    modePointage,
+    empreinteMatchScore,
+    terminalId,
+    temperature,
+    observations,
+    typeScan,
+  } = req.body
+
   let agent: any = undefined
   if (agentId) {
     agent = agents.find((a) => a.id === toInt(agentId))
-  } else if (empreinteHash) {
-    agent = agents.find((a) => a.empreinteHash === String(empreinteHash).trim())
+  }
+
+  // Résolution automatique par identifiant (Matricule, Badge RFID, Code QR, Empreinte Digitale, ou ID)
+  const rawKey = String(identifiant || matricule || badgeRfid || codeQr || empreinteHash || '').trim()
+
+  if (!agent && rawKey) {
+    const rawLower = rawKey.toLowerCase()
+    // 1. Recherche par hash d'empreinte digitale
+    agent = agents.find((a) => a.empreinteHash && a.empreinteHash.toLowerCase() === rawLower)
+    // 2. Recherche par matricule exact (ex: "AGT-GOM-001")
+    if (!agent) {
+      agent = agents.find((a) => a.matricule && a.matricule.toLowerCase() === rawLower)
+    }
+    // 3. Recherche par badge RFID ou Code QR
+    if (!agent) {
+      agent = agents.find((a) => {
+        const rfid = (a as any).badgeRfid ? String((a as any).badgeRfid).toLowerCase() : `rfid-${a.matricule.toLowerCase()}`
+        const qr = (a as any).codeQr ? String((a as any).codeQr).toLowerCase() : `qr-${a.matricule.toLowerCase()}`
+        return rfid === rawLower || qr === rawLower
+      })
+    }
+    // 4. Recherche par ID numérique direct (ex: "1")
+    if (!agent && /^\d+$/.test(rawKey)) {
+      agent = agents.find((a) => a.id === Number(rawKey))
+    }
+    // 5. Recherche par numéro de fin de matricule (ex: "001" matche "AGT-GOM-001")
+    if (!agent && rawKey.length >= 2) {
+      agent = agents.find((a) => a.matricule && a.matricule.toLowerCase().endsWith(rawLower))
+    }
+    // 6. Recherche par nom partiel (si saisi au clavier kiosque)
+    if (!agent && rawKey.length >= 4) {
+      agent = agents.find((a) => a.nom.toLowerCase().includes(rawLower))
+    }
   }
 
   if (!agent) {
-    return res.status(404).json({ message: 'Aucun collaborateur correspondant à cette empreinte digitale.' })
+    return res.status(404).json({
+      message: 'Collaborateur non identifié. Veuillez vérifier votre badge, QR code ou poser à nouveau votre doigt sur le lecteur.',
+    })
   }
+
+  // Initialisation badge RFID / QR si absent
+  if (!(agent as any).badgeRfid) (agent as any).badgeRfid = `RFID-${agent.matricule}`
+  if (!(agent as any).codeQr) (agent as any).codeQr = `QR-${agent.matricule}`
 
   // Vérifier si l'agent a déjà son empreinte enregistrée dans le système
   if (!agent.biometrieEnregistree) {
-    // Si l'agent n'est pas encore enrôlé, nous l'enrôlons automatiquement avec le hash scanné
     agent.biometrieEnregistree = true
     agent.empreinteHash = empreinteHash || `BIO-FP-AGT-${agent.id}-AUTOSCAN`
     agent.doigtEnrole = 'Index Droit'
@@ -1456,6 +1505,18 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   const ss = String(now.getSeconds()).padStart(2, '0')
   const heureActuelle = `${hh}:${mm}:${ss}`
 
+  // Déterminer le mode de pointage effectif
+  let modeEffectif = modePointage
+  if (!modeEffectif) {
+    if (rawKey.toLowerCase().startsWith('rfid') || rawKey.toLowerCase().startsWith('badge')) {
+      modeEffectif = 'BADGE_RFID'
+    } else if (rawKey.toLowerCase().startsWith('qr')) {
+      modeEffectif = 'CODE_QR'
+    } else {
+      modeEffectif = 'EMPREINTE_DIGITALE'
+    }
+  }
+
   // Statut déterminé selon l'heure d'embauche configurée et la tolérance
   const [seuilH, seuilM] = (parametresFiscauxSociaux.heureDebutTravail || '08:00').split(':').map(Number)
   const tolMin = Number(parametresFiscauxSociaux.toleranceRetardMinutes ?? 10)
@@ -1469,10 +1530,83 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
 
   const scanDemande = typeScan || 'AUTO'
 
-  // CAS 1 : SCAN DE SORTIE EXPLICITE OU AUTO SI DÉJÀ POINTÉ ENTRÉE
-  if (scanDemande === 'SORTIE' || (scanDemande === 'AUTO' && pointageExistant)) {
+  // Logique intelligente AUTO :
+  // Si pas encore pointé -> ENTRÉE
+  // Si déjà pointé entrée mais pas de sortie -> SORTIE (si écart > 1 min)
+  // Si déjà pointé entrée et sortie -> Déjà complet
+  if (scanDemande === 'AUTO' && pointageExistant) {
+    if (pointageExistant.heureDepart) {
+      return res.json({
+        message: `${agent.nom} a déjà complété ses pointages ce jour (Arrivée : ${pointageExistant.heureArrivee} • Sortie : ${pointageExistant.heureDepart}).`,
+        pointage: pointageExistant,
+        typeScan: 'DEJA_COMPLET',
+        statut: pointageExistant.statut,
+        agent: {
+          id: agent.id,
+          nom: agent.nom,
+          matricule: agent.matricule,
+          poste: agent.poste,
+          agenceNom: ag?.nom || 'Siège Social Goma',
+          doigtEnrole: agent.doigtEnrole || 'Index Droit',
+          badgeRfid: (agent as any).badgeRfid,
+        },
+      })
+    }
+
+    // Calcul de l'écart avec l'heure d'arrivée
+    const [arrH, arrM] = (pointageExistant.heureArrivee || '08:00:00').split(':').map(Number)
+    const diffMinutes = Math.abs(minuteActuelle - (arrH * 60 + (isNaN(arrM) ? 0 : arrM)))
+
+    if (diffMinutes < 2) {
+      // Émargement très rapproché (double scan accidentel)
+      return res.json({
+        message: `Arrivée déjà enregistrée pour ${agent.nom} à ${pointageExistant.heureArrivee}. Bonne journée de travail !`,
+        pointage: pointageExistant,
+        typeScan: 'DEJA_PRESENTE',
+        statut: pointageExistant.statut,
+        agent: {
+          id: agent.id,
+          nom: agent.nom,
+          matricule: agent.matricule,
+          poste: agent.poste,
+          agenceNom: ag?.nom || 'Siège Social Goma',
+          doigtEnrole: agent.doigtEnrole || 'Index Droit',
+          badgeRfid: (agent as any).badgeRfid,
+        },
+      })
+    }
+
+    // Plus de 2 minutes : c'est un pointage de sortie
+    pointageExistant.heureDepart = heureActuelle
+    pointageExistant.observations = observations || `${pointageExistant.observations ? pointageExistant.observations + ' | ' : ''}Sortie autonome scannée à ${heureActuelle}`
+
+    logAudit(
+      currentUser.nom,
+      'POINTAGE_BIOMETRIQUE_DEPART',
+      `Scan automatique de SORTIE validé pour ${agent.nom} (${agent.matricule}) à ${heureActuelle}`,
+      agent.agenceId
+    )
+
+    return res.json({
+      message: `Au revoir ${agent.nom} ! Sortie enregistrée à ${heureActuelle}. Bonne fin de service et bon repos.`,
+      pointage: pointageExistant,
+      typeScan: 'DEPART',
+      statut: pointageExistant.statut,
+      agent: {
+        id: agent.id,
+        nom: agent.nom,
+        matricule: agent.matricule,
+        poste: agent.poste,
+        agenceNom: ag?.nom || 'Siège Social Goma',
+        doigtEnrole: agent.doigtEnrole || 'Index Droit',
+        badgeRfid: (agent as any).badgeRfid,
+      },
+    })
+  }
+
+  // CAS EXPLICITE SORTIE
+  if (scanDemande === 'SORTIE') {
     if (!pointageExistant) {
-      // Pas d'arrivée enregistrée ce jour, on crée un pointage avec heure de sortie directe
       pointageExistant = {
         id: pointagesAgents.length + 1,
         agentId: agent.id,
@@ -1485,11 +1619,11 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
         heureArrivee: `${parametresFiscauxSociaux.heureDebutTravail || '08:00'}:00`,
         heureDepart: heureActuelle,
         statut: 'PRESENT',
-        modePointage: modePointage || 'EMPREINTE_DIGITALE',
+        modePointage: modeEffectif,
         empreinteMatchScore: Number(empreinteMatchScore) || +(98 + Math.random() * 1.9).toFixed(1),
-        terminalId: terminalId || `BIO-SCAN-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
+        terminalId: terminalId || `BORNE-KIOSQUE-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
         temperature: Number(temperature) || +(36.4 + Math.random() * 0.4).toFixed(1),
-        observations: observations || `Scan empreinte de sortie enregistré directement à ${heureActuelle}`,
+        observations: observations || `Sortie directe scannée à ${heureActuelle}`,
       }
       pointagesAgents.push(pointageExistant)
     } else {
@@ -1500,36 +1634,42 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
     logAudit(
       currentUser.nom,
       'POINTAGE_BIOMETRIQUE_DEPART',
-      `Scan empreinte de SORTIE validé pour ${agent.nom} (${agent.matricule}) à ${heureActuelle}`,
+      `Scan de SORTIE validé pour ${agent.nom} (${agent.matricule}) à ${heureActuelle}`,
       agent.agenceId
     )
 
     return res.json({
-      message: `Sortie confirmée par empreinte digitale pour ${agent.nom} à ${heureActuelle} ! Fin de service enregistrée.`,
+      message: `Sortie confirmée pour ${agent.nom} à ${heureActuelle} ! Fin de service enregistrée.`,
       pointage: pointageExistant,
       typeScan: 'DEPART',
+      statut: pointageExistant.statut,
       agent: {
         id: agent.id,
         nom: agent.nom,
         matricule: agent.matricule,
         poste: agent.poste,
+        agenceNom: ag?.nom || 'Siège Social Goma',
         doigtEnrole: agent.doigtEnrole || 'Index Droit',
+        badgeRfid: (agent as any).badgeRfid,
       },
     })
   }
 
-  // CAS 2 : SCAN D'ENTRÉE (ARRIVÉE)
+  // CAS D'ENTRÉE (ARRIVÉE) OU AUTO SANS POINTAGE PRÉALABLE
   if (pointageExistant) {
     return res.json({
-      message: `${agent.nom} a déjà émargé son arrivée ce jour à ${pointageExistant.heureArrivee}. Pour badger votre départ, sélectionnez "Sortie".`,
+      message: `${agent.nom} a déjà émargé son arrivée ce jour à ${pointageExistant.heureArrivee}.`,
       pointage: pointageExistant,
       typeScan: 'DEJA_PRESENTE',
+      statut: pointageExistant.statut,
       agent: {
         id: agent.id,
         nom: agent.nom,
         matricule: agent.matricule,
         poste: agent.poste,
+        agenceNom: ag?.nom || 'Siège Social Goma',
         doigtEnrole: agent.doigtEnrole || 'Index Droit',
+        badgeRfid: (agent as any).badgeRfid,
       },
     })
   }
@@ -1545,9 +1685,9 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
     date: todayStr,
     heureArrivee: heureActuelle,
     statut: statutCalcule,
-    modePointage: modePointage || 'EMPREINTE_DIGITALE',
-    empreinteMatchScore: Number(empreinteMatchScore) || +(98 + Math.random() * 1.9).toFixed(1),
-    terminalId: terminalId || `BIO-SCAN-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
+    modePointage: modeEffectif,
+    empreinteMatchScore: Number(empreinteMatchScore) || +(98.2 + Math.random() * 1.7).toFixed(1),
+    terminalId: terminalId || `BORNE-KIOSQUE-${ag?.ville?.toUpperCase() || 'SIEGE'}-01`,
     temperature: Number(temperature) || +(36.4 + Math.random() * 0.4).toFixed(1),
     observations: observations || (isRetard ? `Retard constaté à ${heureActuelle} (Heure normale: ${parametresFiscauxSociaux.heureDebutTravail || '08:00'} + ${tolMin} min tolérance)` : `Arrivée ponctuelle à ${heureActuelle}`),
   }
@@ -1557,20 +1697,25 @@ router.post('/rh/pointages/scan-empreinte', (req: Request, res: Response) => {
   logAudit(
     currentUser.nom,
     'POINTAGE_BIOMETRIQUE_ARRIVEE',
-    `Scan empreinte d ENTRÉE validé pour ${agent.nom} (${agent.matricule}) - Statut: ${statutCalcule} - Score: ${nouveauPointage.empreinteMatchScore}%`,
+    `Pointage autonome d ENTRÉE validé pour ${agent.nom} (${agent.matricule}) - Statut: ${statutCalcule} - Score: ${nouveauPointage.empreinteMatchScore}%`,
     agent.agenceId
   )
 
   res.status(201).json({
-    message: `Arrivée validée par empreinte digitale pour ${agent.nom} ! Statut : ${statutCalcule === 'PRESENT' ? 'Présent à l heure' : 'Retard constaté'}.`,
+    message: isRetard
+      ? `Bonjour ${agent.nom} ! Arrivée enregistrée à ${heureActuelle} (Retard constaté au-delà de ${tolMin} min de tolérance).`
+      : `Bonjour ${agent.nom} ! Arrivée validée à ${heureActuelle}. Présence ponctuelle confirmée.`,
     pointage: nouveauPointage,
     typeScan: 'ARRIVEE',
+    statut: statutCalcule,
     agent: {
       id: agent.id,
       nom: agent.nom,
       matricule: agent.matricule,
       poste: agent.poste,
+      agenceNom: ag?.nom || 'Siège Social Goma',
       doigtEnrole: agent.doigtEnrole || 'Index Droit',
+      badgeRfid: (agent as any).badgeRfid,
     },
   })
 })
