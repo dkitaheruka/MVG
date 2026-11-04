@@ -99,6 +99,31 @@ function playAudioFeedback(type: 'SUCCESS_ENTREE' | 'SUCCESS_SORTIE' | 'ALERT' |
   }
 }
 
+// Synthèse vocale interactive Web Speech API (Voix française naturelle)
+function speakVoiceFeedback(text: string, enabled: boolean) {
+  if (!enabled || typeof window === 'undefined' || !window.speechSynthesis) return
+  try {
+    window.speechSynthesis.cancel() // Arrêter toute énonciation précédente
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'fr-FR'
+    utterance.rate = 1.02
+    utterance.pitch = 1.0
+    utterance.volume = 1.0
+
+    const voices = window.speechSynthesis.getVoices()
+    const frVoice = voices.find(
+      (v) => v.lang.startsWith('fr') || v.lang.includes('FR') || v.name.toLowerCase().includes('french')
+    )
+    if (frVoice) {
+      utterance.voice = frVoice
+    }
+
+    window.speechSynthesis.speak(utterance)
+  } catch (err) {
+    console.warn('SpeechSynthesis non disponible :', err)
+  }
+}
+
 export function BornePointagePermanent({
   isOpen,
   onClose,
@@ -111,6 +136,7 @@ export function BornePointagePermanent({
   // États de l'interface kiosque
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [voiceEnabled, setVoiceEnabled] = useState(true)
   const [selectedAgence, setSelectedAgence] = useState<string>(
     defaultAgenceId ? String(defaultAgenceId) : 'TOUS'
   )
@@ -217,7 +243,7 @@ export function BornePointagePermanent({
       setErrorMessage(null)
       setLastScanResult(res)
 
-      // Audio feedback
+      // Audio bips feedback
       if (audioEnabled) {
         if (res.typeScan === 'DEPART') {
           playAudioFeedback('SUCCESS_SORTIE')
@@ -225,6 +251,40 @@ export function BornePointagePermanent({
           playAudioFeedback('SUCCESS_ENTREE')
         } else {
           playAudioFeedback('ALERT')
+        }
+      }
+
+      // Annonce vocale personnalisée en direct (Web Speech API)
+      if (voiceEnabled) {
+        const nom = res.agent?.nom || 'Collaborateur'
+        const heure = res.pointage?.heureDepart || res.pointage?.heureArrivee || ''
+        if (res.typeScan === 'DEPART') {
+          speakVoiceFeedback(
+            `Au revoir ${nom} ! Sortie enregistrée à ${heure}. Bonne fin de service et bon repos.`,
+            voiceEnabled
+          )
+        } else if (res.typeScan === 'ARRIVEE') {
+          if (res.statut === 'RETARD') {
+            speakVoiceFeedback(
+              `Attention ${nom}, vous êtes en retard. Arrivée enregistrée à ${heure}. Pensez à justifier votre retard auprès de votre responsable.`,
+              voiceEnabled
+            )
+          } else {
+            speakVoiceFeedback(
+              `Bonjour ${nom} ! Arrivée validée à ${heure}. Présence ponctuelle confirmée. Bonne journée de travail !`,
+              voiceEnabled
+            )
+          }
+        } else if (res.typeScan === 'DEJA_PRESENTE') {
+          speakVoiceFeedback(
+            `Bonjour ${nom}, votre arrivée a déjà été enregistrée ce matin à ${res.pointage?.heureArrivee || heure}. Bonne journée !`,
+            voiceEnabled
+          )
+        } else if (res.typeScan === 'DEJA_COMPLET') {
+          speakVoiceFeedback(
+            `${nom}, vos émargements d'arrivée et de départ sont déjà complets pour cette journée.`,
+            voiceEnabled
+          )
         }
       }
 
@@ -240,8 +300,15 @@ export function BornePointagePermanent({
     onError: (err: any) => {
       setIsProcessing(false)
       setLastScanResult(null)
-      setErrorMessage(err.message || 'Identifiant non reconnu. Veuillez réessayer.')
+      const errTxt = err.message || 'Identifiant non reconnu. Veuillez réessayer.'
+      setErrorMessage(errTxt)
       if (audioEnabled) playAudioFeedback('ERROR')
+      if (voiceEnabled) {
+        speakVoiceFeedback(
+          'Collaborateur non reconnu. Veuillez vérifier votre badge, QR code ou poser à nouveau votre doigt sur le capteur.',
+          voiceEnabled
+        )
+      }
       startAutoReset(4)
     },
   })
@@ -528,7 +595,7 @@ export function BornePointagePermanent({
             </select>
           </div>
 
-          {/* Toggle Son */}
+          {/* Toggle Son Carillon */}
           <button
             type="button"
             onClick={() => setAudioEnabled(!audioEnabled)}
@@ -549,6 +616,61 @@ export function BornePointagePermanent({
           >
             {audioEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
           </button>
+
+          {/* Toggle Synthèse Vocale */}
+          <button
+            type="button"
+            onClick={() => {
+              const nextState = !voiceEnabled
+              setVoiceEnabled(nextState)
+              if (nextState) {
+                speakVoiceFeedback('Synthèse vocale activée.', true)
+              }
+            }}
+            style={{
+              background: voiceEnabled ? 'rgba(34, 197, 94, 0.18)' : 'rgba(255, 255, 255, 0.08)',
+              border: voiceEnabled ? '1px solid rgba(34, 197, 94, 0.45)' : '1px solid rgba(255, 255, 255, 0.12)',
+              color: voiceEnabled ? '#4ade80' : '#94a3b8',
+              borderRadius: 8,
+              padding: '8px 12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: '0.76rem',
+              fontWeight: 600,
+            }}
+            title={voiceEnabled ? 'Désactiver la voix française' : 'Activer la voix française'}
+          >
+            <span role="img" aria-label="Voix">🗣️</span>
+            <span>{voiceEnabled ? 'Voix FR On' : 'Voix Muette'}</span>
+          </button>
+
+          {/* Bouton Test Voix */}
+          {voiceEnabled && (
+            <button
+              type="button"
+              onClick={() => {
+                speakVoiceFeedback('Bonjour. Le scanner biométrique et facial de présence est opérationnel.', true)
+              }}
+              style={{
+                background: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: '#38bdf8',
+                borderRadius: 8,
+                padding: '8px 10px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: '0.72rem',
+                fontWeight: 600,
+              }}
+              title="Tester la voix de la borne"
+            >
+              Test voix
+            </button>
+          )}
 
           {/* Plein Écran */}
           <button

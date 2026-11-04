@@ -29,6 +29,8 @@ import {
   Lightning,
   MagnifyingGlass,
   ArrowsOut,
+  IdentificationCard,
+  QrCode,
 } from '@phosphor-icons/react'
 import clsx from 'clsx'
 import { apiRequest } from '../lib/api'
@@ -1171,13 +1173,33 @@ export function PayrollPage() {
       {/* ---------------- TAB 4 : PERSONNEL & COLLABORATEURS ---------------- */}
       {activeTab === 'agents' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>
-              Collaborateurs rattachés à l agence #{agenceId} :
+              Collaborateurs rattachés à l agence #{agenceId} ({agentsQuery.data?.length ?? 0} agents) :
             </span>
-            <button className="primary-action" onClick={() => setShowNewAgentModal(true)}>
-              <UserPlus size={16} /> Nouveau Collaborateur
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={`/api/rh/badges/planche?agenceId=${agenceId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                }}
+                title="Générer la planche A4 de tous les badges avec QR & code-barres"
+              >
+                <Printer size={16} />
+                Imprimer Planche Badges (A4)
+              </a>
+              <button className="primary-action" onClick={() => setShowNewAgentModal(true)}>
+                <UserPlus size={16} /> Nouveau Collaborateur
+              </button>
+            </div>
           </div>
 
           <div className="table-wrap">
@@ -1233,6 +1255,24 @@ export function PayrollPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <a
+                          href={`/api/rh/agents/${ag.id}/badge`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="secondary-action"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.78rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            textDecoration: 'none',
+                            color: 'var(--text)',
+                          }}
+                          title="Imprimer le badge officiel individuel avec QR Code et Code-barres"
+                        >
+                          <IdentificationCard size={14} /> Badge QR
+                        </a>
                         <button
                           type="button"
                           className="secondary-action"
@@ -1435,22 +1475,42 @@ export function PayrollPage() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              className="primary-action"
-              onClick={() => setShowScanBiometriqueModal(true)}
-              style={{
-                fontSize: '0.8rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
-              }}
-            >
-              <ArrowsOut size={16} />
-              Ouvrir la Borne Plein Écran
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={`/api/rh/badges/planche?agenceId=${agenceId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-action"
+                style={{
+                  fontSize: '0.8rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                }}
+                title="Générer et imprimer la planche A4 de tous les badges avec QR & code-barres"
+              >
+                <Printer size={16} />
+                Imprimer Planche Badges (A4)
+              </a>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => setShowScanBiometriqueModal(true)}
+                style={{
+                  fontSize: '0.8rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #0284c7, #06b6d4)',
+                }}
+              >
+                <ArrowsOut size={16} />
+                Ouvrir la Borne Plein Écran
+              </button>
+            </div>
           </div>
 
           {/* INDICATEURS CLÉS (KPIS) POUR LA DATE SÉLECTIONNÉE */}
@@ -1767,23 +1827,44 @@ export function PayrollPage() {
                           </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="secondary-action"
-                            style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            onClick={() => {
-                              setEditingPointage(pointage || { agentId: agent.id, isNew: true })
-                              setPointageFormAgentId(agent.id)
-                              setPointageFormStatut(pointage?.statut || 'PRESENT')
-                              setPointageFormArrivee(pointage?.heureArrivee || '08:00:00')
-                              setPointageFormDepart(pointage?.heureDepart || '16:30:00')
-                              setPointageFormObservations(pointage?.observations || '')
-                              setShowPointageModal(true)
-                            }}
-                          >
-                            <PencilSimple size={13} />
-                            Justifier / Modifier
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
+                            <a
+                              href={`/api/rh/agents/${agent.id}/badge`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="secondary-action"
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                textDecoration: 'none',
+                                color: 'var(--text)',
+                              }}
+                              title="Imprimer le badge officiel de l agent avec QR Code et code-barres"
+                            >
+                              <IdentificationCard size={13} />
+                              Badge
+                            </a>
+                            <button
+                              type="button"
+                              className="secondary-action"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              onClick={() => {
+                                setEditingPointage(pointage || { agentId: agent.id, isNew: true })
+                                setPointageFormAgentId(agent.id)
+                                setPointageFormStatut(pointage?.statut || 'PRESENT')
+                                setPointageFormArrivee(pointage?.heureArrivee || '08:00:00')
+                                setPointageFormDepart(pointage?.heureDepart || '16:30:00')
+                                setPointageFormObservations(pointage?.observations || '')
+                                setShowPointageModal(true)
+                              }}
+                            >
+                              <PencilSimple size={13} />
+                              Justifier / Modifier
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )

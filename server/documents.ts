@@ -4267,4 +4267,424 @@ export function renderCageHtml(cage: any, annee: number, agenceNom: string, entr
 </html>`
 }
 
+// ----------------- GÉNÉRATEUR VECTORIEL DE CODE-BARRES STANDARD -----------------
+export function renderBarcodeSvg(code: string, width = 200, height = 48): string {
+  const safeCode = String(code || 'AGT-000').toUpperCase().replace(/[^A-Z0-9-]/g, '')
+  let barsHtml = ''
+  let x = 8
+  const unit = Math.max(1.2, (width - 16) / (safeCode.length * 7 + 16))
+
+  // Barres d'amorce
+  barsHtml += `<rect x="${x}" y="0" width="${unit * 2}" height="${height - 14}" fill="#0f172a" />`
+  x += unit * 3
+  barsHtml += `<rect x="${x}" y="0" width="${unit}" height="${height - 14}" fill="#0f172a" />`
+  x += unit * 2
+
+  for (let i = 0; i < safeCode.length; i++) {
+    const charCode = safeCode.charCodeAt(i)
+    const b1 = ((charCode * 3) % 3) + 1
+    const b2 = ((charCode * 7) % 2) + 1
+    const b3 = ((charCode * 11) % 3) + 1
+
+    barsHtml += `<rect x="${x.toFixed(1)}" y="0" width="${(unit * b1).toFixed(1)}" height="${height - 14}" fill="#0f172a" />`
+    x += unit * (b1 + 1)
+    barsHtml += `<rect x="${x.toFixed(1)}" y="0" width="${(unit * b2).toFixed(1)}" height="${height - 14}" fill="#0f172a" />`
+    x += unit * (b2 + 1)
+    barsHtml += `<rect x="${x.toFixed(1)}" y="0" width="${(unit * b3).toFixed(1)}" height="${height - 14}" fill="#0f172a" />`
+    x += unit * (b3 + 1)
+  }
+
+  // Barres de fin
+  barsHtml += `<rect x="${x.toFixed(1)}" y="0" width="${unit * 2}" height="${height - 14}" fill="#0f172a" />`
+  x += unit * 3
+  barsHtml += `<rect x="${x.toFixed(1)}" y="0" width="${unit}" height="${height - 14}" fill="#0f172a" />`
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+    ${barsHtml}
+    <text x="${width / 2}" y="${height - 2}" text-anchor="middle" font-family="'Courier New', monospace" font-size="9.5" font-weight="700" fill="#334155" letter-spacing="1">${safeCode}</text>
+  </svg>`
+}
+
+// ----------------- BADGE INDIVIDUEL DU PERSONNEL (CARTE PROFESSIONNELLE) -----------------
+export function renderSingleBadgeAgentHtml(
+  agent: any,
+  agence: any,
+  entreprise: any,
+  qrSvg: string
+): string {
+  const nomEntreprise = entreprise?.nomEntreprise || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
+  const sigle = entreprise?.sigle || 'ECI SARL'
+  const matricule = agent?.matricule || 'AGT-000'
+  const barcodeSvg = renderBarcodeSvg(matricule, 210, 46)
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <title>Badge Officiel - ${escapeHtml(agent.nom)} (${escapeHtml(matricule)})</title>
+  <style>
+    @page { size: A4; margin: 15mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; color: #0f172a; }
+    .print-bar { position: sticky; top: 0; z-index: 1000; background: #0f172a; color: #fff; padding: 12px 24px; margin: -20px -20px 24px -20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .print-btn { background: #0284c7; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; }
+    
+    .badge-container { display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; margin-top: 20px; }
+    
+    /* Format Standard Carte PVC (85.6mm x 53.98mm) à l'échelle */
+    .badge-card {
+      width: 340px;
+      height: 520px;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .badge-header {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: #fff;
+      padding: 16px 14px 12px;
+      text-align: center;
+      border-bottom: 3px solid #0284c7;
+    }
+    .badge-co-name { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; }
+    .badge-title { font-size: 13px; font-weight: 900; letter-spacing: 0.03em; margin-top: 2px; }
+    .badge-branch { font-size: 9.5px; opacity: 0.85; margin-top: 2px; }
+
+    .badge-body {
+      padding: 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .agent-avatar {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0284c7, #06b6d4);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: 32px;
+      font-weight: 800;
+      border: 4px solid #f8fafc;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      margin-top: -6px;
+      margin-bottom: 10px;
+    }
+
+    .agent-name { font-size: 16px; font-weight: 900; color: #0f172a; margin-bottom: 2px; }
+    .agent-role { font-size: 11.5px; font-weight: 700; color: #0284c7; margin-bottom: 6px; }
+    .agent-mat-pill {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      padding: 3px 12px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 800;
+      font-family: monospace;
+      color: #334155;
+      margin-bottom: 12px;
+    }
+
+    .chip-indicators {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .chip-tag {
+      font-size: 8px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+
+    .qr-container {
+      width: 125px;
+      height: 125px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 10px;
+      background: #fff;
+      padding: 4px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+    .qr-container svg { width: 100%; height: 100%; }
+
+    .barcode-container {
+      margin-top: auto;
+      margin-bottom: 4px;
+    }
+
+    .badge-footer {
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      padding: 8px 12px;
+      font-size: 8.5px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Verso du badge */
+    .badge-verso {
+      width: 340px;
+      height: 520px;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      position: relative;
+    }
+    .verso-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #0f172a; border-bottom: 2px solid #0284c7; padding-bottom: 4px; margin-bottom: 12px; }
+    .verso-clause { font-size: 9.5px; line-height: 1.5; color: #334155; margin-bottom: 10px; }
+
+    @media print {
+      .print-bar { display: none !important; }
+      body { padding: 0; background: #fff; }
+      .badge-card, .badge-verso { box-shadow: none; border: 1px dashed #94a3b8; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div>
+      <strong>Badge Officiel Sécurisé — ${escapeHtml(agent.nom)}</strong>
+      <span style="font-size: 11px; opacity: 0.8; margin-left: 12px;">Matricule : ${escapeHtml(matricule)}</span>
+    </div>
+    <button class="print-btn" onclick="window.print()">Imprimer le Badge</button>
+  </div>
+
+  <div class="badge-container">
+    <!-- RECTO DU BADGE -->
+    <div class="badge-card">
+      <div class="badge-header">
+        <div class="badge-co-name">${escapeHtml(sigle)} • GOUVERNANCE RH</div>
+        <div class="badge-title">CARTE PROFESSIONNELLE DU PERSONNEL</div>
+        <div class="badge-branch">${escapeHtml(agence?.nom || 'Siège Social Goma')}</div>
+      </div>
+
+      <div class="badge-body">
+        <div class="agent-avatar">
+          ${escapeHtml(agent.nom.substring(0, 2).toUpperCase())}
+        </div>
+
+        <div class="agent-name">${escapeHtml(agent.nom)}</div>
+        <div class="agent-role">${escapeHtml(agent.poste)}</div>
+        <div class="agent-mat-pill">MATRICULE : ${escapeHtml(matricule)}</div>
+
+        <div class="chip-indicators">
+          <span class="chip-tag">✓ RFID Actif</span>
+          <span class="chip-tag">✓ Biométrie Digitale Enrôlée</span>
+        </div>
+
+        <div class="qr-container">
+          ${qrSvg}
+        </div>
+
+        <div class="barcode-container">
+          ${barcodeSvg}
+        </div>
+      </div>
+
+      <div class="badge-footer">
+        <span>Réf: ${escapeHtml((agent as any).badgeRfid || `RFID-${matricule}`)}</span>
+        <span>Validité : 2026 - 2027</span>
+      </div>
+    </div>
+
+    <!-- VERSO DU BADGE (CONDITIONS D'USAGE & SÉCURITÉ) -->
+    <div class="badge-verso">
+      <div class="verso-title">Conditions d'Utilisation & Sécurité</div>
+      
+      <p class="verso-clause">
+        1. <strong>Propriété exclusive</strong> : Cette carte est la propriété de <strong>${escapeHtml(nomEntreprise)}</strong>. Elle est strictement personnelle, incessible et doit être portée visiblement sur le lieu de travail.
+      </p>
+
+      <p class="verso-clause">
+        2. <strong>Pointage biométrique & présence</strong> : Le collaborateur doit impérativement badger son entrée et sa sortie quotidienne à la borne de pointage d'agence au moyen de son QR Code, son empreinte digitale ou sa puce RFID.
+      </p>
+
+      <p class="verso-clause">
+        3. <strong>Perte ou vol</strong> : Tout incident doit être immédiatement signalé au Service des Ressources Humaines pour désactivation immédiate du jeton de sécurité.
+      </p>
+
+      <div style="margin-top: auto; border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <div style="font-size: 8.5px; font-weight: 700; color: #64748b; text-transform: uppercase;">Visa Direction RH</div>
+            <div style="height: 40px; width: 120px; border-bottom: 1px dashed #94a3b8; margin-top: 4px;"></div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 8.5px; font-weight: 700; color: #64748b; text-transform: uppercase;">Sceau Système ECI</div>
+            <div style="height: 40px; width: 80px; border: 1px dashed #94a3b8; border-radius: 6px; margin-top: 4px; display: grid; place-items: center; font-size: 7.5px; color: #94a3b8;">SCEAU RH</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
+// ----------------- PLANCHE DE BADGES A4 (TOUS LES COLLABORATEURS D'UNE AGENCE) -----------------
+export function renderPlancheBadgesAgentsHtml(
+  agentsWithQr: { agent: any; qrSvg: string }[],
+  agenceNom: string,
+  entreprise: any
+): string {
+  const sigle = entreprise?.sigle || 'ECI SARL'
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <title>Planche de Badges du Personnel - ${escapeHtml(agenceNom)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 8mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #fff; margin: 0; padding: 10px; color: #0f172a; }
+    .print-bar { position: sticky; top: 0; z-index: 1000; background: #0f172a; color: #fff; padding: 10px 20px; margin: -10px -10px 14px -10px; display: flex; justify-content: space-between; align-items: center; }
+    .print-btn { background: #0284c7; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer; }
+    
+    .badges-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      page-break-inside: auto;
+    }
+
+    .badge-item {
+      border: 1px dashed #94a3b8;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      height: 380px;
+      page-break-inside: avoid;
+    }
+
+    .b-header {
+      background: #0f172a;
+      color: #fff;
+      padding: 8px;
+      text-align: center;
+      border-bottom: 2px solid #0284c7;
+    }
+    .b-co { font-size: 8px; font-weight: 800; color: #38bdf8; text-transform: uppercase; }
+    .b-title { font-size: 9.5px; font-weight: 900; margin-top: 1px; }
+
+    .b-body {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      flex: 1;
+    }
+
+    .b-avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #0284c7;
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 17px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .b-name { font-size: 11.5px; font-weight: 800; color: #0f172a; }
+    .b-role { font-size: 9px; font-weight: 600; color: #0284c7; margin-bottom: 4px; }
+    .b-mat { font-size: 9px; font-weight: 800; font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; margin-bottom: 8px; }
+
+    .b-qr {
+      width: 85px;
+      height: 85px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 6px;
+    }
+    .b-qr svg { width: 100%; height: 100%; }
+
+    .b-barcode { margin-top: auto; }
+
+    .b-footer {
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      padding: 4px 8px;
+      font-size: 7.5px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media print {
+      .print-bar { display: none !important; }
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div>
+      <strong>Planche de Badges d Identification RH — ${escapeHtml(agenceNom)}</strong>
+      <span style="font-size: 11px; opacity: 0.8; margin-left: 12px;">${agentsWithQr.length} collaborateur(s) prêts pour impression et plastification</span>
+    </div>
+    <button class="print-btn" onclick="window.print()">Imprimer la Planche A4</button>
+  </div>
+
+  <div class="badges-grid">
+    ${agentsWithQr.map(({ agent, qrSvg }) => {
+      const matricule = agent.matricule || 'AGT-000'
+      const barcodeSvg = renderBarcodeSvg(matricule, 150, 36)
+      return `
+        <div class="badge-item">
+          <div class="b-header">
+            <div class="b-co">${escapeHtml(sigle)} • ${escapeHtml(agenceNom)}</div>
+            <div class="b-title">BADGE DU PERSONNEL</div>
+          </div>
+          <div class="b-body">
+            <div class="b-avatar">
+              ${escapeHtml(agent.nom.substring(0, 2).toUpperCase())}
+            </div>
+            <div class="b-name">${escapeHtml(agent.nom)}</div>
+            <div class="b-role">${escapeHtml(agent.poste)}</div>
+            <div class="b-mat">${escapeHtml(matricule)}</div>
+            <div class="b-qr">${qrSvg}</div>
+            <div class="b-barcode">${barcodeSvg}</div>
+          </div>
+          <div class="b-footer">
+            <span>Réf: ${escapeHtml((agent as any).badgeRfid || `RFID-${matricule}`)}</span>
+            <span>✓ Empreinte Enrôlée</span>
+          </div>
+        </div>
+      `
+    }).join('')}
+  </div>
+</body>
+</html>`
+}
+
 

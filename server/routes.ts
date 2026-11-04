@@ -64,6 +64,8 @@ import {
   renderTftHtml,
   renderCageHtml,
   generateMvgQrSvg,
+  renderSingleBadgeAgentHtml,
+  renderPlancheBadgesAgentsHtml,
 } from './documents.ts'
 
 const router = Router()
@@ -8986,6 +8988,55 @@ router.post('/rh/agents/:id/enrolement-biometrique', (req: Request, res: Respons
       agence: ag,
     },
   })
+})
+
+// Impression du Badge Individuel Sécurisé avec QR Code et Code-barres
+router.get('/rh/agents/:id/badge', async (req: Request, res: Response) => {
+  const agentId = toInt(req.params.id)
+  const agent = agents.find((a) => a.id === agentId)
+  if (!agent) return res.status(404).send('Collaborateur non trouvé')
+  const ag = agences.find((a) => a.id === agent.agenceId) || agences[0]
+  if (!(agent as any).badgeRfid) (agent as any).badgeRfid = `RFID-${agent.matricule}`
+  if (!(agent as any).codeQr) (agent as any).codeQr = `QR-${agent.matricule}`
+
+  const qrSvg = await generateMvgQrSvg({
+    matricule: agent.matricule,
+    nom: agent.nom,
+    badgeRfid: (agent as any).badgeRfid,
+    codeQr: (agent as any).codeQr,
+    agenceId: agent.agenceId,
+    systeme: 'MATABISHI-ERP-RH',
+  })
+  const html = renderSingleBadgeAgentHtml(agent, ag, parametresEntreprise, qrSvg)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Impression de la Planche A4 de Badges (Tous les collaborateurs de l'agence)
+router.get('/rh/badges/planche', async (req: Request, res: Response) => {
+  const agenceId = req.query.agenceId ? toInt(req.query.agenceId) : undefined
+  const list = agents.filter((a) => !agenceId || a.agenceId === agenceId)
+  const ag = agences.find((a) => a.id === agenceId) || { nom: 'Toutes les Succursales Réseau' }
+
+  const agentsWithQr = await Promise.all(
+    list.map(async (agItem) => {
+      if (!(agItem as any).badgeRfid) (agItem as any).badgeRfid = `RFID-${agItem.matricule}`
+      if (!(agItem as any).codeQr) (agItem as any).codeQr = `QR-${agItem.matricule}`
+      const qrSvg = await generateMvgQrSvg({
+        matricule: agItem.matricule,
+        nom: agItem.nom,
+        badgeRfid: (agItem as any).badgeRfid,
+        codeQr: (agItem as any).codeQr,
+        agenceId: agItem.agenceId,
+        systeme: 'MATABISHI-ERP-RH',
+      })
+      return { agent: agItem, qrSvg }
+    })
+  )
+
+  const html = renderPlancheBadgesAgentsHtml(agentsWithQr, ag.nom, parametresEntreprise)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
 })
 
 router.get('/rh/avances', (req: Request, res: Response) => {

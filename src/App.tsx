@@ -66,6 +66,9 @@ import {
   Crown,
   Devices,
   MapPin,
+  ArrowsOut,
+  ArrowsIn,
+  Fingerprint,
 } from '@phosphor-icons/react'
 import {
   RealQrCode,
@@ -77,6 +80,7 @@ import {
 } from './components/QrCodeComponents'
 import { NewEtatBesoinModal } from './components/NewEtatBesoinModal'
 import { ExecutiveDashboard } from './components/ExecutiveDashboard'
+import { BornePointagePermanent } from './components/BornePointagePermanent'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
@@ -505,6 +509,41 @@ function AppShell() {
 
   const safeAgences: any[] = Array.isArray(agencesQuery.data) ? agencesQuery.data : []
 
+  const [showKioskModal, setShowKioskModal] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(() => (typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false))
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  const toggleGlobalFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.warn('Plein écran non supporté :', err)
+      })
+    } else {
+      document.exitFullscreen().catch(() => {})
+    }
+  }
+
+  // Si le compte connecté est une Borne Kiosque Dédiée (entrée agence), verrouiller immédiatement l'écran sur la borne
+  if (session?.role === 'BORNE_KIOSK' || session?.email === 'borne.pointage@mvg.cd') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#0f172a' }}>
+        <BornePointagePermanent
+          isOpen={true}
+          onClose={() => setSession(null)}
+          defaultAgenceId={session.agenceId || 1}
+          isStandalone={true}
+        />
+      </div>
+    )
+  }
+
   return (
     <>
       <div className={clsx('app-shell', sidebarCollapsed && 'sidebar-collapsed')}>
@@ -667,8 +706,58 @@ function AppShell() {
                 <option value="technicien@mvg.cd">Kavira (Technicien Maintenance & Parc)</option>
                 <option value="comptable.senior@mvg.cd">Kambale (Comptable Senior)</option>
                 <option value="comptable@mvg.cd">Claire (Comptable)</option>
+                <option value="borne.pointage@mvg.cd">Borne Entrée Agence (Mode Kiosque Dédié Verrouillé)</option>
+                <option value="pos.caisse@mvg.cd">Terminal POS Caisse (Mode Vente Comptoir Dédié)</option>
               </select>
             </div>
+
+            {/* BOUTON LANCER BORNE KIOSQUE POINTAGE */}
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setShowKioskModal(true)}
+              title="Ouvrir la Borne de Pointage Permanent (Scanner, Biométrie, Voix)"
+              aria-label="Borne Pointage Kiosque"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                borderRadius: 8,
+                background: 'rgba(6, 182, 212, 0.12)',
+                color: '#06b6d4',
+                border: '1px solid rgba(6, 182, 212, 0.35)',
+                fontWeight: 600,
+                fontSize: '0.78rem',
+              }}
+            >
+              <Fingerprint size={16} weight="bold" />
+              <span className="desktop-only">Borne Kiosque</span>
+            </button>
+
+            {/* BOUTON PLEIN ÉCRAN POUR REMPLIR TOUT L'ÉCRAN */}
+            <button
+              type="button"
+              className="icon-button"
+              onClick={toggleGlobalFullscreen}
+              title={isFullscreen ? "Quitter le plein écran (Échap)" : "Agrandir pour remplir tout l'écran (Mode Kiosque Plein Écran)"}
+              aria-label="Basculer Plein Écran"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                borderRadius: 8,
+                background: isFullscreen ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-2)',
+                color: isFullscreen ? '#10b981' : 'var(--text)',
+                border: isFullscreen ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border)',
+                fontWeight: 600,
+                fontSize: '0.78rem',
+              }}
+            >
+              {isFullscreen ? <ArrowsIn size={16} weight="bold" /> : <ArrowsOut size={16} weight="bold" />}
+              <span className="desktop-only">{isFullscreen ? 'Réduire' : 'Plein Écran'}</span>
+            </button>
 
             <span className={clsx('network-pill', online ? 'online' : 'offline')}>
               {online ? <WifiHigh size={17} /> : <WifiSlash size={17} />}
@@ -703,10 +792,30 @@ function AppShell() {
             <Route path="/reporting" element={<ReportingPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/sync" element={<SyncPage />} />
+            <Route
+              path="/kiosque-presence"
+              element={
+                <BornePointagePermanent
+                  isOpen={true}
+                  isStandalone={true}
+                  onClose={() => {}}
+                  defaultAgenceId={session?.agenceId || 1}
+                />
+              }
+            />
           </Routes>
         </main>
       </div>
     </div>
+
+      {/* Modal Borne Pointage Permanent Kiosque */}
+      {showKioskModal && (
+        <BornePointagePermanent
+          isOpen={true}
+          onClose={() => setShowKioskModal(false)}
+          defaultAgenceId={selectedAgenceId && selectedAgenceId !== 'CONSOLIDE' ? selectedAgenceId : (session?.agenceId || 1)}
+        />
+      )}
 
       {printProposal && (
         <div
