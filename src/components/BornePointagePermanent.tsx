@@ -324,6 +324,8 @@ export function BornePointagePermanent({
       const payload: any = {
         modePointage: mode,
         typeScan: 'AUTO',
+        heure: currentTime.toLocaleTimeString('fr-FR', { hour12: false }),
+        date: currentTime.toISOString().slice(0, 10),
       }
 
       if (typeof identifiantOrId === 'number') {
@@ -832,11 +834,22 @@ export function BornePointagePermanent({
                 transition: 'all 0.3s ease',
               }}
               onClick={() => {
-                // Poser le doigt / test d'émargement rapide pour le premier agent
-                const firstAgent = filteredAgents[0]
-                if (firstAgent) declencherPointage(firstAgent.id, 'EMPREINTE_DIGITALE')
+                if (manualInput.trim()) {
+                  declencherPointage(manualInput.trim(), 'EMPREINTE_DIGITALE')
+                } else if (searchFilter.trim() && filteredAgents.length === 1) {
+                  declencherPointage(filteredAgents[0].id, 'EMPREINTE_DIGITALE')
+                } else {
+                  // Message d'instruction professionnel : ne pas émarger un agent au hasard !
+                  playAudioFeedback('ALERT')
+                  speakVoiceFeedback(
+                    'Veuillez poser votre doigt sur le capteur biométrique, présenter votre badge, ou toucher votre nom dans la liste des collaborateurs.',
+                    voiceEnabled
+                  )
+                  setErrorMessage('Posez votre doigt sur le lecteur USB, présentez un badge RFID ou touchez votre nom dans la liste.')
+                  hiddenInputRef.current?.focus()
+                }
               }}
-              title="Cliquez ou posez le doigt pour simuler la détection biométrique instantanée"
+              title="Lecteur d'empreinte digitale permanent (posez le doigt ou touchez votre badge)"
             >
               {lastScanResult ? (
                 <CheckCircle size={64} weight="fill" style={{ color: '#fff' }} />

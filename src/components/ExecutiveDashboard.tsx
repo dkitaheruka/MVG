@@ -133,21 +133,36 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
   })
 
   const handleTriggerFingerprintScan = (idOrIdentifiant?: number | string) => {
-    setIsScanning(true)
-    setScanResult(null)
     const target = idOrIdentifiant || selectedAgentId || quickIdentifiant
 
-    // Simulation d'analyse optique (700ms de scan réaliste)
+    if (!target) {
+      setScanResult({
+        success: false,
+        message: 'Veuillez sélectionner un collaborateur ci-dessus, toucher son badge, ou saisir un identifiant/matricule.',
+      })
+      return
+    }
+
+    setIsScanning(true)
+    setScanResult(null)
+
+    // Simulation d'analyse optique (600ms de scan réaliste)
     setTimeout(() => {
-      if (typeof target === 'number') {
-        scanMutation.mutate({ agentId: target })
-      } else if (target) {
-        scanMutation.mutate({ identifiant: String(target) })
-      } else {
-        const first = presences?.agentsDisponibles?.[0]
-        if (first) scanMutation.mutate({ agentId: first.id })
+      const now = new Date()
+      const payload: any = {
+        typeScan: 'AUTO',
+        modePointage: 'EMPREINTE_DIGITALE',
+        terminalId: 'BIO-SCAN-OPTIQUE-01',
+        heure: now.toLocaleTimeString('fr-FR', { hour12: false }),
+        date: now.toISOString().slice(0, 10),
       }
-    }, 700)
+      if (typeof target === 'number') {
+        payload.agentId = target
+      } else {
+        payload.identifiant = String(target).trim()
+      }
+      scanMutation.mutate(payload)
+    }, 600)
   }
 
   const ventes = data?.ventesJournalieres
@@ -791,7 +806,13 @@ export function ExecutiveDashboard({ token }: ExecutiveDashboardProps) {
               }}
             >
               <Fingerprint size={20} className={isScanning ? 'pulse' : ''} />
-              <span>{isScanning ? 'Analyse biométrique en cours...' : 'Poser le Doigt sur le Capteur (1-Touch)'}</span>
+              <span>
+                {isScanning
+                  ? 'Analyse biométrique en cours...'
+                  : (selectedAgentId || quickIdentifiant)
+                  ? 'Valider l empreinte digitale (1-Touch)'
+                  : 'Sélectionner un collaborateur ci-dessus'}
+              </span>
             </button>
           </div>
 

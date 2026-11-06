@@ -162,15 +162,17 @@ export function CageTftPage() {
 
   // Export handlers
   const handlePrintTft = () => {
+    const tokenParam = session?.token ? `&token=${encodeURIComponent(session.token)}` : ''
     window.open(
-      `/api/comptabilite/tft/document?annee=${selectedAnnee}&agenceId=${selectedAgenceId}`,
+      `/api/comptabilite/tft/document?annee=${selectedAnnee}&agenceId=${selectedAgenceId}${tokenParam}`,
       '_blank'
     )
   }
 
   const handlePrintCage = () => {
+    const tokenParam = session?.token ? `&token=${encodeURIComponent(session.token)}` : ''
     window.open(
-      `/api/comptabilite/cage/document?annee=${selectedAnnee}&agenceId=${selectedAgenceId}`,
+      `/api/comptabilite/cage/document?annee=${selectedAnnee}&agenceId=${selectedAgenceId}${tokenParam}`,
       '_blank'
     )
   }

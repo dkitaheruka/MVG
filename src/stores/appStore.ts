@@ -35,6 +35,7 @@ interface AppStore {
   toggleSidebarHidden: () => void
   setPrintProposal: (proposal: PrintProposal | null) => void
   setSelectedAgenceId: (id: number | 'CONSOLIDE') => void
+  updateSessionPermissions: (permissions: string[]) => void
   can: (permission: string) => boolean
 }
 
@@ -119,39 +120,78 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ selectedAgenceId })
   },
 
+  updateSessionPermissions: (permissions: string[]) => {
+    const { session } = get()
+    if (session) {
+      const updated: SessionData = { ...session, permissions: permissions as any }
+      try {
+        localStorage.setItem('matabishi_session', JSON.stringify(updated))
+      } catch {}
+      set({ session: updated })
+    }
+  },
+
   can: (permission) => {
     const { session } = get()
     if (!session) return false
+    // 1. Super Admin et Admin Siège ont tous les droits
     if (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN_SIEGE') return true
+
     const perms = (session.permissions as string[]) || []
-    if (
-      permission === 'comptabilite.plan_gerer' ||
-      permission === 'comptabilite.ecritures_voir' ||
-      permission === 'comptabilite.voir'
-    ) {
-      if (['CHEF_AGENCE', 'COMPTABLE', 'COMPTABLE_SENIOR', 'AUDITEUR'].includes(session.role)) return true
-      return perms.some((p) => p.startsWith('comptabilite.'))
-    }
-    // Le menu Maintenance & Technique doit être dans toutes les agences indépendamment du siège
+
+    // 2. Correspondance directe
+    if (perms.includes(permission)) return true
+
+    // 3. Correspondances configurables selon matrice RBAC de l'Administration :
+    // - Maintenance & Gestion du parc matériel : accordé si flotte.gerer OU maintenance.gerer
     if (permission === 'flotte.gerer') {
-      if (
-        [
-          'CHEF_AGENCE',
-          'RESPONSABLE_PRODUCTION',
-          'TECHNICIEN_MAINTENANCE',
-          'MAGASINIER',
-          'COMPTABLE',
-          'COMPTABLE_SENIOR',
-          'VENDEUR',
-          'CAISSIER',
-          'SUPER_ADMIN',
-          'ADMIN_SIEGE',
-        ].includes(session.role)
-      ) {
-        return true
-      }
-      return perms.includes('flotte.gerer')
+      return perms.includes('flotte.gerer') || perms.includes('maintenance.gerer')
     }
-    return perms.includes(permission)
+
+    // - Contrôle de Gestion & TFT : accordé si cage.voir
+    if (permission === 'cage.voir') {
+      return perms.includes('cage.voir')
+    }
+
+    // - Graphiques & Analyses : analytics.voir
+    if (permission === 'analytics.voir') {
+      return perms.includes('analytics.voir')
+    }
+
+    // - Comptabilité SYSCOHADA : accordé si comptabilite.voir ou sous-permission
+    if (
+      permission === 'comptabilite.voir' ||
+      permission === 'comptabilite.plan_gerer' ||
+      permission === 'comptabilite.ecritures_voir'
+    ) {
+      return perms.includes('comptabilite.voir') || perms.some((p) => p.startsWith('comptabilite.'))
+    }
+
+    // - Reporting & Décisionnel
+    if (permission === 'reporting.voir') {
+      return perms.includes('reporting.voir') || perms.includes('reporting.exporter')
+    }
+
+    // - Ventes & Caisse POS
+    if (permission === 'ventes.voir') {
+      return perms.includes('ventes.voir') || perms.includes('ventes.creer')
+    }
+
+    // - Stocks & Dépôts
+    if (permission === 'stocks.voir') {
+      return perms.includes('stocks.voir') || perms.includes('stocks.corriger')
+    }
+
+    // - Achats & Matières premières
+    if (permission === 'achats.gerer') {
+      return perms.includes('achats.gerer') || perms.includes('achats.commandes')
+    }
+
+    // - RH & Paie
+    if (permission === 'rh.gerer') {
+      return perms.includes('rh.gerer') || perms.includes('rh.bulletins')
+    }
+
+    return false
   },
 }))

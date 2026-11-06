@@ -482,10 +482,25 @@ function AppShell() {
   const printProposal = useAppStore((state) => state.printProposal)
   const setPrintProposal = useAppStore((state) => state.setPrintProposal)
   const can = useAppStore((state) => state.can)
+  const updateSessionPermissions = useAppStore((state) => state.updateSessionPermissions)
   const isSuperOrAdminSiege = session?.role === 'SUPER_ADMIN' || session?.role === 'ADMIN_SIEGE'
 
+  // Synchronisation dynamique des habilitations RBAC depuis la base
+  useQuery({
+    queryKey: ['myProfilePermissions', session?.token],
+    queryFn: async () => {
+      const me = await apiRequest<{ permissions: string[] }>('/api/auth/me', { token: session?.token })
+      if (me?.permissions && Array.isArray(me.permissions)) {
+        updateSessionPermissions(me.permissions)
+      }
+      return me
+    },
+    enabled: Boolean(session?.token),
+    refetchInterval: 30000,
+  })
+
   const visibleNav = navItems.filter((item) => {
-    // Les menus Diagrammes et Contrôle de Gestion (CAGE & TFT) sont strictement réservés au Super Admin et Admin du Siège
+    // Les menus Diagrammes et Contrôle de Gestion (CAGE & TFT) sont réservés aux habilités Siège
     if (item.to === '/diagrammes' || item.to === '/controle-gestion') {
       return isSuperOrAdminSiege && can(item.permission)
     }
@@ -711,52 +726,15 @@ function AppShell() {
               </select>
             </div>
 
-            {/* BOUTON LANCER BORNE KIOSQUE POINTAGE */}
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setShowKioskModal(true)}
-              title="Ouvrir la Borne de Pointage Permanent (Scanner, Biométrie, Voix)"
-              aria-label="Borne Pointage Kiosque"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '4px 9px',
-                borderRadius: 8,
-                background: 'rgba(6, 182, 212, 0.12)',
-                color: '#06b6d4',
-                border: '1px solid rgba(6, 182, 212, 0.35)',
-                fontWeight: 600,
-                fontSize: '0.78rem',
-              }}
-            >
-              <Fingerprint size={16} weight="bold" />
-              <span className="desktop-only">Borne Kiosque</span>
-            </button>
-
-            {/* BOUTON PLEIN ÉCRAN POUR REMPLIR TOUT L'ÉCRAN */}
+            {/* BOUTON PLEIN ÉCRAN (ICÔNE SEULE SANS TEXTE) */}
             <button
               type="button"
               className="icon-button"
               onClick={toggleGlobalFullscreen}
-              title={isFullscreen ? "Quitter le plein écran (Échap)" : "Agrandir pour remplir tout l'écran (Mode Kiosque Plein Écran)"}
-              aria-label="Basculer Plein Écran"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '4px 9px',
-                borderRadius: 8,
-                background: isFullscreen ? 'rgba(16, 185, 129, 0.15)' : 'var(--surface-2)',
-                color: isFullscreen ? '#10b981' : 'var(--text)',
-                border: isFullscreen ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid var(--border)',
-                fontWeight: 600,
-                fontSize: '0.78rem',
-              }}
+              title={isFullscreen ? "Quitter le plein écran (Échap)" : "Plein écran"}
+              aria-label="Plein écran"
             >
-              {isFullscreen ? <ArrowsIn size={16} weight="bold" /> : <ArrowsOut size={16} weight="bold" />}
-              <span className="desktop-only">{isFullscreen ? 'Réduire' : 'Plein Écran'}</span>
+              {isFullscreen ? <ArrowsIn size={20} /> : <ArrowsOut size={20} />}
             </button>
 
             <span className={clsx('network-pill', online ? 'online' : 'offline')}>
@@ -778,20 +756,20 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/diagrammes" element={<AnalyticsChartsPage />} />
-            <Route path="/controle-gestion" element={<CageTftPage />} />
-            <Route path="/ventes" element={<SalesPage />} />
-            <Route path="/stock" element={<StockPage />} />
-            <Route path="/achats" element={<PurchasesPage />} />
-            <Route path="/transferts" element={<StockTransfersPage />} />
-            <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/production" element={<ProductionPage />} />
-            <Route path="/tresorerie" element={<TreasuryPage />} />
-            <Route path="/paie" element={<PayrollPage />} />
-            <Route path="/comptabilite" element={<AccountingPage />} />
-            <Route path="/reporting" element={<ReportingPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/sync" element={<SyncPage />} />
+            <Route path="/diagrammes" element={isSuperOrAdminSiege && can('analytics.voir') ? <AnalyticsChartsPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/controle-gestion" element={isSuperOrAdminSiege && can('cage.voir') ? <CageTftPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/ventes" element={can('ventes.voir') ? <SalesPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/stock" element={can('stocks.voir') ? <StockPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/achats" element={can('achats.gerer') ? <PurchasesPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/transferts" element={can('transferts.gerer') ? <StockTransfersPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/maintenance" element={can('flotte.gerer') ? <MaintenancePage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/production" element={can('production.gerer') ? <ProductionPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/tresorerie" element={can('tresorerie.voir') ? <TreasuryPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/paie" element={can('rh.gerer') ? <PayrollPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/comptabilite" element={can('comptabilite.voir') ? <AccountingPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/reporting" element={can('reporting.voir') ? <ReportingPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/admin" element={can('roles.gerer') ? <AdminPage /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/sync" element={can('sync.voir') ? <SyncPage /> : <Navigate to="/dashboard" replace />} />
             <Route
               path="/kiosque-presence"
               element={
@@ -10900,6 +10878,7 @@ function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['role-permissions', selectedRoleCode] })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       queryClient.invalidateQueries({ queryKey: ['roles'] })
+      queryClient.invalidateQueries({ queryKey: ['myProfilePermissions'] })
       setActionNotice(data.message || `Habilitations du rôle ${selectedRoleCode} enregistrées avec succès.`)
     },
     onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la mise à jour des permissions du rôle'),
@@ -10914,6 +10893,7 @@ function AdminPage() {
       }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['myProfilePermissions'] })
       setShowUserPermsModal(false)
       setUserPermsTarget(null)
       setActionNotice(data.message || 'Habilitations individuelles de l utilisateur mises à jour avec succès.')
