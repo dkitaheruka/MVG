@@ -2020,28 +2020,29 @@ function SalesPage() {
       return (
         s.article?.codeUnique?.toLowerCase() === q ||
         s.numeroLot?.toLowerCase() === q ||
-        s.article?.designation.toLowerCase().includes(q)
+        s.article?.designation.toLowerCase() === q ||
+        (q.length >= 3 && s.article?.designation.toLowerCase().includes(q))
       )
     })
 
     if (match) {
       if (match.article?.type === 'MATIERE_PREMIERE') {
-        setScanNotice(`Cet article (${match.article?.designation}) est une matière première réservée à la production et non destinée à la vente directe.`)
+        setScanNotice(`⚠️ Cet article (${match.article?.designation}) est une matière première réservée à l'usine de production et non destinée à la vente directe.`)
+        setTimeout(() => setScanNotice(null), 5000)
+        return
+      }
+      if (match.quantite <= 0) {
+        setScanNotice(`⚠️ Stock épuisé : ${match.article?.designation} est en rupture dans l'agence locale (quantité: 0). Réapprovisionnement requis avant vente.`)
         setTimeout(() => setScanNotice(null), 5000)
         return
       }
       addToCart(match)
-      setScanNotice(`✓ Produit fabriqué scanné et ajouté au panier : ${match.article?.designation} (${match.numeroLot || 'Lot standard'})`)
+      setScanNotice(`✓ Produit homologué ajouté au panier : ${match.article?.designation} (${match.numeroLot || 'Lot standard'})`)
       setTimeout(() => setScanNotice(null), 4500)
     } else {
-      // Si ce n'est pas un article du catalogue direct, offrir la possibilité de passer l'écriture comptable
-      if (payload.numeroLot || payload.reference || payload.codeUnique) {
-        setScannedQrPayload(payload)
-        setShowAccountingQrModal(true)
-      } else {
-        setScanNotice(`Aucun stock disponible pour ce QR Code dans l'agence #${agenceId}.`)
-        setTimeout(() => setScanNotice(null), 5000)
-      }
+      // Rejet strict de tout code ou texte qui n'existe pas dans le stock/catalogue officiel
+      setScanNotice(`⚠️ Article ou code non reconnu ("${rawText.trim()}"). Ce produit n'existe pas dans le catalogue officiel de l'agence. Vente et écriture comptable impossibles.`)
+      setTimeout(() => setScanNotice(null), 6000)
     }
   }
 

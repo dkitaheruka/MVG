@@ -2680,6 +2680,26 @@ router.post(['/ventes/nouvelle', '/ventes'], (req: Request, res: Response) => {
     clientChauffeur,
   } = req.body
 
+  if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
+    return res.status(400).json({ message: 'Vente rejetée : aucun article spécifié dans la commande.' })
+  }
+
+  // Contrôle d'intégrité strict : chaque article doit exister dans le catalogue officiel et être vendable
+  for (const item of rawItems) {
+    const artId = Number(item.articleId || item.article?.id)
+    const art = articles.find((a) => a.id === artId)
+    if (!art) {
+      return res.status(400).json({
+        message: `Article ID #${artId || 'inconnu'} introuvable. Ce produit n'existe pas dans le catalogue officiel de l'entreprise. Vente et écritures comptables impossibles.`,
+      })
+    }
+    if (art.type === 'MATIERE_PREMIERE') {
+      return res.status(400).json({
+        message: `L'article "${art.designation}" est une matière première réservée à la production industrielle. Vente comptoir interdite.`,
+      })
+    }
+  }
+
   const detailsLignes: any[] = []
 
   for (let idx = 0; idx < rawItems.length; idx++) {
@@ -10477,13 +10497,26 @@ router.post('/comptabilite/passer-ecriture-qr', (req: Request, res: Response) =>
   const qte = Math.max(1, Number(quantite) || 1)
   const activeRate = tauxChanges.find((t) => t.agenceId === numAg && t.statut === 'VALIDE' && t.actif)?.taux || 2850
 
-  // 1. Détection de l'article et du lot
+  // 1. Détection stricte de l'article et du lot
+  const searchKey = String(codeArticle || reference || numeroLot || articleId || '').trim().toLowerCase()
   const art = articles.find((a) =>
-    a.id === toInt(articleId) ||
-    (codeArticle && a.codeUnique === codeArticle) ||
-    (reference && a.codeUnique === reference) ||
-    (numeroLot && a.codeUnique && numeroLot.includes(a.codeUnique))
-  ) || articles[0]
+    (articleId && a.id === toInt(articleId)) ||
+    (codeArticle && a.codeUnique?.toLowerCase() === searchKey) ||
+    (reference && a.codeUnique?.toLowerCase() === searchKey) ||
+    (numeroLot && a.codeUnique && searchKey.includes(a.codeUnique.toLowerCase()))
+  )
+
+  if (!art) {
+    return res.status(400).json({
+      message: `Article inconnu ou non homologué dans le catalogue officiel ("${codeArticle || reference || numeroLot || articleId}"). Aucune vente ni écriture comptable ne peut être enregistrée pour un produit non répertorié.`,
+    })
+  }
+
+  if (art.type === 'MATIERE_PREMIERE') {
+    return res.status(400).json({
+      message: `L'article "${art.designation}" est une matière première réservée à la production industrielle. Vente comptoir interdite.`,
+    })
+  }
 
   // Détection en temps réel du prix fixé par le Chef d'Agence pour l'agence
   const prixAg = prixArticlesAgence.find((p) => p.agenceId === numAg && p.articleId === art.id && p.statut === 'VALIDE' && p.actif)
