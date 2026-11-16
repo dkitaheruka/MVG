@@ -1,0 +1,63 @@
+{
+  "legalAndPayrollRatesReviewed": false,
+  "initialExchangeRate": {
+    "cdfPerUsd": 0,
+    "proposedBy": "À RENSEIGNER",
+    "approvedBy": "À RENSEIGNER",
+    "approvedAt": "À RENSEIGNER"
+  },
+  "agency": {
+    "nom": "À RENSEIGNER",
+    "ville": "À RENSEIGNER",
+    "adresse": "À RENSEIGNER"
+  },
+  "companySettings": {
+    "nomSociete": "À RENSEIGNER",
+    "sigle": "",
+    "slogan": "À RENSEIGNER",
+    "rccm": "À RENSEIGNER",
+    "idNat": "À RENSEIGNER",
+    "nif": "À RENSEIGNER",
+    "siegeAdresse": "À RENSEIGNER",
+    "telephone": "À RENSEIGNER",
+    "emailContact": "À RENSEIGNER",
+    "siteWeb": "",
+    "tauxTvaPourcent": 0,
+    "mentionsPiedFacture": "À RENSEIGNER",
+    "mentionsPiedLivraison": "À RENSEIGNER",
+    "filigraneOpacite": 0,
+    "filigraneTexte": "",
+    "plafondAutonomieEtatBesoinAgenceUsd": 200,
+    "plafondDepenseDirecteAgenceUsd": 100,
+    "doubleValidationTransfertObligatoire": true
+  },
+  "payrollSettings": {
+    "cnssQpoPourcent": 0,
+    "cnssQppPourcent": 0,
+    "inppPourcent": 0,
+    "onemPourcent": 0,
+    "deductionEnfantPourcent": 0,
+    "maxEnfantsDeductibles": 0,
+    "appliquerPlafondIpr": true,
+    "plafondIprPourcent": 0,
+    "smigJournalierCdf": 0,
+    "deviseReferenceBareme": "CDF",
+    "tranchesIpr": [
+      {
+        "id": "À RENSEIGNER",
+        "ordre": 1,
+        "limiteInferieureCdf": 0,
+        "limiteSuperieureCdf": null,
+        "tauxPourcent": 0,
+        "description": "À RENSEIGNER"
+      }
+    ],
+    "heureDebutTravail": "08:00",
+    "toleranceRetardMinutes": 0,
+    "activerRetenueRetard": false,
+    "seuilRetardsAvantRetenue": 0,
+    "typeCalculRetenue": "FORFAIT_FIXE",
+    "valeurRetenueParRetard": 0,
+    "deviseRetenue": "USD"
+  }
+}

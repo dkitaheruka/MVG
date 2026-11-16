@@ -76,7 +76,9 @@ export interface DbTauxChange {
   taux: number
   statut: 'PROPOSE' | 'VALIDE' | 'REFUSE'
   proposePar?: string
+  proposeurId?: number
   validePar?: string
+  validateurId?: number
   dateDebut: string
   actif: boolean
 }
@@ -93,6 +95,7 @@ export interface DbStockAgence {
 
 export interface DbClient {
   id: number
+  agenceId?: number
   nom: string
   telephone: string
   adresse: string
@@ -118,6 +121,8 @@ export interface DbVente {
   clientId?: number
   montantTotal: number
   montantCdf?: number
+  tauxApplique?: number
+  clientOperationId?: string
   devise: 'USD' | 'CDF'
   estCredit: boolean
   statutCredit: 'AUCUN' | 'EN_ATTENTE' | 'DEPASSEMENT_PLAFOND' | 'VALIDE' | 'REJETE' | 'PARTIEL' | 'REGLE' | 'SOLDE'
@@ -377,6 +382,8 @@ export interface DbBulletinPaie {
 export interface DbSyncOperation {
   id: number
   clientOperationId: string
+  utilisateurId?: number
+  agenceId?: number
   typeOperation: string
   statut: 'EN_ATTENTE' | 'ACCEPTEE' | 'ACCEPTEE_STOCK_NEGATIF' | 'REJETEE' | 'CONFLIT'
   message?: string

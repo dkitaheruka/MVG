@@ -5,6 +5,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './index.css'
 
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.error('Service worker registration failed:', error)
+    })
+  })
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

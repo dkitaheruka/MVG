@@ -1,32 +1,30 @@
-# React + TypeScript + Vite
+# Matabishi ERP
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Application de gestion pour Matabishi : ventes POS, stocks, trésorerie, achats, production, ressources humaines et comptabilité.
 
-Currently, two official plugins are available:
+## Développement local
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Prérequis : Node.js 22+ et PostgreSQL 16+ (facultatif en mode mémoire local).
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm install
+Copy-Item .env.example .env
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Les profils de démonstration et leurs mots de passe simplifiés sont réservés au mode développement (`npm run dev`) et ne sont pas créés par le provisionnement de production. N’utilisez jamais ces profils pour des données réelles. En développement, `DATABASE_URL` est facultatif. Avec PostgreSQL, une base vide reçoit les données de démonstration et reste marquée comme telle.
+
+## Vérifier le build
+
+```powershell
+npm run build
+npx oxlint
+```
+
+## État de préparation à la production
+
+Le projet est encore en préparation et n’est pas prêt à accueillir des données réelles. Le serveur peut maintenant persister les collections métier dans PostgreSQL et reprendre les données après redémarrage. Cette couche conserve les routes et règles métier en place, fonctionne avec une seule instance API et refuse d’utiliser les données de démonstration en production.
+
+La commande d’initialisation et le modèle de configuration sont disponibles (`npm run provision:production -- <config.json>`). Les opérations hors ligne sont mises en file par utilisateur puis synchronisées; les conflits de stock sont signalés pour traitement. Les scripts de sauvegarde PostgreSQL chiffrée et la procédure VPS sont présents, mais doivent être exercés sur un VPS de recette. Les paramètres officiels et seuils restent à fournir après cette recette. Le lancement réel nécessite encore une recette multi-postes, la vérification de restauration, les paramètres légaux/fiscaux et HTTPS.
+
+Voir [`docs/production-readiness.md`](docs/production-readiness.md) pour le plan, les exigences du VPS et les contrôles restants.
