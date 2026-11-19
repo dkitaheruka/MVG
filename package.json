@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "provision:production": "tsx server/provision-production.ts",
     "build": "tsc -b && vite build",
-    "start": "node server.ts",
+    "start": "tsx server.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -21,12 +22,14 @@
     "idb": "^8.0.3",
     "jsonwebtoken": "^9.0.3",
     "jsqr": "^1.4.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.88.0",
     "react-router-dom": "^7.18.4",
     "recharts": "^3.10.1",
+    "tsx": "^4.23.15",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
@@ -35,11 +38,11 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
-    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   }

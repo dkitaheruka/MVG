@@ -164,7 +164,8 @@ export function renderFactureHtml(
   const totalUsd = Number(vente.montantTotal || 0)
   const fraisTransp = Number(vente.fraisTransport || 0)
   const totalMarchandise = Math.max(0, totalUsd - fraisTransp)
-  const totalCdf = Math.round(vente.montantCdf || totalUsd * (tauxActif || 2850))
+  const tauxFacture = Number(vente.tauxApplique || tauxActif || (process.env.NODE_ENV === 'production' ? 0 : 2850))
+  const totalCdf = Math.round(vente.montantCdf ?? totalUsd * tauxFacture)
   const socNom = entreprise?.nomSociete || 'ENTREPRISE COMMERCIALE & INDUSTRIELLE (ECI SARL)'
   const socSlogan = entreprise?.slogan || 'Distribution, Production & Logistique Multi-Agences'
   const socRccm = entreprise?.rccm || 'CD/GOM/RCCM/20-B-0142'

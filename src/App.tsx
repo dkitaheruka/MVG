@@ -85,7 +85,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { apiRequest, downloadUrl } from './lib/api'
+import { apiRequest, downloadUrl, HttpError } from './lib/api'
 import { PurchasesPage } from './pages/PurchasesPage'
 import { StockTransfersPage } from './pages/StockTransfersPage'
 import { PayrollPage } from './pages/PayrollPage'
@@ -93,8 +93,10 @@ import { MaintenancePage } from './pages/MaintenancePage'
 import { AnalyticsChartsPage } from './pages/AnalyticsChartsPage'
 import { CageTftPage } from './pages/CageTftPage'
 import {
+  loadReferenceData,
   listOfflineOperations,
   saveOfflineOperation,
+  setupAutoSync,
   syncPendingOperations,
 } from './lib/offline'
 import { parseJwt } from './lib/jwt'
@@ -173,6 +175,25 @@ function useOnlineStatus() {
 
 function App() {
   const session = useAppStore((state) => state.session)
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!session?.token) return
+    return setupAutoSync(() => session.token, (result) => {
+      if (result.synces === 0) return
+      for (const queryKey of [
+        ['sync-operations'],
+        ['ventes-agence'],
+        ['stock-agence'],
+        ['caisses'],
+        ['transactions'],
+        ['ecritures'],
+        ['balance'],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey })
+      }
+    })
+  }, [session?.token, queryClient])
 
   return (
     <Routes>
@@ -185,8 +206,8 @@ function App() {
 function LoginPage() {
   const t = useT()
   const setSession = useAppStore((state) => state.setSession)
-  const [email, setEmail] = useState('dkitaheruka@gmail.com')
-  const [password, setPassword] = useState('admin123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [deviceType, setDeviceType] = useState<'WEB' | 'MOBILE'>('WEB')
   const [deviceId, setDeviceId] = useState('')
   const [twoFactor, setTwoFactor] = useState(false)
@@ -421,13 +442,13 @@ function LoginPage() {
               {loginMutation.isPending ? 'Connexion...' : t('signIn')}
             </button>
 
-            <div style={{ marginTop: 14 }}>
+            {import.meta.env.DEV && <div style={{ marginTop: 14 }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
                 Profils de test & simulation des rôles :
               </span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {[
-                  { email: 'dkitaheruka@gmail.com', label: 'Super Admin (VIP)' },
+                  { email: 'superadmin@example.test', label: 'Super Admin (Démo)' },
                   { email: 'admin.siege@mvg.cd', label: 'Admin Siège (VIP)' },
                   { email: 'chef.goma@mvg.cd', label: 'Chef Agence' },
                   { email: 'vendeur.goma@mvg.cd', label: 'Vendeur' },
@@ -449,7 +470,7 @@ function LoginPage() {
                   </button>
                 ))}
               </div>
-            </div>
+            </div>}
           </form>
         )}
       </section>
@@ -690,7 +711,7 @@ function AppShell() {
             )}
 
             {/* SÉLECTEUR RAPIDE DE RÔLE SYSTÈME */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
+            {import.meta.env.DEV && <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', padding: '3px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
               <UserCircleGear size={17} />
               <select
                 value={session?.email}
@@ -709,7 +730,7 @@ function AppShell() {
                 style={{ padding: '3px 6px', fontSize: '0.78rem', border: 'none', background: 'transparent' }}
                 aria-label="Changer de rôle actif"
               >
-                <option value="dkitaheruka@gmail.com">David Kitaheruka (Super Admin Unique - Tous les Systèmes)</option>
+                <option value="superadmin@example.test">Super Admin Démo (Tous les systèmes)</option>
                 <option value="admin.siege@mvg.cd">Direction Générale (Admin Siège - Multi-Agences & Grandes Décisions)</option>
                 <option value="chef.goma@mvg.cd">Kasereka (Chef Agence Siège Social Goma)</option>
                 <option value="chef.kinshasa@mvg.cd">Patrice (Chef Agence Kinshasa)</option>
@@ -724,7 +745,7 @@ function AppShell() {
                 <option value="borne.pointage@mvg.cd">Borne Entrée Agence (Mode Kiosque Dédié Verrouillé)</option>
                 <option value="pos.caisse@mvg.cd">Terminal POS Caisse (Mode Vente Comptoir Dédié)</option>
               </select>
-            </div>
+            </div>}
 
             {/* BOUTON PLEIN ÉCRAN (ICÔNE SEULE SANS TEXTE) */}
             <button
@@ -1477,23 +1498,23 @@ function SalesPage() {
   // 1. Données du stock de l'agence
   const stockQuery = useQuery({
     queryKey: ['stock-agence', agenceId],
-    queryFn: () => apiRequest<StockAgence[]>(`/api/stocks/agence/${agenceId}`, { token }),
+    queryFn: () => loadReferenceData<StockAgence[]>(`stock-agence-${agenceId}`, () => apiRequest<StockAgence[]>(`/api/stocks/agence/${agenceId}`, { token })),
     enabled: Boolean(token),
   })
 
   // 2. Taux de change actif
   const rateQuery = useQuery({
     queryKey: ['taux-actif', agenceId],
-    queryFn: () => apiRequest<TauxChangeAgence>(`/api/parametrage/agences/${agenceId}/taux/actif`, { token }),
+    queryFn: () => loadReferenceData<TauxChangeAgence>(`taux-actif-${agenceId}`, () => apiRequest<TauxChangeAgence>(`/api/parametrage/agences/${agenceId}/taux/actif`, { token })),
     enabled: Boolean(token),
     retry: false,
   })
-  const tauxActif = rateQuery.data?.taux ?? 2850
+  const tauxActif = rateQuery.data?.taux ?? (import.meta.env.PROD ? 0 : 2850)
 
   // 2b. Prix spécifiques d'agence
   const prixAgenceQuery = useQuery({
     queryKey: ['prix-agence', agenceId],
-    queryFn: () => apiRequest<any[]>(`/api/parametrage/articles/prix?agenceId=${agenceId}`, { token }),
+    queryFn: () => loadReferenceData<any[]>(`prix-agence-${agenceId}`, () => apiRequest<any[]>(`/api/parametrage/articles/prix?agenceId=${agenceId}`, { token })),
     enabled: Boolean(token),
   })
 
@@ -1532,8 +1553,8 @@ function SalesPage() {
 
   // 3. Liste des clients
   const clientsQuery = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => apiRequest<Client[]>('/api/clients', { token }),
+    queryKey: ['clients', agenceId],
+    queryFn: () => loadReferenceData<Client[]>(`clients-${agenceId}`, () => apiRequest<Client[]>(`/api/clients?agenceId=${agenceId}`, { token })),
     enabled: Boolean(token),
   })
 
@@ -1630,38 +1651,64 @@ function SalesPage() {
       const totalMarchandisesUsd = cart.reduce((acc, item) => acc + item.prix * item.quantite, 0)
       const totalNetUsd = Math.round((totalMarchandisesUsd + numFraisTransport) * 100) / 100
       const selectedClient = clientsQuery.data?.find((c) => c.id === selectedClientId)
+      const clientOperationId = crypto.randomUUID()
+      const deviseVente: 'USD' | 'CDF' = paymentMode === 'CASH_CDF' ? 'CDF' : 'USD'
+      if (deviseVente === 'CDF' && (!Number.isFinite(tauxActif) || tauxActif <= 0)) {
+        throw new Error('Aucun taux USD/CDF approuvé n’est disponible. Impossible de convertir cette vente.')
+      }
+      if (paymentMode === 'CREDIT' && (!online || !navigator.onLine)) {
+        throw new Error('Les ventes à crédit doivent être enregistrées en ligne pour vérifier le plafond client et la validation.')
+      }
+      const multiplicateurDevise = deviseVente === 'CDF' ? tauxActif : 1
+      const montantTransportDevise = Math.round(numFraisTransport * multiplicateurDevise * 100) / 100
+      const montantTotalVente = Math.round(totalNetUsd * multiplicateurDevise * 100) / 100
+      const lignesVente = cart.map((item) => ({
+        articleId: item.articleId,
+        quantite: item.quantite,
+        prixUnitaireApplique: Math.round(item.prix * multiplicateurDevise * 100) / 100,
+        numeroLot: item.numeroLot,
+      }))
 
       if (!online) {
         // Enregistrement hors ligne dans IndexedDB
+        const dateVente = new Date().toISOString()
         const offlineSale: Vente = {
           id: Date.now(),
           referenceVente: `OFF-${Date.now().toString().slice(-6)}`,
+          agenceId,
           agence: { id: agenceId, nom: 'Mon Agence', estSiege: false },
           vendeur: { email: session?.email ?? 'vendeur@mvg.cd' },
           client: selectedClient ?? { nom: 'Client Comptant' },
-          montantTotal: totalNetUsd,
-          devise: paymentMode === 'CASH_CDF' ? 'CDF' : 'USD',
+          montantTotal: montantTotalVente,
+          montantCdf: deviseVente === 'CDF' ? montantTotalVente : Math.round(montantTotalVente * tauxActif * 100) / 100,
+          tauxApplique: tauxActif,
+          devise: deviseVente,
           estCredit: paymentMode === 'CREDIT',
           statutCredit: paymentMode === 'CREDIT' ? 'EN_ATTENTE' : 'AUCUN',
-          dateVente: new Date().toISOString(),
-          fraisTransport: numFraisTransport,
+          dateVente,
+          fraisTransport: montantTransportDevise,
           modeTransport,
           vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
           clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? clientVehicule.trim() : undefined,
           clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? clientChauffeur.trim() : undefined,
-          details: cart.map((item) => ({
+          details: cart.map((item, index) => ({
             article: { id: item.articleId, designation: item.designation, uniteMesure: item.uniteMesure },
-            quantite: item.quantite,
-            prixUnitaireApplique: item.prix,
+            ...lignesVente[index],
           })),
+          clientOperationId,
         }
 
         await saveOfflineOperation({
-          id: crypto.randomUUID(),
+          id: clientOperationId,
+          ownerEmail: session?.email,
           type: 'VENTE',
-          createdAt: new Date().toISOString(),
+          createdAt: dateVente,
           status: 'LOCAL',
-          payload: offlineSale,
+          payload: {
+            ...offlineSale,
+            clientId: selectedClient?.id,
+            items: lignesVente,
+          },
         })
 
         return offlineSale
@@ -1669,35 +1716,32 @@ function SalesPage() {
 
       // Enregistrement de la vente (Mode En ligne ou Hors-Ligne)
       const payload: any = {
+        clientOperationId,
         agenceId,
         agence: { id: agenceId, nom: 'Agence locale', estSiege: false },
         clientId: selectedClient ? selectedClient.id : undefined,
         client: selectedClient ? { id: selectedClient.id, nom: selectedClient.nom } : undefined,
-        montantTotal: totalNetUsd,
-        fraisTransport: numFraisTransport,
+        montantTotal: montantTotalVente,
+        montantCdf: deviseVente === 'CDF' ? montantTotalVente : Math.round(montantTotalVente * tauxActif * 100) / 100,
+        tauxApplique: tauxActif,
+        fraisTransport: montantTransportDevise,
         modeTransport,
         vehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
         selectedVehiculeId: (modeTransport === 'FLOTTE_ENTREPRISE' && selectedVehiculeId) ? Number(selectedVehiculeId) : undefined,
         clientVehicule: modeTransport === 'VEHICULE_CLIENT' ? clientVehicule.trim() : undefined,
         clientChauffeur: modeTransport === 'VEHICULE_CLIENT' ? clientChauffeur.trim() : undefined,
-        devise: paymentMode === 'CASH_CDF' ? 'CDF' : 'USD',
+        devise: deviseVente,
         estCredit: paymentMode === 'CREDIT',
-        details: cart.map((item) => ({
+        details: cart.map((item, index) => ({
           articleId: item.articleId,
           article: { id: item.articleId, designation: item.designation },
-          quantite: item.quantite,
-          prixUnitaireApplique: item.prix,
+          ...lignesVente[index],
         })),
-        items: cart.map((item) => ({
-          articleId: item.articleId,
-          quantite: item.quantite,
-          prixUnitaireApplique: item.prix,
-        })),
+        items: lignesVente,
       }
 
       if (!navigator.onLine) {
         // Enregistrement local direct dans IndexedDB
-        const offlineId = `OFF-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
         const localVente: Vente = {
           ...payload,
           id: -Date.now(),
@@ -1705,7 +1749,8 @@ function SalesPage() {
           dateVente: new Date().toISOString(),
         }
         await saveOfflineOperation({
-          id: offlineId,
+          id: clientOperationId,
+          ownerEmail: session?.email,
           type: 'VENTE',
           payload: localVente,
           createdAt: new Date().toISOString(),
@@ -1721,8 +1766,8 @@ function SalesPage() {
           body: JSON.stringify(payload),
         })
       } catch (err: any) {
+        if (paymentMode === 'CREDIT' || err instanceof HttpError || !(err instanceof TypeError)) throw err
         // En cas de panne de réseau inattendue, sauvegarde de secours locale
-        const offlineId = `OFF-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
         const localVente: Vente = {
           ...payload,
           id: -Date.now(),
@@ -1730,12 +1775,13 @@ function SalesPage() {
           dateVente: new Date().toISOString(),
         }
         await saveOfflineOperation({
-          id: offlineId,
+          id: clientOperationId,
+          ownerEmail: session?.email,
           type: 'VENTE',
           payload: localVente,
           createdAt: new Date().toISOString(),
           status: 'LOCAL',
-          errorMessage: 'Enregistré localement suite à perte de connectivité',
+          errorMessage: 'Enregistré localement suite à une erreur réseau; une synchronisation est requise.',
         })
         return localVente
       }
@@ -10219,7 +10265,7 @@ function ReportingPage() {
   })
 
   const kpis = kpisQuery.data
-  const maxCa = Math.max(...(kpis?.evolutionVentes6Mois.map((m) => m.caUsd) ?? [30000]))
+  const maxCa = Math.max(1, ...(kpis?.evolutionVentes6Mois.map((m) => m.caUsd) ?? []))
 
   const rawTransactions = multiAgencesTransactionsQuery.data?.transactions ?? []
   const filteredTransactions = rawTransactions.filter((tr) => {
@@ -10648,10 +10694,10 @@ function ReportingPage() {
               <TrendUp size={24} style={{ color: '#2563eb' }} />
               <span>Marge Brute de Production</span>
               <strong style={{ fontSize: '1.35rem', color: '#16a34a' }}>
-                ${kpis?.margeBruteParSacUsd?.toFixed(2) ?? '7.30'} / unité
+                {kpis?.margeBruteParSacUsd == null ? 'Non disponible' : `$${kpis.margeBruteParSacUsd.toFixed(2)} / unité`}
               </strong>
               <small style={{ color: 'var(--muted)' }}>
-                Taux de marge brute : <strong>{kpis?.tauxMargeMoyen ?? 34}%</strong>
+                Taux de marge brute : <strong>{kpis?.tauxMargeMoyen == null ? 'à calculer depuis les coûts validés' : `${kpis.tauxMargeMoyen}%`}</strong>
               </small>
             </article>
 
@@ -10659,7 +10705,7 @@ function ReportingPage() {
               <Package size={24} style={{ color: '#d97706' }} />
               <span>Rendement Transformation</span>
               <strong style={{ fontSize: '1.35rem', color: '#d97706' }}>
-                {kpis?.rendementMeunerie ?? 78.4} %
+                {kpis?.rendementMeunerie == null ? 'Non disponible' : `${kpis.rendementMeunerie} %`}
               </strong>
               <small style={{ color: 'var(--muted)' }}>
                 Rendement matières transformées en produits finis
@@ -10684,7 +10730,7 @@ function ReportingPage() {
                 {money(kpis?.creancesTotalUsd ?? 0, 'USD')}
               </strong>
               <small style={{ color: '#dc2626' }}>
-                dont <strong>{money(kpis?.creancesEchuesUsd ?? 0, 'USD')}</strong> échues (&gt; 30j)
+                {kpis?.creancesEchuesUsd == null ? 'Échéances non configurées' : <>dont <strong>{money(kpis.creancesEchuesUsd, 'USD')}</strong> échues (&gt; 30j)</>}
               </small>
             </article>
           </div>
@@ -10693,9 +10739,9 @@ function ReportingPage() {
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h3 style={{ margin: 0 }}>Évolution du Chiffre d'Affaires & de la Marge Brute (6 derniers mois)</h3>
+                <h3 style={{ margin: 0 }}>Évolution du chiffre d'affaires USD (6 derniers mois)</h3>
                 <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-                  Trajectoire de croissance commerciale et marge brute d'exploitation en USD.
+                  Les ventes réglées en CDF sont totalisées séparément dans les indicateurs.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 14, fontSize: '0.82rem' }}>
@@ -10703,41 +10749,25 @@ function ReportingPage() {
                   <span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--primary)' }} />
                   Chiffre d'Affaires ($)
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 2, background: '#16a34a' }} />
-                  Marge Brute ($)
-                </span>
               </div>
             </div>
 
             <div style={{ height: 190, display: 'flex', alignItems: 'flex-end', gap: 24, padding: '10px 10px 0', borderBottom: '1px solid var(--border)' }}>
               {(kpis?.evolutionVentes6Mois ?? []).map((item) => {
                 const hCa = Math.round((item.caUsd / maxCa) * 150)
-                const hMarge = Math.round((item.margeUsd / maxCa) * 150)
                 return (
                   <div key={item.mois} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, width: '100%', justifyContent: 'center' }}>
                       <div
                         style={{
                           width: '42%',
-                          height: `${Math.max(15, hCa)}px`,
+                          height: `${Math.max(0, hCa)}px`,
                           background: 'var(--primary)',
                           borderRadius: '4px 4px 0 0',
                           transition: 'height 0.3s ease',
                           position: 'relative',
                         }}
                         title={`CA: $${item.caUsd.toLocaleString()} USD`}
-                      />
-                      <div
-                        style={{
-                          width: '42%',
-                          height: `${Math.max(10, hMarge)}px`,
-                          background: '#16a34a',
-                          borderRadius: '4px 4px 0 0',
-                          transition: 'height 0.3s ease',
-                          position: 'relative',
-                        }}
-                        title={`Marge: $${item.margeUsd.toLocaleString()} USD`}
                       />
                     </div>
                     <div style={{ marginTop: 8, fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>
@@ -11111,12 +11141,12 @@ function AdminPage() {
           agenceId: Number(newUserAgenceId),
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setShowNewUserModal(false)
       setNewUserName('')
       setNewUserEmail('')
-      setActionNotice('Compte utilisateur créé avec succès et affecté à l agence.')
+      setActionNotice(`${data.message || 'Compte utilisateur créé avec succès.'} Mot de passe temporaire : ${data.motDePasseTemporaire || 'indisponible'}`)
     },
     onError: (err: any) => setActionNotice(err.message || 'Erreur lors de la création de l utilisateur'),
   })
@@ -11660,26 +11690,26 @@ function AdminPage() {
                 <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', background: '#eff6ff', color: '#1e40af', padding: '6px 12px', borderRadius: 6, border: '1px solid #bfdbfe' }}>
                   <ShieldCheck size={16} />
                   <span>
-                    <strong>Mode Consultation Agence :</strong> Seul le <strong>Super Administrateur</strong> est habilité à créer, déconnecter, réinitialiser ou modifier les comptes utilisateurs et statuts VIP. Vous disposez d'un droit de regard sur le personnel et les statuts de connexion de votre agence.
+                    <strong>Mode administrateur siège :</strong> vous pouvez créer et gérer les comptes opérationnels. Seul le Super Admin peut gérer les comptes administrateurs, les permissions individuelles et le statut multi-appareils.
                   </span>
                 </div>
               )}
             </div>
-            {isSuperAdmin && (
+            {isSuperOrAdminSiege && (
               <button className="primary-action" onClick={() => setShowNewUserModal(true)}>
                 <UserPlus size={18} /> Créer un Utilisateur
               </button>
             )}
           </div>
           <DataTable
-            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', isSuperAdmin ? 'Actions Super Admin' : 'Habilitation']}
+            columns={['Nom & Prénom', 'Email / Identifiant', 'Rôle & VIP', 'Agence rattachée', 'Appareil lié & Statut', isSuperOrAdminSiege ? 'Actions administrateur' : 'Habilitation']}
             loading={usersQuery.isLoading}
             rows={(usersQuery.data ?? [])
               .filter((u: any) => adminAgenceFilter === 'TOUTES' ? true : u.agenceId === adminAgenceFilter)
               .map((u: any) => [
               <div key={u.id + '-nom'}>
                 <strong>{u.nom}</strong>
-                {u.sessionActiveId && (
+                {u.estConnecte && (
                   <span style={{ marginLeft: 6, fontSize: '0.68rem', background: '#dcfce7', color: '#16a34a', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
                     En Ligne
                   </span>
@@ -11721,7 +11751,7 @@ function AdminPage() {
                   <span>{u.appareilActifNom || u.appareilActifId || 'Aucun appareil lié'}</span>
                 </div>
               </div>,
-              isSuperAdmin ? (
+              isSuperOrAdminSiege && (isSuperAdmin || !['SUPER_ADMIN', 'ADMIN_SIEGE'].includes(u.role)) ? (
                 <div key={u.id + '-actions'} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {/* BOUTON DÉCONNEXION DE L'UTILISATEUR PAR L'ADMINISTRATEUR */}
                   <button
@@ -11751,7 +11781,7 @@ function AdminPage() {
                     }}
                     onClick={() => {
                       setDebloquerTargetUser(u)
-                      setTempPasswordInput('TempPass' + Math.floor(1000 + Math.random() * 9000))
+                      setTempPasswordInput('')
                       setLibererAppareilCheck(true)
                       setShowDebloquerModal(true)
                     }}
@@ -11761,7 +11791,7 @@ function AdminPage() {
                   </button>
 
                   {/* BOUTON VIP (MULTI-APPAREILS) */}
-                  <button
+                  {isSuperAdmin && <button
                     type="button"
                     className="secondary-action"
                     style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
@@ -11769,7 +11799,7 @@ function AdminPage() {
                     title={u.estVip ? 'Rétrograder en mono-appareil strict' : 'Déclarer VIP pour autoriser plusieurs appareils'}
                   >
                     <Crown size={14} weight={u.estVip ? 'fill' : 'regular'} /> {u.estVip ? 'Retirer VIP' : 'Rendre VIP'}
-                  </button>
+                  </button>}
 
                   <button
                     className="secondary-action"
@@ -12534,12 +12564,14 @@ function AdminPage() {
           <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <FloppyDisk size={22} color="var(--primary)" />
-              Sauvegarde Globale du Système (Backup Intégral JSON)
+              Sauvegarde complète de la base
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
-              Téléchargez une archive complète chiffrée contenant toutes les données de l'entreprise : agences, collaborateurs, stocks des moulins et dépôts, écritures comptables OHADA, ventes, achats, paie et journal d'audit.
+              {import.meta.env.PROD
+                ? 'En production, les sauvegardes PostgreSQL sont chiffrées et opérées par le serveur. Utilisez les scripts documentés pour vérifier, restaurer et conserver les archives hors du VPS.'
+                : 'L’archive JSON ci-dessous est un outil de développement. Elle ne contient pas nécessairement toutes les collections et n’est pas chiffrée.'}
             </p>
-            <a
+            {!import.meta.env.PROD && <a
               href="/api/admin/backup/export"
               target="_blank"
               rel="noreferrer"
@@ -12547,7 +12579,7 @@ function AdminPage() {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
             >
               <DownloadSimple size={18} /> Télécharger l'Archive Complète de Sauvegarde (.JSON)
-            </a>
+            </a>}
           </div>
 
           <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -12556,9 +12588,11 @@ function AdminPage() {
               Restaurer une Sauvegarde Système (.JSON)
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: '0.88rem', color: 'var(--muted)', lineHeight: 1.5 }}>
-              Sélectionnez un fichier JSON de sauvegarde préalablement exporté. Cette opération réinjectera l'ensemble des données d'exploitation (agences, articles, stocks, écritures OHADA, ventes, achats, camions).
+              {import.meta.env.PROD
+                ? 'La restauration JSON est désactivée en production. Suivez la procédure PostgreSQL documentée et vérifiez l’archive sur une base isolée avant toute remise en service.'
+                : 'Outil de développement uniquement : sélectionnez une archive JSON exportée depuis une instance de test.'}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {!import.meta.env.PROD && <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
                 type="file"
                 accept=".json,application/json"
@@ -12616,7 +12650,7 @@ function AdminPage() {
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           <div className="card" style={{ padding: 18, background: 'var(--panel-bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -12811,7 +12845,7 @@ function AdminPage() {
                     <option value="COMPTABLE">Comptable</option>
                     <option value="COMPTABLE_SENIOR">Comptable Senior</option>
                     <option value="PRODUCTION">Chef Production</option>
-                    <option value="ADMIN_SIEGE">Administrateur Siège</option>
+                    {isSuperAdmin && <option value="ADMIN_SIEGE">Administrateur Siège</option>}
                   </select>
                 </label>
                 <label>
@@ -12862,8 +12896,8 @@ function AdminPage() {
                     <option value="COMPTABLE">Comptable</option>
                     <option value="COMPTABLE_SENIOR">Comptable Senior</option>
                     <option value="PRODUCTION">Chef Production</option>
-                    <option value="ADMIN_SIEGE">Administrateur Siège</option>
-                    <option value="SUPER_ADMIN">Super Administrateur</option>
+                    {isSuperAdmin && <option value="ADMIN_SIEGE">Administrateur Siège</option>}
+                    {isSuperAdmin && <option value="SUPER_ADMIN">Super Administrateur</option>}
                   </select>
                 </label>
                 <label>
@@ -12993,7 +13027,7 @@ function AdminPage() {
               Débloquer le Compte & Définir un Mot de Passe Temporaire
             </h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.86rem', margin: '4px 0 16px', lineHeight: 1.5 }}>
-              Déblocage du compte de <strong>{debloquerTargetUser.nom}</strong> ({debloquerTargetUser.email}). Un mot de passe temporaire sera défini et l'utilisateur devra obligatoirement le modifier lors de sa prochaine connexion (premier login).
+              Déblocage du compte de <strong>{debloquerTargetUser.nom}</strong> ({debloquerTargetUser.email}). Un mot de passe temporaire sera défini et l'utilisateur devra obligatoirement le modifier lors de sa prochaine connexion. Laissez le champ vide pour en générer un aléatoire.
             </p>
 
             <form
@@ -13013,7 +13047,7 @@ function AdminPage() {
                     type="text"
                     value={tempPasswordInput}
                     onChange={(e) => setTempPasswordInput(e.target.value)}
-                    required
+                    placeholder="Vide = génération aléatoire sécurisée"
                     style={{ flex: 1, fontFamily: 'monospace', fontWeight: 700 }}
                   />
                   <button
@@ -13154,6 +13188,7 @@ function AdminPage() {
 
 function SyncPage() {
   const token = useToken()
+  const sessionEmail = useAppStore((state) => state.session?.email?.toLowerCase())
   const queryClient = useQueryClient()
   const [localOperations, setLocalOperations] = useState(0)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -13166,12 +13201,16 @@ function SyncPage() {
   })
 
   const refreshLocalCount = () => {
-    listOfflineOperations().then((operations) => setLocalOperations(operations.length))
+    listOfflineOperations().then((operations) => setLocalOperations(operations.filter((operation) => {
+      if (operation.ownerEmail) return operation.ownerEmail.toLowerCase() === sessionEmail
+      const payload = operation.payload as { vendeur?: { email?: string } } | undefined
+      return payload?.vendeur?.email?.toLowerCase() === sessionEmail
+    }).length))
   }
 
   useEffect(() => {
     refreshLocalCount()
-  }, [])
+  }, [sessionEmail])
 
   const handleManualSync = async () => {
     setIsSyncing(true)

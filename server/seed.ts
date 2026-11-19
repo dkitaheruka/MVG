@@ -34,6 +34,9 @@ import type {
   DbParametresFiscauxSociaux,
   DbPointageAgent,
 } from './db.ts'
+import { rolesPermissionsMap } from './role-permissions.ts'
+
+export const permissionsParRole: Record<string, string[]> = structuredClone(rolesPermissionsMap)
 
 export const agences: DbAgence[] = [
   { id: 1, nom: 'Siège Social Goma', ville: 'Goma', adresse: 'Avenue du 20 Mai, Quartier Les Volcans', estSiege: true },
@@ -44,8 +47,8 @@ export const agences: DbAgence[] = [
 export const users: DbUser[] = [
   {
     id: 1,
-    email: 'dkitaheruka@gmail.com',
-    nom: 'David Kitaheruka (Super Admin)',
+    email: 'superadmin@example.test',
+    nom: 'Super Administrateur Démo',
     role: 'SUPER_ADMIN',
     agenceId: 1,
     permissions: [
@@ -2482,7 +2485,7 @@ export const appareils: DbAppareil[] = [
     type: 'PC_BUREAU',
     agenceId: 1,
     userId: 1,
-    userNom: 'David Kitaheruka (Super Admin)',
+    userNom: 'Super Administrateur Démo',
     statut: 'AUTORISE',
     adresseIp: '192.168.1.20',
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',

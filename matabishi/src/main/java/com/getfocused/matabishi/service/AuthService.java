@@ -28,7 +28,7 @@ public class AuthService {
      */
     @Transactional
     public String login(String email, String password, String deviceType, String deviceId) {
-        System.out.println("DEBUG [Auth]: Tentative pour " + email + " [" + deviceType + "]");
+        System.out.println("DEBUG [Auth]: Tentative de connexion [" + deviceType + "]");
 
         Utilisateur user = utilisateurRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("UTILISATEUR_NON_TROUVE"));
@@ -39,15 +39,8 @@ public class AuthService {
             throw new RuntimeException("COMPTE_ARCHIVE");
         }
 
-        // 2. VÉRIFICATION DU MOT DE PASSE (AVEC RÉPARATION AUTO)
-        boolean matches = passwordEncoder.matches(password, user.getPassword());
-
-        if (!matches && password.equals("admin123")) {
-            System.out.println("LOG [REPAIR]: Hachage DB corrompu détecté pour admin123. Réparation en cours...");
-            user.setPassword(passwordEncoder.encode("admin123"));
-            utilisateurRepository.save(user);
-            matches = true; // On autorise le passage après réparation
-        }
+        // 2. Vérification stricte du hachage enregistré; aucun mot de passe de secours.
+        boolean matches = password != null && user.getPassword() != null && passwordEncoder.matches(password, user.getPassword());
 
         if (!matches) {
             System.out.println("DEBUG [Auth]: Mot de passe toujours incorrect pour " + email);

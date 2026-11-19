@@ -163,6 +163,9 @@ export type Vente = {
   vendeur?: { id?: number; nom?: string; email: string }
   client?: Client
   montantTotal: number
+  montantCdf?: number
+  tauxApplique?: number
+  clientOperationId?: string
   devise: string
   estCredit: boolean
   statutCredit?: 'AUCUN' | 'EN_ATTENTE' | 'DEPASSEMENT_PLAFOND' | 'VALIDE' | 'REJETE'
@@ -377,23 +380,25 @@ export type ReceptionPontBascule = {
 export type DirectionKpis = {
   caMoisUsd: number
   caMoisCdf: number
-  sacsVendus: number
-  margeBruteParSacUsd: number
-  tauxMargeMoyen: number
-  farineExtraiteKg: number
-  maisConsommeKg: number
-  rendementMeunerie: number
+  sacsVendus: number | null
+  articlesVendus?: number
+  margeBruteParSacUsd: number | null
+  tauxMargeMoyen: number | null
+  farineExtraiteKg: number | null
+  maisConsommeKg: number | null
+  rendementMeunerie: number | null
   totalCaisseUsd: number
   totalBanqueUsd: number
   totalTresorerieCdf: number
   tresorerieNetteConsolideeUsd: number
   creancesTotalUsd: number
-  creancesEchuesUsd: number
+  creancesEchuesUsd: number | null
   evolutionVentes6Mois: Array<{
     mois: string
     caUsd: number
-    margeUsd: number
-    tonnageT: number
+    caCdf?: number
+    margeUsd: number | null
+    tonnageT: number | null
   }>
 }
 
